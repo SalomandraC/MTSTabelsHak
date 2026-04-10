@@ -15,6 +15,9 @@ import H3 from '../../../app/images/H3.svg';
 import T from '../../../app/images/T.svg';
 import T1 from '../../../app/images/T1.svg';
 import U from '../../../app/images/U.svg';
+import AlignLeft from '../../../app/images/AlignLeft.svg';
+import AlignCenter from '../../../app/images/AlignCenter.svg';
+import AlignRight from '../../../app/images/AlignRight.svg';
 
 import {
   List,
@@ -95,8 +98,7 @@ function ToolbarButton({
     isInGroup 
       ? 'bg-transparent text-[rgba(80,87,98,1)] hover:bg-[#d5d9e0]' 
       : 'bg-transparent text-editor-icon hover:bg-[#e8ebf1] hover:text-editor-text-primary',
-    pressed && isInGroup ? 'border-red-500 !border-opacity-100' : '',
-    pressed && !isInGroup ? 'border-red-500 !border-opacity-100' : '',
+    pressed ? '!border-2 border-red-500 !border-opacity-100' : '',
     disabled ? 'cursor-not-allowed opacity-45 hover:bg-transparent' : '',
   ]
     .filter(Boolean)
@@ -554,28 +556,52 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
         <ToolbarButton
-          label="L"
+          icon={
+            <img
+              src={AlignLeft}
+              alt="Выровнять по левому краю"
+              className="h-4 w-4"
+              style={state.isAlignLeft ? { filter: redFilter } : {}}
+            />
+          }
           onClick={() => alignSelection('left')}
           pressed={state.isAlignLeft}
           isFirst={true}
           isLast={false}
           isInGroup={true}
+          aria-label="Выровнять по левому краю"
         />
         <ToolbarButton
-          label="C"
+          icon={
+            <img
+              src={AlignCenter}
+              alt="Выровнять по центру"
+              className="h-4 w-4"
+              style={state.isAlignCenter ? { filter: redFilter } : {}}
+            />
+          }
           onClick={() => alignSelection('center')}
           pressed={state.isAlignCenter}
           isFirst={false}
           isLast={false}
           isInGroup={true}
+          aria-label="Выровнять по центру"
         />
         <ToolbarButton
-          label="R"
+          icon={
+            <img
+              src={AlignRight}
+              alt="Выровнять по правому краю"
+              className="h-4 w-4"
+              style={state.isAlignRight ? { filter: redFilter } : {}}
+            />
+          }
           onClick={() => alignSelection('right')}
           pressed={state.isAlignRight}
           isFirst={false}
           isLast={true}
           isInGroup={true}
+          aria-label="Выровнять по правому краю"
         />
 
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
