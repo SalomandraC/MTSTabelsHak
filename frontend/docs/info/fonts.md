@@ -55,4 +55,5 @@ Note: font files are not included in the repository by default. Place the WOFF2 
   - `var(--font-compact)` — compact/paragraph face
   - `var(--font-wide)` — display/headings face
 
-Example Tailwind integration: extend `fontFamily` in `tailwind.config.js` to reference the CSS variables or the font names.
+- Prefer Tailwind utilities backed by the font tokens in `tailwind.config.js` for component-level styling.
+- Keep CSS variables as the source of truth so both Tailwind classes and occasional raw CSS can reuse the same fonts.
