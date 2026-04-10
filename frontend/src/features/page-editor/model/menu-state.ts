@@ -31,6 +31,7 @@ const emptyMenuBarState = {
   isTaskList: false,
   canTaskList: false,
   isBlockquote: false,
+  isCodeBlock: false,
   canUndo: false,
   canRedo: false,
 };
@@ -79,6 +80,7 @@ export function menuBarStateSelector(ctx: EditorStateSnapshot<Editor | null>) {
     isTaskList: ctx.editor.isActive('taskList') ?? false,
     canTaskList: ctx.editor.can().chain().toggleTaskList().run() ?? false,
     isBlockquote: ctx.editor.isActive('blockquote') ?? false,
+    isCodeBlock: ctx.editor.isActive('codeBlock') ?? false,
     canUndo: ctx.editor.can().chain().undo().run() ?? false,
     canRedo: ctx.editor.can().chain().redo().run() ?? false,
   };
