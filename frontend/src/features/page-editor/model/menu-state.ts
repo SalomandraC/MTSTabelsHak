@@ -27,11 +27,15 @@ const emptyMenuBarState = {
   isAlignCenter: false,
   isAlignRight: false,
   isBulletList: false,
+  canBulletList: false,
   isOrderedList: false,
+  canOrderedList: false,
   isTaskList: false,
   canTaskList: false,
   isBlockquote: false,
   isCodeBlock: false,
+  canCodeBlock: false,
+  canClearFormatting: false,
   canUndo: false,
   canRedo: false,
 };
@@ -43,6 +47,17 @@ export function menuBarStateSelector(ctx: EditorStateSnapshot<Editor | null>) {
 
   const { from, to, empty } = ctx.editor.state.selection;
   const selection = ctx.editor.state.selection;
+  let selectedRootBlockCount = 0;
+
+  if (!empty) {
+    ctx.editor.state.doc.nodesBetween(from, to, (node, _pos, parent) => {
+      if (node.type.name === 'rootblock' && parent === ctx.editor?.state.doc) {
+        selectedRootBlockCount += 1;
+      }
+    });
+  }
+
+  const canConvertSelectionToList = !empty && selectedRootBlockCount > 0;
   const linkText = empty ? '' : ctx.editor.state.doc.textBetween(from, to, ' ');
   const linkHref = (ctx.editor.getAttributes('link').href as string | undefined) ?? '';
   const isImageSelection = selection instanceof NodeSelection && selection.node.type.name === 'image';
@@ -76,11 +91,15 @@ export function menuBarStateSelector(ctx: EditorStateSnapshot<Editor | null>) {
     isAlignCenter: isImageSelection ? selectedImageAlign === 'center' : textAlign === 'center',
     isAlignRight: isImageSelection ? selectedImageAlign === 'right' : textAlign === 'right',
     isBulletList: ctx.editor.isActive('bulletList') ?? false,
+    canBulletList: (ctx.editor.can().chain().toggleBulletList().run() ?? false) || canConvertSelectionToList,
     isOrderedList: ctx.editor.isActive('orderedList') ?? false,
+    canOrderedList: (ctx.editor.can().chain().toggleOrderedList().run() ?? false) || canConvertSelectionToList,
     isTaskList: ctx.editor.isActive('taskList') ?? false,
-    canTaskList: ctx.editor.can().chain().toggleTaskList().run() ?? false,
+    canTaskList: (ctx.editor.can().chain().toggleTaskList().run() ?? false) || canConvertSelectionToList,
     isBlockquote: ctx.editor.isActive('blockquote') ?? false,
     isCodeBlock: ctx.editor.isActive('codeBlock') ?? false,
+    canCodeBlock: ctx.editor.can().chain().toggleCodeBlock().run() ?? false,
+    canClearFormatting: ctx.editor.can().chain().unsetAllMarks().clearNodes().setParagraph().run() ?? false,
     canUndo: ctx.editor.can().chain().undo().run() ?? false,
     canRedo: ctx.editor.can().chain().redo().run() ?? false,
   };
