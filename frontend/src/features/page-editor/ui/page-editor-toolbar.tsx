@@ -22,6 +22,7 @@ import {
   Quote,
   Code2,
   Image,
+  BrushCleaning,
   ListChecks,
 } from 'lucide-react';
 
@@ -677,7 +678,7 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
 
         <ToolbarButton
           icon={
-            <Image className="h-4 w-4" 
+            <BrushCleaning className="h-4 w-4" 
               style={{ color: 'rgba(80, 87, 98, 1)' }} 
             />
           }
