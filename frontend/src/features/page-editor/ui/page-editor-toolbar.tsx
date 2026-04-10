@@ -27,6 +27,9 @@ import {
   Image,
   BrushCleaning,
   ListChecks,
+  TextAlignEnd,
+  TextAlignStart,
+  TextAlignCenter,
 } from 'lucide-react';
 
 const redFilter = 'brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(2665%) hue-rotate(346deg) brightness(101%) contrast(97%)';
@@ -419,7 +422,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           pressed={state.isBold}
           disabled={!state.canBold}
           noBorder={false}
-          size="sm"
           isFirst={true}  
           isLast={false}
           isInGroup={true}
@@ -438,7 +440,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           pressed={state.isItalic}
           disabled={!state.canItalic}
           noBorder={false}
-          size="sm"
           isFirst={false}
           isLast={false}
           isInGroup={true}
@@ -457,7 +458,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           pressed={state.isStrike}
           disabled={!state.canStrike}
           noBorder={false}
-          size="sm"
           isFirst={false}
           isLast={false}
           isInGroup={true}
@@ -476,7 +476,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           pressed={state.isUnderline}
           disabled={!state.canUnderline}
           noBorder={false}
-          size="sm"
           isFirst={false}
           isLast={true}
           isInGroup={true}
@@ -557,11 +556,16 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
 
         <ToolbarButton
           icon={
+<<<<<<< HEAD
             <img
               src={AlignLeft}
               alt="Выровнять по левому краю"
               className="h-4 w-4"
               style={state.isAlignLeft ? { filter: redFilter } : {}}
+=======
+            <TextAlignStart className="h-4 w-4" 
+              style={{ color: 'rgba(80, 87, 98, 1)' }} 
+>>>>>>> feature/9.1
             />
           }
           onClick={() => alignSelection('left')}
@@ -573,11 +577,16 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
         />
         <ToolbarButton
           icon={
+<<<<<<< HEAD
             <img
               src={AlignCenter}
               alt="Выровнять по центру"
               className="h-4 w-4"
               style={state.isAlignCenter ? { filter: redFilter } : {}}
+=======
+            <TextAlignCenter className="h-4 w-4" 
+              style={{ color: 'rgba(80, 87, 98, 1)' }} 
+>>>>>>> feature/9.1
             />
           }
           onClick={() => alignSelection('center')}
@@ -589,11 +598,16 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
         />
         <ToolbarButton
           icon={
+<<<<<<< HEAD
             <img
               src={AlignRight}
               alt="Выровнять по правому краю"
               className="h-4 w-4"
               style={state.isAlignRight ? { filter: redFilter } : {}}
+=======
+            <TextAlignEnd className="h-4 w-4" 
+              style={{ color: 'rgba(80, 87, 98, 1)' }} 
+>>>>>>> feature/9.1
             />
           }
           onClick={() => alignSelection('right')}
@@ -627,8 +641,17 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           aria-label="Нумерованный список"
         />
         <ToolbarButton
+<<<<<<< HEAD
           icon={<ListChecks className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
           onClick={() => handleListAction('taskList')}
+=======
+          icon={
+            <ListChecks className="h-4 w-4" 
+              style={{ color: 'rgba(80, 87, 98, 1)' }} 
+            />
+          }
+          onClick={() => editor.chain().focus().toggleTaskList().run()}
+>>>>>>> feature/9.1
           pressed={state.isTaskList}
           disabled={!state.canTaskList}
           isFirst={false}
