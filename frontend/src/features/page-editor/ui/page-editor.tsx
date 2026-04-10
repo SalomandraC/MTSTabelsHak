@@ -1,7 +1,10 @@
+import { Extension, textInputRule } from '@tiptap/core';
+import Highlight from '@tiptap/extension-highlight';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
+import Typography from '@tiptap/extension-typography';
 import Underline from '@tiptap/extension-underline';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -43,6 +46,18 @@ const baseSlashState: SlashState = {
   left: 0,
 };
 
+const DashShortcut = Extension.create({
+  name: 'dashShortcut',
+  addInputRules() {
+    return [
+      textInputRule({
+        find: /--$/,
+        replace: '—',
+      }),
+    ];
+  },
+});
+
 function isQueryValid(query: string) {
   return /^[\p{L}\p{N}_-]*$/u.test(query);
 }
@@ -63,6 +78,9 @@ export function PageEditor() {
   const editor = useEditor({
     extensions: [
       TextStyle,
+      Highlight,
+      Typography,
+      DashShortcut,
       Link.configure({
         openOnClick: false,
         autolink: true,
