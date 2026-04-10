@@ -1,0 +1,162 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum WikiNodeType {
+  folder
+  page
+}
+
+enum EmbedProvider {
+  mws_tables
+}
+
+enum CheckpointTrigger {
+  editor_idle
+  before_unload
+  manual
+  reconnect
+  collab_store
+}
+
+model WikiNode {
+  id          String       @id @default(uuid())
+  spaceId     String       @map("space_id")
+  type        WikiNodeType
+  parentId    String?      @map("parent_id")
+  title       String
+  icon        String?
+  position    Int          @default(0)
+  isArchived  Boolean      @default(false) @map("is_archived")
+  createdBy   String       @map("created_by")
+  updatedBy   String       @map("updated_by")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  parent      WikiNode?    @relation("WikiNodeTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children    WikiNode[]   @relation("WikiNodeTree")
+  page        WikiPage?
+  sourceLinks PageLink[]   @relation("SourceLinks")
+  targetLinks PageLink[]   @relation("TargetLinks")
+  embeds      PageEmbed[]
+  sessions    CollabSession[]
+
+  @@index([spaceId, parentId, position])
+  @@index([spaceId, type, isArchived])
+  @@map("wiki_nodes")
+}
+
+model WikiPage {
+  nodeId              String           @id @map("node_id")
+  plainTextPreview    String?          @map("plain_text_preview")
+  lastSnapshotVersion BigInt           @default(0) @map("last_snapshot_version")
+  latestCheckpointId  String?          @map("latest_checkpoint_id")
+  lastCompactedAt     DateTime?        @map("last_compacted_at")
+  lastIndexedAt       DateTime?        @map("last_indexed_at")
+  node                WikiNode         @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  document            PageDocument?
+  checkpoints         PageCheckpoint[]
+  updates             PageCrdtUpdate[]
+
+  @@map("wiki_pages")
+}
+
+model PageDocument {
+  pageId         String   @id @map("page_id")
+  ydocSnapshot   Bytes    @map("ydoc_snapshot")
+  stateVector    Bytes    @map("state_vector")
+  serverVersion  BigInt   @default(0) @map("server_version")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  page           WikiPage @relation(fields: [pageId], references: [nodeId], onDelete: Cascade)
+
+  @@map("page_documents")
+}
+
+model PageCrdtUpdate {
+  id              BigInt   @id @default(autoincrement())
+  pageId          String   @map("page_id")
+  seq             BigInt
+  updatePayload   Bytes    @map("update_payload")
+  originSessionId String?  @map("origin_session_id")
+  originClientId  String?  @map("origin_client_id")
+  createdBy       String?  @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  page            WikiPage @relation(fields: [pageId], references: [nodeId], onDelete: Cascade)
+
+  @@unique([pageId, seq])
+  @@index([pageId, createdAt])
+  @@map("page_crdt_updates")
+}
+
+model PageCheckpoint {
+  id            String            @id @default(uuid())
+  pageId        String            @map("page_id")
+  serverVersion BigInt            @map("server_version")
+  snapshot      Bytes
+  stateVector   Bytes             @map("state_vector")
+  trigger       CheckpointTrigger
+  createdBy     String?           @map("created_by")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  page          WikiPage          @relation(fields: [pageId], references: [nodeId], onDelete: Cascade)
+
+  @@index([pageId, createdAt])
+  @@map("page_checkpoints")
+}
+
+model PageLink {
+  sourcePageId    String   @map("source_page_id")
+  targetPageId    String   @map("target_page_id")
+  mentionCount    Int      @default(1) @map("mention_count")
+  lastReindexedAt DateTime @default(now()) @map("last_reindexed_at")
+  sourcePage      WikiNode @relation("SourceLinks", fields: [sourcePageId], references: [id], onDelete: Cascade)
+  targetPage      WikiNode @relation("TargetLinks", fields: [targetPageId], references: [id], onDelete: Cascade)
+
+  @@id([sourcePageId, targetPageId])
+  @@index([targetPageId])
+  @@map("page_links")
+}
+
+model PageEmbed {
+  id              String        @id @default(uuid())
+  pageId          String        @map("page_id")
+  blockId         String        @map("block_id")
+  provider        EmbedProvider
+  mwsSpaceId      String?       @map("mws_space_id")
+  mwsNodeId       String?       @map("mws_node_id")
+  mwsDatasheetId  String?       @map("mws_datasheet_id")
+  mwsViewId       String?       @map("mws_view_id")
+  displayMode     String?       @map("display_mode")
+  selectedFieldIds String[]     @default([]) @map("selected_field_ids")
+  filterFormula   String?       @map("filter_formula")
+  pageSize        Int?          @map("page_size")
+  allowInlineEdit Boolean       @default(false) @map("allow_inline_edit")
+  config          Json?
+  lastResolvedAt  DateTime?     @map("last_resolved_at")
+  page            WikiNode      @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([pageId, blockId])
+  @@index([pageId, provider])
+  @@map("page_embeds")
+}
+
+model CollabSession {
+  id             String    @id @default(uuid())
+  pageId         String    @map("page_id")
+  userId         String    @map("user_id")
+  clientId       String    @map("client_id")
+  deviceId       String    @map("device_id")
+  displayName    String?   @map("display_name")
+  connectedAt    DateTime  @default(now()) @map("connected_at")
+  lastSeenAt     DateTime? @map("last_seen_at")
+  disconnectedAt DateTime? @map("disconnected_at")
+  closeReason    String?   @map("close_reason")
+  page           WikiNode  @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId, connectedAt])
+  @@index([userId, connectedAt])
+  @@map("collab_sessions")
+}

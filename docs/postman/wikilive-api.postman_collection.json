@@ -1,0 +1,664 @@
+{
+  "info": {
+    "_postman_id": "675fc2d5-9b13-45da-83a5-4047c6285b9d",
+    "name": "WikiLive API",
+    "description": "Postman collection for WikiLive NestJS backend. Scenario order: health -> wiki tree -> folders -> pages -> collaboration -> links -> MWS Tables BFF.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{mwsToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.request.headers.upsert({ key: 'x-user-id', value: pm.environment.get('userId') || 'demo-user-1' });",
+          "pm.request.headers.upsert({ key: 'x-user-name', value: pm.environment.get('userName') || 'Demo User' });",
+          "const mwsToken = pm.environment.get('mwsToken');",
+          "if (mwsToken) { pm.request.headers.upsert({ key: 'x-mws-token', value: mwsToken }); }"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Scenario - Core Wiki Flow",
+      "description": "Happy-path scenario for local backend without real MWS token.",
+      "item": [
+        {
+          "name": "01 Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "health"]
+            },
+            "description": "Checks that the HTTP API is running."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('health status is UP', () => pm.expect(json.status).to.eql('UP'));",
+                  "pm.test('timestamp exists', () => pm.expect(json.timestamp).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 Get Empty Wiki Tree",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/spaces/{{spaceId}}/wiki/tree",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "spaces", "{{spaceId}}", "wiki", "tree"]
+            },
+            "description": "Loads the nested folder/page tree for a wiki space."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('items is an array', () => pm.expect(json.items).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 Create Folder",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"spaceId\": \"{{spaceId}}\",\n  \"title\": \"Hackathon Notes {{$timestamp}}\",\n  \"icon\": \"folder\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/folders",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "folders"]
+            },
+            "description": "Creates a first-class folder node in the wiki tree."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201 or 200', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const json = pm.response.json();",
+                  "pm.test('folder id exists', () => pm.expect(json.folder.id).to.be.a('string'));",
+                  "pm.test('folder type is folder', () => pm.expect(json.folder.type).to.eql('folder'));",
+                  "pm.environment.set('folderId', json.folder.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 Create Page In Folder",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"spaceId\": \"{{spaceId}}\",\n  \"parentNodeId\": \"{{folderId}}\",\n  \"title\": \"WikiLive Page {{$timestamp}}\",\n  \"icon\": \"doc\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "pages"]
+            },
+            "description": "Creates a page under the previously created folder."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('page id exists', () => pm.expect(json.page.id).to.be.a('string'));",
+                  "pm.environment.set('pageId', json.page.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 Get Tree With Folder And Page",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/spaces/{{spaceId}}/wiki/tree",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "spaces", "{{spaceId}}", "wiki", "tree"]
+            },
+            "description": "Verifies that the created page is nested inside the folder."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const folderId = pm.environment.get('folderId');",
+                  "const pageId = pm.environment.get('pageId');",
+                  "const folder = json.items.find(item => item.id === folderId);",
+                  "pm.test('folder is present at tree root', () => pm.expect(folder).to.exist);",
+                  "pm.test('page is nested in folder', () => pm.expect(folder.children.some(child => child.id === pageId)).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 List Pages By Space",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pages?spaceId={{spaceId}}&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "pages"],
+              "query": [
+                {
+                  "key": "spaceId",
+                  "value": "{{spaceId}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Lists searchable pages inside the selected wiki space."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const pageId = pm.environment.get('pageId');",
+                  "pm.test('items is an array', () => pm.expect(json.items).to.be.an('array'));",
+                  "pm.test('created page is listed', () => pm.expect(json.items.some(item => item.id === pageId)).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07 Get Page With Document State",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pages/{{pageId}}?includeDocumentState=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "pages", "{{pageId}}"],
+              "query": [
+                {
+                  "key": "includeDocumentState",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Loads page metadata and the latest server-side Yjs snapshot."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('page id matches', () => pm.expect(json.page.id).to.eql(pm.environment.get('pageId')));",
+                  "pm.test('document state exists', () => pm.expect(json.page.documentState.value).to.be.a('string'));",
+                  "pm.environment.set('documentState', json.page.documentState.value);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08 Open Collaboration Session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client\": {\n    \"clientId\": \"postman-client-1\",\n    \"deviceId\": \"postman-device-1\",\n    \"editorVersion\": \"tiptap-postman-smoke\",\n    \"userDisplayName\": \"{{userName}}\"\n  },\n  \"localDraftAvailable\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pages/{{pageId}}/collab/session",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "pages", "{{pageId}}", "collab", "session"]
+            },
+            "description": "Bootstraps a Tiptap/Yjs collaboration session and returns websocket connection data."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201 or 200', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const json = pm.response.json();",
+                  "pm.test('session id exists', () => pm.expect(json.sessionId).to.be.a('string'));",
+                  "pm.test('websocket token exists', () => pm.expect(json.websocket.token).to.be.a('string'));",
+                  "pm.environment.set('collabSessionId', json.sessionId);",
+                  "pm.environment.set('collabToken', json.websocket.token);",
+                  "pm.environment.set('collabWebsocketUrl', json.websocket.url);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09 Create Checkpoint",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trigger\": \"manual\",\n  \"documentState\": {\n    \"encoding\": \"base64-yjs-update-v2\",\n    \"value\": \"{{documentState}}\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pages/{{pageId}}/checkpoints",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "pages", "{{pageId}}", "checkpoints"]
+            },
+            "description": "Stores a server checkpoint using the document state loaded earlier."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201 or 200', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const json = pm.response.json();",
+                  "pm.test('checkpoint id exists', () => pm.expect(json.checkpointId).to.be.a('string'));",
+                  "pm.environment.set('checkpointId', json.checkpointId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10 Get Backlinks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pages/{{pageId}}/backlinks",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "pages", "{{pageId}}", "backlinks"]
+            },
+            "description": "Reads backlinks for the current page. A fresh empty page should have no backlinks."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('items is an array', () => pm.expect(json.items).to.be.an('array'));",
+                  "pm.test('total is a number', () => pm.expect(json.total).to.be.a('number'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11 Get Outgoing Links",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/pages/{{pageId}}/outgoing-links",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "pages", "{{pageId}}", "outgoing-links"]
+            },
+            "description": "Reads outgoing page links materialized by document reindexing."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('items is an array', () => pm.expect(json.items).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12 Move Page To Root",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetParentId\": null,\n  \"position\": 0\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/nodes/{{pageId}}/move",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "nodes", "{{pageId}}", "move"]
+            },
+            "description": "Verifies nested structure support by moving a page from folder to tree root."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201 or 200', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const json = pm.response.json();",
+                  "pm.test('node id matches page id', () => pm.expect(json.node.id).to.eql(pm.environment.get('pageId')));",
+                  "pm.test('parentId is null', () => pm.expect(json.node.parentId).to.eql(null));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "MWS Tables BFF",
+      "description": "Requests that proxy and normalize MWS Tables API. Fill mwsToken and MWS IDs in the environment before running.",
+      "item": [
+        {
+          "name": "01 List MWS Spaces",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/mws/spaces",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "mws", "spaces"]
+            },
+            "description": "Lists MWS Tables spaces available to the passed MWS token."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('mwsToken')) {",
+                  "  console.warn('Skipping MWS request: mwsToken is empty');",
+                  "  postman.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('items is an array', () => pm.expect(json.items).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 List MWS Nodes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/mws/spaces/{{mwsSpaceId}}/nodes?includeChildren=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "mws", "spaces", "{{mwsSpaceId}}", "nodes"],
+              "query": [
+                {
+                  "key": "includeChildren",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Loads MWS space nodes for table picker UI."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('mwsToken') || !pm.environment.get('mwsSpaceId')) {",
+                  "  console.warn('Skipping MWS nodes: mwsToken or mwsSpaceId is empty');",
+                  "  postman.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('items is an array', () => pm.expect(json.items).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 List MWS Fields",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/mws/datasheets/{{mwsDatasheetId}}/fields",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "mws", "datasheets", "{{mwsDatasheetId}}", "fields"]
+            },
+            "description": "Loads datasheet schema for schema-aware table embed rendering."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('items is an array', () => pm.expect(json.items).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 List MWS Views",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/mws/datasheets/{{mwsDatasheetId}}/views",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "mws", "datasheets", "{{mwsDatasheetId}}", "views"]
+            },
+            "description": "Loads datasheet views so an embed can point to a meaningful table view."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('items is an array', () => pm.expect(json.items).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 List MWS Records",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/mws/datasheets/{{mwsDatasheetId}}/records?viewId={{mwsViewId}}&pageSize=10&pageNum=1&fieldKey=id&cellFormat=json",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "mws", "datasheets", "{{mwsDatasheetId}}", "records"],
+              "query": [
+                {
+                  "key": "viewId",
+                  "value": "{{mwsViewId}}"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                },
+                {
+                  "key": "pageNum",
+                  "value": "1"
+                },
+                {
+                  "key": "fieldKey",
+                  "value": "id"
+                },
+                {
+                  "key": "cellFormat",
+                  "value": "json"
+                }
+              ]
+            },
+            "description": "Loads records for live preview and scrollable table embed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('items is an array', () => pm.expect(json.items).to.be.an('array'));",
+                  "pm.test('pagination fields exist', () => { pm.expect(json.pageNum).to.be.a('number'); pm.expect(json.pageSize).to.be.a('number'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 Resolve Table Embed",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"spaceId\": \"{{mwsSpaceId}}\",\n  \"nodeId\": \"{{mwsNodeId}}\",\n  \"datasheetId\": \"{{mwsDatasheetId}}\",\n  \"viewId\": \"{{mwsViewId}}\",\n  \"displayMode\": \"table\",\n  \"pageSize\": 10,\n  \"allowInlineEdit\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/mws/table-embeds/resolve",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "mws", "table-embeds", "resolve"]
+            },
+            "description": "Aggregated BFF endpoint used by Tiptap mwsTableEmbed after user selects an existing MWS Tables entity."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('embed exists', () => pm.expect(json.embed).to.be.an('object'));",
+                  "pm.test('preview records array exists', () => pm.expect(json.embed.preview.items).to.be.an('array'));",
+                  "pm.test('inline capability exists', () => pm.expect(json.embed.capabilities.canInlineEdit).to.be.a('boolean'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    }
+  ]
+}
