@@ -23,6 +23,9 @@ import {
   Image,
   BrushCleaning,
   ListChecks,
+  TextAlignEnd,
+  TextAlignStart,
+  TextAlignCenter,
 } from 'lucide-react';
 
 const redFilter = 'brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(2665%) hue-rotate(346deg) brightness(101%) contrast(97%)';
@@ -206,7 +209,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           pressed={state.isBold}
           disabled={!state.canBold}
           noBorder={false}
-          size="sm"
           isFirst={true}  
           isLast={false}
           isInGroup={true}
@@ -225,7 +227,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           pressed={state.isItalic}
           disabled={!state.canItalic}
           noBorder={false}
-          size="sm"
           isFirst={false}
           isLast={false}
           isInGroup={true}
@@ -244,7 +245,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           pressed={state.isStrike}
           disabled={!state.canStrike}
           noBorder={false}
-          size="sm"
           isFirst={false}
           isLast={false}
           isInGroup={true}
@@ -263,7 +263,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           pressed={state.isUnderline}
           disabled={!state.canUnderline}
           noBorder={false}
-          size="sm"
           isFirst={false}
           isLast={true}
           isInGroup={true}
@@ -343,7 +342,11 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
         <ToolbarButton
-          label="L"
+          icon={
+            <TextAlignStart className="h-4 w-4" 
+              style={{ color: 'rgba(80, 87, 98, 1)' }} 
+            />
+          }
           onClick={() => alignSelection('left')}
           pressed={state.isAlignLeft}
           isFirst={true}
@@ -351,7 +354,11 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           isInGroup={true}
         />
         <ToolbarButton
-          label="C"
+          icon={
+            <TextAlignCenter className="h-4 w-4" 
+              style={{ color: 'rgba(80, 87, 98, 1)' }} 
+            />
+          }
           onClick={() => alignSelection('center')}
           pressed={state.isAlignCenter}
           isFirst={false}
@@ -359,7 +366,11 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           isInGroup={true}
         />
         <ToolbarButton
-          label="R"
+          icon={
+            <TextAlignEnd className="h-4 w-4" 
+              style={{ color: 'rgba(80, 87, 98, 1)' }} 
+            />
+          }
           onClick={() => alignSelection('right')}
           pressed={state.isAlignRight}
           isFirst={false}
