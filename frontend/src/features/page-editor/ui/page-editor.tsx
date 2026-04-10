@@ -24,7 +24,7 @@ export function PageEditor() {
           onOpenImageModal={controller.openImageModal}
         />
 
-        <div className="relative flex-1 px-2 pb-8 pt-3 sm:px-6 sm:pb-10 sm:pt-5 mx-auto">
+        <div className="relative flex-1 px-2 pb-8 pt-3 sm:px-6 sm:pb-10 sm:pt-5 mx-[20%]">
           <EditorContent editor={controller.editor} />
           <SlashMenu
             isOpen={controller.slashState.isOpen}
