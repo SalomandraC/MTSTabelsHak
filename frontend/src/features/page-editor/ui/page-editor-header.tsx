@@ -36,9 +36,21 @@ export function PageEditorHeader({ title, description, onSave }: PageEditorHeade
       setLocalDescription(description);
     }
   };
+  
+  const fontFamilyStyle = {
+    fontFamily: "'MTSWide', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  };
+
+  const boldStyle = {
+    ...fontFamilyStyle,
+    fontWeight: 'bold' as const,
+  };
 
   return (
-    <header className="flex items-start gap-3 border-b border-editor-border-subtle bg-editor-bg-page px-3 py-3 sm:px-4 sm:py-4">
+    <header 
+      className="flex items-start gap-3 border-b border-editor-border-subtle bg-editor-bg-page px-3 py-3 sm:px-4 sm:py-4"
+      style={fontFamilyStyle}
+    >
       <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-[0.65rem] font-semibold text-editor-brand mt-0.5">
         <img 
           src={DOC} 
@@ -60,10 +72,12 @@ export function PageEditorHeader({ title, description, onSave }: PageEditorHeade
                 className="w-full font-wide text-sm leading-5 text-editor-text-primary bg-editor-bg-input border border-editor-border-control rounded-md px-2 py-1 focus:outline-none focus:border-editor-brand"
                 placeholder="Название страницы"
                 autoFocus
+                style={fontFamilyStyle}
               />
             ) : (
               <h1
                 className="truncate font-wide text-sm leading-5 text-editor-text-primary cursor-text hover:bg-editor-bg-control/50 rounded px-1 -mx-1 transition-colors"
+                style={boldStyle}
                 onDoubleClick={() => {
                   setLocalTitle(title);
                   setEditingField('title');
@@ -80,14 +94,14 @@ export function PageEditorHeader({ title, description, onSave }: PageEditorHeade
                 onBlur={handleSave}
                 onKeyDown={handleKeyDown}
                 className="mt-1 w-full text-sm leading-5 bg-editor-bg-input border border-editor-border-control rounded-md px-2 py-1 focus:outline-none focus:border-editor-brand"
-                style={{ color: 'rgba(150, 159, 168, 1)' }}
+                style={{ ...fontFamilyStyle, color: 'rgba(150, 159, 168, 1)' }}
                 placeholder="Добавить описание"
                 autoFocus
               />
             ) : (
               <p
                 className="truncate text-sm leading-5 cursor-text hover:bg-editor-bg-control/50 rounded px-1 -mx-1 transition-colors"
-                style={{ color: 'rgba(150, 159, 168, 1)' }}
+                style={{ ...fontFamilyStyle, color: 'rgba(150, 159, 168, 1)' }}
                 onDoubleClick={() => {
                   setLocalDescription(description);
                   setEditingField('description');

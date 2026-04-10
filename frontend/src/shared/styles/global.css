@@ -299,18 +299,17 @@
   }
 }
 
-.ProseMirror {
+.PageEditorHeader,
+.PageEditorHeader *,
+.ProseMirror,
+.ProseMirror * {
   font-family: 'MTSWide', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
+.PageEditorHeader strong,
+.PageEditorHeader b,
 .ProseMirror strong,
 .ProseMirror b {
   font-family: 'MTSWide', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-weight: bold;
-}
-
-.ProseMirror p,
-.ProseMirror span,
-.ProseMirror div {
-  font-family: 'MTSWide', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
