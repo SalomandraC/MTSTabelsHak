@@ -1,6 +1,22 @@
 @import 'tailwindcss';
 @import 'highlight.js/styles/atom-one-dark.css';
 
+@font-face {
+  font-family: 'MTSWide';
+  src: url('/fonts/MTSWide-Bold-XQ34CV62.ttf') format('truetype');
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'MTSWide';
+  src: url('/fonts/MTSWide-Medium-MH5A5AEJ.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 @layer base {
   :root {
     color-scheme: light;
@@ -291,4 +307,19 @@
     background: var(--color-modal-secondary-bg);
     color: var(--color-modal-secondary-text);
   }
+}
+
+.PageEditorHeader,
+.PageEditorHeader *,
+.ProseMirror,
+.ProseMirror * {
+  font-family: 'MTSWide', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.PageEditorHeader strong,
+.PageEditorHeader b,
+.ProseMirror strong,
+.ProseMirror b {
+  font-family: 'MTSWide', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: bold;
 }
