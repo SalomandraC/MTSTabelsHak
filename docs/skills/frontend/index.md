@@ -12,6 +12,7 @@ Canonical frontend skills for this project.
 - `frontend/tailwind-consistency` -> `tailwind-consistency.skill.md`
 - `frontend/responsive-a11y` -> `responsive-a11y.skill.md`
 - `frontend/quality-gate` -> `quality-gate.skill.md`
+- `frontend/tiptap-extension` -> `tiptap-extension.skill.md`
 
 ## Skill Selection Guide
 

@@ -20,6 +20,7 @@
 - `docs/skills/frontend/slash-menu-commands.skill.md`
 - `docs/skills/frontend/page-metadata.skill.md`
 - `docs/skills/frontend/autosave-sync.skill.md`
+- `docs/skills/frontend/tiptap-extension.skill.md`
 - `docs/skills/frontend/tailwind-consistency.skill.md`
 - `docs/skills/frontend/responsive-a11y.skill.md`
 - `docs/skills/frontend/quality-gate.skill.md`

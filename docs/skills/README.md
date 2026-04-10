@@ -72,5 +72,14 @@ The frontend skill cards currently present in the repository are:
 - `docs/skills/frontend/tailwind-consistency.skill.md`
 - `docs/skills/frontend/responsive-a11y.skill.md`
 - `docs/skills/frontend/quality-gate.skill.md`
+ - `docs/skills/frontend/tiptap-extension.skill.md`
+ - `docs/skills/frontend/architecture-guard.skill.md`
+ - `docs/skills/frontend/page-editor-tiptap.skill.md`
+ - `docs/skills/frontend/slash-menu-commands.skill.md`
+ - `docs/skills/frontend/page-metadata.skill.md`
+ - `docs/skills/frontend/autosave-sync.skill.md`
+ - `docs/skills/frontend/tailwind-consistency.skill.md`
+ - `docs/skills/frontend/responsive-a11y.skill.md`
+ - `docs/skills/frontend/quality-gate.skill.md`
 
 If you add or remove skill files, update `docs/skills/frontend/index.md` to keep the index in sync.
