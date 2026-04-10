@@ -3,6 +3,7 @@ import { useEditorState } from '@tiptap/react';
 import { Code2, List, ListOrdered, ListChecks } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { handleListAction } from '../model/list-actions';
 import { menuBarStateSelector } from '../model/menu-state';
 
 import B from '../../../app/images/B.svg';
@@ -87,8 +88,8 @@ export function FloatingToolbar({ editor, onOpenLinkModal }: FloatingToolbarProp
   const updatePosition = useCallback(() => {
     if (!editor) return;
 
-    const { state } = editor;
-    const { from, to, empty } = state.selection;
+    const editorState = editor.state;
+    const { from, to, empty } = editorState.selection;
 
     if (empty) {
       setVisible(false);
@@ -97,7 +98,7 @@ export function FloatingToolbar({ editor, onOpenLinkModal }: FloatingToolbarProp
 
     // Проверяем что есть текстовое содержимое в выделении
     let hasTextContent = false;
-    state.doc.nodesBetween(from, to, (node) => {
+    editorState.doc.nodesBetween(from, to, (node) => {
       if (node.isText) {
         hasTextContent = true;
       }
@@ -121,32 +122,19 @@ export function FloatingToolbar({ editor, onOpenLinkModal }: FloatingToolbarProp
     setVisible(true);
   }, [editor]);
 
-  // Слушаем события выделения
+  // Подписываемся на транзакции редактора — они срабатывают ПОСЛЕ
+  // обновления внутреннего состояния, поэтому selection всегда актуален
   useEffect(() => {
     if (!editor) return;
 
-    const { view } = editor;
+    // Сразу проверяем текущее состояние
+    updatePosition();
 
-    // Обновляем позицию при каждом обновлении редактора
-    const timer = setTimeout(updatePosition, 0);
-
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [editor, updatePosition]);
-
-  // Добавляем/убираем обработчик selectionchange
-  useEffect(() => {
-    if (!editor) return;
-
-    const handleSelectionChange = () => {
-      updatePosition();
-    };
-
-    document.addEventListener('selectionchange', handleSelectionChange);
+    // Слушаем транзакции (selection, content, focus — всё)
+    editor.on('transaction', updatePosition);
 
     return () => {
-      document.removeEventListener('selectionchange', handleSelectionChange);
+      editor.off('transaction', updatePosition);
     };
   }, [editor, updatePosition]);
 
@@ -299,7 +287,7 @@ export function FloatingToolbar({ editor, onOpenLinkModal }: FloatingToolbarProp
 
       <ToolbarButton
         icon={<List className="h-3.5 w-3.5" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
-        onClick={() => editor.chain().focus().toggleBulletList().run()}
+        onClick={() => handleListAction(editor, 'bulletList')}
         pressed={state.isBulletList}
         disabled={!state.canBulletList}
         isFirst={true}
@@ -308,7 +296,7 @@ export function FloatingToolbar({ editor, onOpenLinkModal }: FloatingToolbarProp
       />
       <ToolbarButton
         icon={<ListOrdered className="h-3.5 w-3.5" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
-        onClick={() => editor.chain().focus().toggleOrderedList().run()}
+        onClick={() => handleListAction(editor, 'orderedList')}
         pressed={state.isOrderedList}
         disabled={!state.canOrderedList}
         isFirst={false}
@@ -317,7 +305,7 @@ export function FloatingToolbar({ editor, onOpenLinkModal }: FloatingToolbarProp
       />
       <ToolbarButton
         icon={<ListChecks className="h-3.5 w-3.5" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
-        onClick={() => editor.chain().focus().toggleTaskList().run()}
+        onClick={() => handleListAction(editor, 'taskList')}
         pressed={state.isTaskList}
         disabled={!state.canTaskList}
         isFirst={false}
