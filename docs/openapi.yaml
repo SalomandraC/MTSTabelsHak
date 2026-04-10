@@ -1,0 +1,1778 @@
+openapi: 3.1.0
+info:
+  title: WikiLive Backend API
+  version: 1.0.0
+  summary: API модуля WikiLive для совместного редактирования страниц и интеграции с MWS Tables
+  description: |
+    API описывает backend-контракт для модуля WikiLive.
+
+    Основные задачи backend:
+    - хранение и выдача wiki-страниц
+    - индексация ссылок между страницами и обратных ссылок
+    - bootstrap совместного редактирования через Tiptap + CRDT
+    - проксирование и агрегация запросов к MWS Tables API
+    - работа с live-embed таблицами внутри текста
+
+    Архитектурная модель:
+    - HTTP используется для CRUD-операций, загрузки страницы, backlinks, поиска страниц,
+      а также для BFF-интеграции с MWS Tables
+    - WebSocket используется для real-time collaboration документа:
+      CRDT updates, awareness, presence и синхронизации редактора Tiptap
+    - таблицы MWS Tables остаются источником истины по табличным данным
+    - страницы WikiLive остаются источником истины по тексту, ссылкам, backlinks и CRDT-состоянию
+
+    Важно:
+    - контент документа синхронизируется через WebSocket-канал, а не через PATCH body документа
+    - embed таблицы внутри страницы хранит только ссылку на сущность MWS Tables и параметры отображения
+    - локальный autosave на фронте реализуется в browser storage, а backend хранит серверные checkpoints
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://wikilive.internal.example.com
+    description: Example production server
+
+tags:
+  - name: Health
+    description: Технические ручки для health-check и readiness
+  - name: Pages
+    description: Работа с wiki-страницами и их метаданными
+  - name: Links
+    description: Навигация по связям между страницами и обратным ссылкам
+  - name: Collaboration
+    description: Bootstrap и контроль серверной синхронизации CRDT-документа
+  - name: MWS Spaces
+    description: Работа с пространствами MWS Tables
+  - name: MWS Nodes
+    description: Поиск и просмотр сущностей пространства MWS Tables
+  - name: MWS Datasheets
+    description: Создание и конфигурирование таблиц MWS Tables
+  - name: MWS Fields
+    description: Работа со схемой таблиц MWS Tables
+  - name: MWS Views
+    description: Работа с представлениями таблиц MWS Tables
+  - name: MWS Records
+    description: Чтение и изменение записей MWS Tables
+  - name: MWS Embeds
+    description: Агрегированные ручки для вставки таблиц в Tiptap
+  - name: MWS Attachments
+    description: Работа с вложениями таблиц MWS Tables
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/v1/health:
+    get:
+      tags: [Health]
+      summary: Проверка доступности backend-сервиса
+      description: |
+        Используется frontend, reverse proxy, Kubernetes/Docker health checks и демо-окружением,
+        чтобы быстро понять, жив ли backend WikiLive.
+      operationId: getHealth
+      responses:
+        '200':
+          description: Backend работает штатно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/v1/pages:
+    get:
+      tags: [Pages]
+      summary: Получить список страниц или выполнить поиск по страницам
+      description: |
+        Возвращает список страниц для sidebar, picker ссылок и slash-menu при вставке page-link.
+        Если передан параметр `query`, backend выполняет поиск по заголовкам и индексу страниц.
+      operationId: listPages
+      parameters:
+        - name: query
+          in: query
+          required: false
+          description: Строка поиска по заголовкам, slug и индексируемому plain-text preview
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          required: false
+          description: Курсор следующей страницы результатов
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Максимальное количество результатов
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Список страниц получен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Pages]
+      summary: Создать новую wiki-страницу
+      description: |
+        Создает страницу и базовые метаданные.
+        Обычно вызывается из:
+        - кнопки "New page"
+        - slash-menu команды создания связанной страницы
+        - сценариев "Create linked page"
+      operationId: createPage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePageRequest'
+      responses:
+        '201':
+          description: Страница создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageCreatedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/pages/{pageId}:
+    get:
+      tags: [Pages]
+      summary: Получить страницу для открытия в редакторе
+      description: |
+        Возвращает метаданные страницы, ссылки, состояние документа и информацию,
+        необходимую для первичной инициализации Tiptap.
+
+        Обычно frontend вызывает эту ручку перед открытием документа.
+        Если параметр `includeDocumentState=true`, backend также возвращает последний серверный
+        compact snapshot CRDT-документа.
+      operationId: getPage
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+        - name: includeDocumentState
+          in: query
+          required: false
+          description: Нужно ли включить base64-представление последнего серверного snapshot документа
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Страница найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Pages]
+      summary: Обновить метаданные страницы
+      description: |
+        Обновляет только метаданные страницы:
+        - заголовок
+        - иконку
+        - статус публикации
+        - pinned/favorite флаги
+
+        Контент документа через эту ручку не изменяется.
+        Контент синхронизируется через WebSocket CRDT-канал.
+      operationId: updatePage
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePageRequest'
+      responses:
+        '200':
+          description: Метаданные страницы обновлены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Pages]
+      summary: Архивировать или удалить страницу
+      description: |
+        Используется для мягкого удаления страницы из WikiLive.
+        В базовой реализации рекомендуется soft-delete, чтобы не ломать backlinks и историю.
+      operationId: deletePage
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+      responses:
+        '204':
+          description: Страница удалена или переведена в архив
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/pages/{pageId}/backlinks:
+    get:
+      tags: [Links]
+      summary: Получить обратные ссылки на страницу
+      description: |
+        Возвращает список страниц, которые ссылаются на текущую страницу.
+        Это обязательная функциональность кейса и используется для:
+        - блока Backlinks в sidebar
+        - нижнего блока "Linked references"
+        - быстрого перехода между связанными знаниями
+      operationId: getPageBacklinks
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+      responses:
+        '200':
+          description: Backlinks получены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BacklinksResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/pages/{pageId}/outgoing-links:
+    get:
+      tags: [Links]
+      summary: Получить исходящие ссылки страницы
+      description: |
+        Возвращает все page-links, которые были распознаны в текущем документе.
+        Полезно для sidebar, инспектора связей и дебага индексации ссылок.
+      operationId: getOutgoingLinks
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+      responses:
+        '200':
+          description: Исходящие ссылки получены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutgoingLinksResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/pages/{pageId}/collab/session:
+    post:
+      tags: [Collaboration]
+      summary: Создать или возобновить сессию совместного редактирования
+      description: |
+        Bootstrap-ручка для Tiptap collaboration.
+
+        Используется перед подключением к WebSocket и возвращает:
+        - идентификатор collaboration session
+        - временный websocket token
+        - URL канала совместного редактирования
+        - последний серверный snapshot документа
+        - информацию о серверной версии и checkpoint
+
+        Именно эту ручку frontend должен вызывать при открытии редактора.
+      operationId: openCollabSession
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenCollabSessionRequest'
+      responses:
+        '200':
+          description: Сессия редактирования создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenCollabSessionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/pages/{pageId}/checkpoints:
+    post:
+      tags: [Collaboration]
+      summary: Сохранить server checkpoint документа
+      description: |
+        Сохраняет compact snapshot документа после idle autosave, перед закрытием вкладки
+        или при ручном действии "Save checkpoint".
+
+        Ручка не заменяет real-time collaboration, а дополняет его:
+        - ускоряет повторное открытие страницы
+        - дает серверную точку восстановления
+        - помогает после сетевых сбоев
+      operationId: createCheckpoint
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCheckpointRequest'
+      responses:
+        '201':
+          description: Checkpoint сохранен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckpointResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/mws/spaces:
+    get:
+      tags: [MWS Spaces]
+      summary: Получить пространства MWS Tables, доступные пользователю
+      description: |
+        Возвращает список пространств MWS Tables, в которых текущий пользователь имеет доступ.
+
+        Используется в:
+        - table picker
+        - slash-menu `/table`
+        - сценариях выбора контекста для вставки существующей таблицы
+      operationId: listMwsSpaces
+      responses:
+        '200':
+          description: Список пространств получен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MwsSpaceListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /api/v1/mws/spaces/{spaceId}/nodes:
+    get:
+      tags: [MWS Nodes]
+      summary: Получить ноды пространства MWS Tables
+      description: |
+        Возвращает дерево или плоский список сущностей пространства MWS Tables.
+        Используется как источник данных для picker-а существующих таблиц и других объектов.
+
+        Если передан `type`, backend фильтрует ноды по типу и возвращает только релевантные сущности.
+      operationId: listMwsNodes
+      parameters:
+        - $ref: '#/components/parameters/SpaceId'
+        - name: type
+          in: query
+          required: false
+          description: Тип искомой ноды в терминах MWS Tables
+          schema:
+            type: string
+        - name: includeChildren
+          in: query
+          required: false
+          description: Нужно ли возвращать вложенные children для tree-view picker-а
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Ноды получены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MwsNodeListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /api/v1/mws/nodes/{nodeId}:
+    get:
+      tags: [MWS Nodes]
+      summary: Получить детальную информацию о ноде MWS Tables
+      description: |
+        Возвращает метаданные конкретной ноды пространства.
+        Для таблиц может использоваться при финальном подтверждении embed,
+        чтобы получить название, тип, права доступа и дополнительную навигационную информацию.
+      operationId: getMwsNode
+      parameters:
+        - $ref: '#/components/parameters/NodeId'
+      responses:
+        '200':
+          description: Нода получена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MwsNodeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /api/v1/mws/spaces/{spaceId}/datasheets:
+    post:
+      tags: [MWS Datasheets]
+      summary: Создать новую таблицу MWS Tables
+      description: |
+        Создает datasheet в выбранном пространстве MWS Tables.
+        Используется в продвинутом сценарии `/table new`, когда пользователь хочет создать таблицу,
+        не покидая контекста wiki-страницы.
+      operationId: createMwsDatasheet
+      parameters:
+        - $ref: '#/components/parameters/SpaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMwsDatasheetRequest'
+      responses:
+        '201':
+          description: Таблица создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateMwsDatasheetResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /api/v1/mws/datasheets/{datasheetId}/fields:
+    get:
+      tags: [MWS Fields]
+      summary: Получить поля таблицы MWS Tables
+      description: |
+        Возвращает схему таблицы.
+        Используется для:
+        - рендера live embed
+        - выбора колонок в настройках embed
+        - отображения типов полей и сложных значений
+      operationId: listMwsFields
+      parameters:
+        - $ref: '#/components/parameters/DatasheetId'
+        - name: viewId
+          in: query
+          required: false
+          description: Если указан, поля возвращаются в порядке заданного представления
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Поля получены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MwsFieldListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+    post:
+      tags: [MWS Fields]
+      summary: Создать поле в таблице MWS Tables
+      description: |
+        Позволяет из WikiLive расширять схему существующей таблицы.
+        Используется в продвинутых сценариях конфигурации embed и операционного редактирования таблицы.
+      operationId: createMwsField
+      parameters:
+        - $ref: '#/components/parameters/SpaceIdQueryOrHeader'
+        - $ref: '#/components/parameters/DatasheetId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMwsFieldRequest'
+      responses:
+        '201':
+          description: Поле создано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateMwsFieldResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /api/v1/mws/datasheets/{datasheetId}/views:
+    get:
+      tags: [MWS Views]
+      summary: Получить представления таблицы MWS Tables
+      description: |
+        Возвращает все представления datasheet.
+        Используется при вставке live embed, чтобы пользователь мог выбрать:
+        - Grid
+        - Kanban
+        - Gallery
+        - Calendar
+        - Architecture
+      operationId: listMwsViews
+      parameters:
+        - $ref: '#/components/parameters/DatasheetId'
+      responses:
+        '200':
+          description: Представления получены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MwsViewListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+    post:
+      tags: [MWS Views]
+      summary: Создать новое представление таблицы
+      description: |
+        Создает новое представление datasheet в MWS Tables.
+        Используется, когда нужно быстро сделать специальный view для отображения внутри WikiLive.
+      operationId: createMwsView
+      parameters:
+        - $ref: '#/components/parameters/SpaceIdQueryOrHeader'
+        - $ref: '#/components/parameters/DatasheetId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMwsViewRequest'
+      responses:
+        '201':
+          description: Представление создано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateMwsViewResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /api/v1/mws/datasheets/{datasheetId}/records:
+    get:
+      tags: [MWS Records]
+      summary: Получить записи таблицы MWS Tables
+      description: |
+        Основная ручка для live embed таблицы.
+        Возвращает записи datasheet с учетом view, пагинации, фильтрации и выбора полей.
+
+        Используется:
+        - для отображения встроенной таблицы внутри wiki-страницы
+        - для режима preview в slash-menu picker
+        - для lazy loading и прокрутки внутри embed-компонента
+      operationId: listMwsRecords
+      parameters:
+        - $ref: '#/components/parameters/DatasheetId'
+        - name: viewId
+          in: query
+          required: false
+          description: Идентификатор view для чтения отфильтрованного и визуально согласованного набора записей
+          schema:
+            type: string
+        - name: pageSize
+          in: query
+          required: false
+          description: Размер страницы для прокрутки или пагинации внутри embed
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 1000
+        - name: pageNum
+          in: query
+          required: false
+          description: Номер страницы для серверной пагинации
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: fields
+          in: query
+          required: false
+          description: Список fieldId для ограничения набора колонок в embed
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+        - name: filterByFormula
+          in: query
+          required: false
+          description: Формульный фильтр MWS Tables для построения live-срезов таблицы
+          schema:
+            type: string
+        - name: cellFormat
+          in: query
+          required: false
+          description: Формат значения ячейки
+          schema:
+            type: string
+            enum: [json, string]
+            default: json
+        - name: fieldKey
+          in: query
+          required: false
+          description: Способ идентификации полей в ответе. Для интеграции рекомендуется id
+          schema:
+            type: string
+            enum: [id, name]
+            default: id
+      responses:
+        '200':
+          description: Записи получены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MwsRecordListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+    post:
+      tags: [MWS Records]
+      summary: Создать записи в таблице MWS Tables
+      description: |
+        Используется для inline-операций из embed-компонента:
+        - добавить новую строку
+        - добавить несколько строк из шаблона
+        - вставить результаты работы AI или slash-action
+      operationId: createMwsRecords
+      parameters:
+        - $ref: '#/components/parameters/DatasheetId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMwsRecordsRequest'
+      responses:
+        '201':
+          description: Записи созданы
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MwsRecordMutationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+    patch:
+      tags: [MWS Records]
+      summary: Обновить записи таблицы MWS Tables
+      description: |
+        Используется для редактирования строк прямо из live embed.
+        Backend проксирует изменения в MWS Tables и возвращает обновленные записи в нормализованном формате.
+      operationId: updateMwsRecords
+      parameters:
+        - $ref: '#/components/parameters/DatasheetId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMwsRecordsRequest'
+      responses:
+        '200':
+          description: Записи обновлены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MwsRecordMutationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+    delete:
+      tags: [MWS Records]
+      summary: Удалить записи таблицы MWS Tables
+      description: |
+        Используется для удаления строк из live embed.
+        Обычно вызывается из inline table toolbar или action menu строки.
+      operationId: deleteMwsRecords
+      parameters:
+        - $ref: '#/components/parameters/DatasheetId'
+        - name: recordIds
+          in: query
+          required: true
+          description: Список идентификаторов записей для удаления
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+      responses:
+        '200':
+          description: Записи удалены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteMwsRecordsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /api/v1/mws/table-embeds/resolve:
+    post:
+      tags: [MWS Embeds]
+      summary: Разрешить конфигурацию live embed таблицы
+      description: |
+        Агрегированная BFF-ручка для Tiptap embed.
+        Вместо серии отдельных запросов frontend может отправить параметры целевого embed,
+        а backend вернет уже собранный результат:
+        - node info
+        - datasheet info
+        - доступные views
+        - поля
+        - preview records
+        - права на inline editing
+
+        Это основная ручка, которую следует использовать после выбора таблицы пользователем.
+      operationId: resolveTableEmbed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveTableEmbedRequest'
+      responses:
+        '200':
+          description: Конфигурация embed разрешена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolveTableEmbedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /api/v1/mws/datasheets/{datasheetId}/attachments:
+    post:
+      tags: [MWS Attachments]
+      summary: Загрузить вложение в таблицу MWS Tables
+      description: |
+        Позволяет прикрепить файл к таблице MWS Tables.
+        Может использоваться:
+        - из интерфейса live embed
+        - в сценариях, где строка таблицы редактируется прямо из wiki-страницы
+      operationId: uploadMwsAttachment
+      parameters:
+        - $ref: '#/components/parameters/DatasheetId'
+        - name: recordId
+          in: query
+          required: false
+          description: Идентификатор записи, если файл нужно загрузить прямо в ячейку записи
+          schema:
+            type: string
+        - name: fieldId
+          in: query
+          required: false
+          description: Идентификатор поля типа Attachment
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Вложение загружено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MwsAttachmentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    PageId:
+      name: pageId
+      in: path
+      required: true
+      description: Идентификатор wiki-страницы
+      schema:
+        type: string
+        format: uuid
+    SpaceId:
+      name: spaceId
+      in: path
+      required: true
+      description: Идентификатор пространства MWS Tables
+      schema:
+        type: string
+    SpaceIdQueryOrHeader:
+      name: spaceId
+      in: query
+      required: true
+      description: Идентификатор пространства MWS Tables, необходимый для upstream-операций создания
+      schema:
+        type: string
+    NodeId:
+      name: nodeId
+      in: path
+      required: true
+      description: Идентификатор ноды MWS Tables
+      schema:
+        type: string
+    DatasheetId:
+      name: datasheetId
+      in: path
+      required: true
+      description: Идентификатор таблицы MWS Tables
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Запрос не прошел валидацию
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Пользователь не авторизован или токен недействителен
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Запрашиваемая сущность не найдена
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    UpstreamError:
+      description: Ошибка при обращении к MWS Tables API
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UpstreamErrorResponse'
+
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, timestamp]
+      properties:
+        status:
+          type: string
+          example: UP
+        timestamp:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          example: Request body is invalid
+        details:
+          type: object
+          additionalProperties: true
+
+    UpstreamErrorResponse:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            upstream:
+              type: string
+              example: MWS_TABLES
+            upstreamStatus:
+              type: integer
+              example: 403
+
+    PageSummary:
+      type: object
+      required: [id, title, createdAt, updatedAt, backlinksCount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        icon:
+          type: string
+          nullable: true
+        excerpt:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        backlinksCount:
+          type: integer
+          minimum: 0
+
+    PageDocumentState:
+      type: object
+      description: Серверное представление compact CRDT snapshot документа
+      properties:
+        encoding:
+          type: string
+          enum: [base64-yjs-update-v2]
+        value:
+          type: string
+          description: Base64-строка Yjs update/snapshot
+        serverVersion:
+          type: integer
+          minimum: 0
+        checkpointId:
+          type: string
+          format: uuid
+          nullable: true
+        persistedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    PageEmbed:
+      type: object
+      required: [id, type]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          example: mwsTableEmbed
+        title:
+          type: string
+          nullable: true
+        datasheetId:
+          type: string
+          nullable: true
+        viewId:
+          type: string
+          nullable: true
+        displayMode:
+          type: string
+          enum: [table, board, gallery, calendar, architecture]
+          nullable: true
+
+    PageResponse:
+      type: object
+      required: [page]
+      properties:
+        page:
+          type: object
+          required: [id, title, createdAt, updatedAt]
+          properties:
+            id:
+              type: string
+              format: uuid
+            title:
+              type: string
+            icon:
+              type: string
+              nullable: true
+            isArchived:
+              type: boolean
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+            plainTextPreview:
+              type: string
+              nullable: true
+            outgoingLinksCount:
+              type: integer
+            backlinksCount:
+              type: integer
+            embeds:
+              type: array
+              items:
+                $ref: '#/components/schemas/PageEmbed'
+            documentState:
+              $ref: '#/components/schemas/PageDocumentState'
+
+    PageListResponse:
+      type: object
+      required: [items, pageInfo]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PageSummary'
+        pageInfo:
+          $ref: '#/components/schemas/PageInfo'
+
+    PageInfo:
+      type: object
+      required: [hasNextPage]
+      properties:
+        nextCursor:
+          type: string
+          nullable: true
+        hasNextPage:
+          type: boolean
+
+    CreatePageRequest:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          maxLength: 255
+        icon:
+          type: string
+          nullable: true
+        parentPageId:
+          type: string
+          format: uuid
+          nullable: true
+        initialContent:
+          type: object
+          description: Необязательный начальный snapshot документа
+          nullable: true
+          properties:
+            encoding:
+              type: string
+              enum: [base64-yjs-update-v2]
+            value:
+              type: string
+
+    PageCreatedResponse:
+      type: object
+      required: [page]
+      properties:
+        page:
+          $ref: '#/components/schemas/PageSummary'
+
+    UpdatePageRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 255
+        icon:
+          type: string
+          nullable: true
+        isArchived:
+          type: boolean
+
+    Backlink:
+      type: object
+      required: [pageId, title]
+      properties:
+        pageId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        excerpt:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+
+    BacklinksResponse:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Backlink'
+        total:
+          type: integer
+
+    OutgoingLink:
+      type: object
+      required: [targetPageId, targetTitle]
+      properties:
+        targetPageId:
+          type: string
+          format: uuid
+        targetTitle:
+          type: string
+        mentionCount:
+          type: integer
+          minimum: 1
+
+    OutgoingLinksResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OutgoingLink'
+
+    OpenCollabSessionRequest:
+      type: object
+      required: [client]
+      properties:
+        client:
+          type: object
+          required: [clientId, deviceId, editorVersion]
+          properties:
+            clientId:
+              type: string
+            deviceId:
+              type: string
+            editorVersion:
+              type: string
+            userDisplayName:
+              type: string
+              nullable: true
+        lastCheckpointId:
+          type: string
+          format: uuid
+          nullable: true
+        knownServerVersion:
+          type: integer
+          nullable: true
+        localDraftAvailable:
+          type: boolean
+          default: false
+
+    OpenCollabSessionResponse:
+      type: object
+      required: [sessionId, websocket]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        websocket:
+          type: object
+          required: [url, token, heartbeatIntervalSec]
+          properties:
+            url:
+              type: string
+              example: wss://wikilive.internal.example.com/ws/collaboration/pages/7f1f5f4d
+            token:
+              type: string
+            heartbeatIntervalSec:
+              type: integer
+              example: 30
+        documentState:
+          $ref: '#/components/schemas/PageDocumentState'
+        awareness:
+          type: object
+          properties:
+            activeUsers:
+              type: array
+              items:
+                $ref: '#/components/schemas/PresenceUser'
+
+    PresenceUser:
+      type: object
+      required: [userId, displayName, color]
+      properties:
+        userId:
+          type: string
+        displayName:
+          type: string
+        color:
+          type: string
+          example: '#4F46E5'
+        avatarUrl:
+          type: string
+          nullable: true
+
+    CreateCheckpointRequest:
+      type: object
+      required: [documentState]
+      properties:
+        trigger:
+          type: string
+          enum: [editor-idle, before-unload, manual, reconnect]
+        documentState:
+          $ref: '#/components/schemas/PageDocumentState'
+        localDraftVersion:
+          type: string
+          nullable: true
+
+    CheckpointResponse:
+      type: object
+      required: [checkpointId, persistedAt, serverVersion]
+      properties:
+        checkpointId:
+          type: string
+          format: uuid
+        persistedAt:
+          type: string
+          format: date-time
+        serverVersion:
+          type: integer
+
+    MwsSpace:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        isAdmin:
+          type: boolean
+          nullable: true
+
+    MwsSpaceListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MwsSpace'
+
+    MwsNode:
+      type: object
+      required: [id, name, type]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        icon:
+          type: string
+          nullable: true
+        isFav:
+          type: boolean
+          nullable: true
+        permission:
+          type: integer
+          nullable: true
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/MwsNode'
+
+    MwsNodeListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MwsNode'
+
+    MwsNodeResponse:
+      type: object
+      required: [item]
+      properties:
+        item:
+          $ref: '#/components/schemas/MwsNode'
+
+    CreateMwsDatasheetRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        folderId:
+          type: string
+          nullable: true
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreateMwsFieldRequest'
+
+    CreateMwsDatasheetResponse:
+      type: object
+      required: [datasheet]
+      properties:
+        datasheet:
+          type: object
+          required: [id, name]
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            createdAt:
+              type: string
+              format: date-time
+              nullable: true
+            fields:
+              type: array
+              items:
+                $ref: '#/components/schemas/MwsField'
+
+    MwsField:
+      type: object
+      required: [id, name, type]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum:
+            - SingleText
+            - Text
+            - SingleSelect
+            - MultiSelect
+            - Number
+            - Currency
+            - Percent
+            - DateTime
+            - Attachment
+            - Member
+            - Checkbox
+            - Rating
+            - URL
+            - Phone
+            - Email
+            - WorkDoc
+            - OneWayLink
+            - TwoWayLink
+            - MagicLookUp
+            - Formula
+            - AutoNumber
+            - CreatedTime
+            - LastModifiedTime
+            - CreatedBy
+            - LastModifiedBy
+        description:
+          type: string
+          nullable: true
+        property:
+          type: object
+          additionalProperties: true
+
+    MwsFieldListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MwsField'
+
+    CreateMwsFieldRequest:
+      type: object
+      required: [name, type]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        property:
+          type: object
+          additionalProperties: true
+
+    CreateMwsFieldResponse:
+      type: object
+      required: [field]
+      properties:
+        field:
+          $ref: '#/components/schemas/MwsField'
+
+    MwsView:
+      type: object
+      required: [id, name, type]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        rowHeightLevel:
+          type: integer
+          nullable: true
+        frozenColumnCount:
+          type: integer
+          nullable: true
+
+    MwsViewListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MwsView'
+
+    CreateMwsViewRequest:
+      type: object
+      required: [name, properties]
+      properties:
+        name:
+          type: string
+        properties:
+          type: object
+          additionalProperties: true
+          description: Конфигурация представления в формате MWS Tables
+
+    CreateMwsViewResponse:
+      type: object
+      required: [view]
+      properties:
+        view:
+          $ref: '#/components/schemas/MwsView'
+
+    MwsRecord:
+      type: object
+      required: [recordId, fields]
+      properties:
+        recordId:
+          type: string
+        fields:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: integer
+          nullable: true
+        updatedAt:
+          type: integer
+          nullable: true
+
+    MwsRecordListResponse:
+      type: object
+      required: [items, pageNum, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MwsRecord'
+        pageNum:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+
+    CreateMwsRecordsRequest:
+      type: object
+      required: [records, fieldKey]
+      properties:
+        fieldKey:
+          type: string
+          enum: [id, name]
+          default: id
+        records:
+          type: array
+          items:
+            type: object
+            required: [fields]
+            properties:
+              fields:
+                type: object
+                additionalProperties: true
+
+    UpdateMwsRecordsRequest:
+      type: object
+      required: [records, fieldKey]
+      properties:
+        fieldKey:
+          type: string
+          enum: [id, name]
+          default: id
+        records:
+          type: array
+          items:
+            type: object
+            required: [recordId, fields]
+            properties:
+              recordId:
+                type: string
+              fields:
+                type: object
+                additionalProperties: true
+
+    MwsRecordMutationResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MwsRecord'
+
+    DeleteMwsRecordsResponse:
+      type: object
+      required: [deleted]
+      properties:
+        deleted:
+          type: boolean
+
+    ResolveTableEmbedRequest:
+      type: object
+      required: [spaceId, nodeId, datasheetId]
+      properties:
+        spaceId:
+          type: string
+        nodeId:
+          type: string
+        datasheetId:
+          type: string
+        viewId:
+          type: string
+          nullable: true
+        selectedFieldIds:
+          type: array
+          items:
+            type: string
+        displayMode:
+          type: string
+          enum: [table, board, gallery, calendar, architecture]
+          default: table
+        pageSize:
+          type: integer
+          default: 20
+        filterByFormula:
+          type: string
+          nullable: true
+        allowInlineEdit:
+          type: boolean
+          default: false
+
+    ResolveTableEmbedResponse:
+      type: object
+      required: [embed]
+      properties:
+        embed:
+          type: object
+          required: [node, datasheetId, fields, preview]
+          properties:
+            node:
+              $ref: '#/components/schemas/MwsNode'
+            datasheetId:
+              type: string
+            view:
+              $ref: '#/components/schemas/MwsView'
+            fields:
+              type: array
+              items:
+                $ref: '#/components/schemas/MwsField'
+            preview:
+              $ref: '#/components/schemas/MwsRecordListResponse'
+            capabilities:
+              type: object
+              properties:
+                canInlineEdit:
+                  type: boolean
+                canCreateRecords:
+                  type: boolean
+                canDeleteRecords:
+                  type: boolean
+                canUploadAttachments:
+                  type: boolean
+            openInMwsUrl:
+              type: string
+              nullable: true
+
+    MwsAttachment:
+      type: object
+      required: [token, name, mimeType, size]
+      properties:
+        token:
+          type: string
+        name:
+          type: string
+        mimeType:
+          type: string
+        size:
+          type: integer
+        width:
+          type: integer
+          nullable: true
+        height:
+          type: integer
+          nullable: true
+        url:
+          type: string
+          nullable: true
+        preview:
+          type: string
+          nullable: true
+
+    MwsAttachmentResponse:
+      type: object
+      required: [attachment]
+      properties:
+        attachment:
+          $ref: '#/components/schemas/MwsAttachment'
+
+x-websocket:
+  channel: /ws/collaboration/pages/{pageId}
+  summary: WebSocket-канал совместного редактирования страницы
+  description: |
+    OpenAPI не стандартизует WebSocket-сообщения так же подробно, как HTTP, поэтому канал описан
+    как расширение спецификации.
+
+    Канал используется для Tiptap + Yjs collaboration и отвечает за:
+    - прием CRDT updates от клиентов
+    - рассылку CRDT updates другим участникам
+    - awareness/presence
+    - курсоры и online-статусы
+
+    Порядок использования:
+    1. frontend вызывает `POST /api/v1/pages/{pageId}/collab/session`
+    2. получает `websocket.url` и `websocket.token`
+    3. подключается к WebSocket-каналу
+    4. синхронизирует документ через сообщения ниже
+
+  pathParameters:
+    - name: pageId
+      type: string
+      format: uuid
+  queryParameters:
+    - name: sessionId
+      type: string
+      format: uuid
+    - name: token
+      type: string
+  messages:
+    - type: sync-init
+      direction: client-to-server
+      description: Клиент сообщает о начале Yjs sync handshake
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            const: sync-init
+          stateVector:
+            type: string
+            description: Base64 encoded Yjs state vector
+    - type: sync-update
+      direction: bidirectional
+      description: Основное сообщение с CRDT update
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            const: sync-update
+          update:
+            type: string
+            description: Base64 encoded Yjs update
+          clientId:
+            type: string
+    - type: awareness-update
+      direction: bidirectional
+      description: "Awareness-события Tiptap/Yjs: курсор, имя пользователя, цвет, выделение"
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            const: awareness-update
+          awareness:
+            type: object
+            additionalProperties: true
+    - type: presence-join
+      direction: server-to-clients
+      description: Сервер сообщает, что участник вошел в документ
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            const: presence-join
+          user:
+            $ref: '#/components/schemas/PresenceUser'
+    - type: presence-leave
+      direction: server-to-clients
+      description: Сервер сообщает, что участник покинул документ
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            const: presence-leave
+          userId:
+            type: string
+    - type: error
+      direction: server-to-client
+      description: Ошибка синхронизации или авторизации канала
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            const: error
+          code:
+            type: string
+          message:
+            type: string
