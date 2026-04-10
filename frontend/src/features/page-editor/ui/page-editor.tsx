@@ -28,7 +28,6 @@ export function PageEditor() {
           <EditorContent editor={controller.editor} />
           <SlashMenu
             isOpen={controller.slashState.isOpen}
-            query={controller.slashState.query}
             items={controller.filteredItems}
             selectedIndex={controller.selectedIndex}
             position={{ top: controller.slashState.top, left: controller.slashState.left }}

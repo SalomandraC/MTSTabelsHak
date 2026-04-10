@@ -9,9 +9,9 @@ export type PageEditorSlashCommandItem = SlashMenuItem & {
 export const slashCommandItems: PageEditorSlashCommandItem[] = [
   {
     id: 'text',
-    label: 'Text',
-    hint: 'Start writing with plain text',
-    keywords: ['text', 'paragraph', 'body'],
+    label: 'Текст',
+    hint: 'Начать ввод с обычного текста',
+    keywords: ['text', 'paragraph', 'body', 'текст', 'абзац', 'параграф'],
     icon: 'T',
     run: (editor) => {
       editor.chain().focus().setParagraph().run();
@@ -21,7 +21,7 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     id: 'link',
     label: 'Ссылка',
     hint: 'Добавить ссылку с текстом',
-    keywords: ['ссылка', 'линк', 'link', 'url', 'href'],
+    keywords: ['ссылка', 'линк', 'link', 'url', 'href', 'гиперссылка'],
     icon: 'L',
     run: () => {
       // Handled in PageEditor with modal flow.
@@ -31,7 +31,7 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     id: 'task-list',
     label: 'Чеклист',
     hint: 'Создать список задач с чекбоксами',
-    keywords: ['checklist', 'task', 'todo', 'чеклист', 'задача'],
+    keywords: ['checklist', 'task', 'todo', 'чеклист', 'задача', 'список задач', 'checkbox'],
     icon: '[]',
     run: (editor) => {
       editor.chain().focus().toggleTaskList().run();
@@ -41,7 +41,7 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     id: 'image',
     label: 'Изображение',
     hint: 'Загрузить изображение в документ',
-    keywords: ['image', 'img', 'photo', 'картинка', 'изображение'],
+    keywords: ['image', 'img', 'photo', 'картинка', 'изображение', 'фото', 'рисунок'],
     icon: '🖼',
     run: () => {
       // Handled in PageEditor with modal flow.
@@ -49,9 +49,9 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
   },
   {
     id: 'heading-1',
-    label: 'Heading 1',
-    hint: 'Big section title',
-    keywords: ['h1', 'title', 'heading'],
+    label: 'Заголовок 1',
+    hint: 'Крупный заголовок раздела',
+    keywords: ['h1', 'title', 'heading', 'заголовок', 'раздел', 'титул'],
     shortcut: 'H1',
     icon: 'H1',
     run: (editor) => {
@@ -60,9 +60,9 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
   },
   {
     id: 'heading-2',
-    label: 'Heading 2',
-    hint: 'Medium section title',
-    keywords: ['h2', 'subtitle', 'heading'],
+    label: 'Заголовок 2',
+    hint: 'Средний заголовок раздела',
+    keywords: ['h2', 'subtitle', 'heading', 'подзаголовок', 'заголовок', 'раздел'],
     shortcut: 'H2',
     icon: 'H2',
     run: (editor) => {
@@ -71,9 +71,9 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
   },
   {
     id: 'bullet-list',
-    label: 'Bulleted list',
-    hint: 'Create a bullet list',
-    keywords: ['list', 'bullet', 'ul'],
+    label: 'Маркированный список',
+    hint: 'Создать список с маркерами',
+    keywords: ['list', 'bullet', 'ul', 'unordered', 'маркированный', 'список'],
     icon: 'UL',
     run: (editor) => {
       editor.chain().focus().toggleBulletList().run();
@@ -81,9 +81,9 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
   },
   {
     id: 'ordered-list',
-    label: 'Numbered list',
-    hint: 'Create an ordered list',
-    keywords: ['list', 'numbered', 'ol'],
+    label: 'Нумерованный список',
+    hint: 'Создать список с номерами',
+    keywords: ['list', 'numbered', 'ol', 'ordered', 'нумерованный', 'список'],
     icon: 'OL',
     run: (editor) => {
       editor.chain().focus().toggleOrderedList().run();
@@ -91,9 +91,9 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
   },
   {
     id: 'blockquote',
-    label: 'Quote',
-    hint: 'Insert a quote block',
-    keywords: ['quote', 'blockquote'],
+    label: 'Цитата',
+    hint: 'Вставить блок цитаты',
+    keywords: ['quote', 'blockquote', 'цитата', 'цитирование'],
     icon: '"',
     run: (editor) => {
       editor.chain().focus().toggleBlockquote().run();
@@ -101,9 +101,9 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
   },
   {
     id: 'divider',
-    label: 'Divider',
-    hint: 'Insert a horizontal line',
-    keywords: ['divider', 'rule', 'line'],
+    label: 'Разделитель',
+    hint: 'Вставить горизонтальную линию',
+    keywords: ['divider', 'rule', 'line', 'разделитель', 'линия'],
     icon: '---',
     run: (editor) => {
       editor.chain().focus().setHorizontalRule().run();
