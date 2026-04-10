@@ -45,6 +45,7 @@ export function SlashMenu({
       className="fixed z-[60] max-h-[min(18rem,46vh)] w-[min(19rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-editor-border-subtle bg-white p-1.5 shadow-[0_12px_28px_rgba(17,25,40,0.14)] max-sm:left-3 max-sm:w-[calc(100vw-1.5rem)]"
       style={{ top: position.top, left: position.left }}
       role="listbox"
+      aria-label="Slash menu"
     >
       {visibleItems.map((item, index) => {
         const active = index === selectedIndex;
@@ -53,12 +54,13 @@ export function SlashMenu({
           <button
             key={item.id}
             type="button"
+            role="option"
+            aria-selected={active} 
             className={[
               'flex w-full items-center gap-2 rounded-lg border-0 bg-transparent px-2 py-2 text-left transition-colors',
               active ? 'bg-[#f2f6ff]' : 'hover:bg-[#f2f6ff]',
-            ]
-              .join(' ')
-              .trim()}
+            ].join(' ').trim()}
+            aria-label={item.label}
             onMouseEnter={() => onHover(index)}
             onMouseDown={(event) => {
               event.preventDefault();

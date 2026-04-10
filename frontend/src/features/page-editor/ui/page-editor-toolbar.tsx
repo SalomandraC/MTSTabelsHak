@@ -24,7 +24,7 @@ import {
   ListChecks,
 } from 'lucide-react';
 
-const redFilter = 'invert(0.3) sepia(1) saturate(5) hue-rotate(-10deg)';
+const redFilter = 'brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(2665%) hue-rotate(346deg) brightness(101%) contrast(97%)';
 
 type PageEditorToolbarProps = {
   editor: Editor | null;
@@ -37,13 +37,16 @@ type ToolbarButtonProps = {
   icon?: React.ReactNode;
   pressed?: boolean;
   disabled?: boolean;
-  onClick: ((event: React.MouseEvent<HTMLButtonElement>) => void) | (() => void);
   noBorder?: boolean;
+
   size?: 'sm' | 'md';
-  isFirst?: boolean;
+  isFirst?: boolean; 
   isLast?: boolean;
   isInGroup?: boolean;
+
   'aria-label'?: string;
+
+  onClick: ((event: React.MouseEvent<HTMLButtonElement>) => void) | (() => void);
 };
 
 function ToolbarButton({ 
@@ -98,8 +101,13 @@ function ToolbarButton({
     .join(' ');
 
   return (
-    <button type="button" onClick={onClick} disabled={disabled} className={className}>
-      {label}
+    <button 
+      type="button" 
+      onClick={onClick} 
+      disabled={disabled} 
+      className={className}
+    >
+      {icon || label}
     </button>
   );
 }
@@ -156,14 +164,26 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
       <div className="flex items-center gap-0 overflow-x-auto whitespace-nowrap pb-0.5" role="toolbar" aria-label="Панель инструментов редактора">
 
         <ToolbarButton 
-          icon={<img src={VectorLeft} alt="Отменить действие" className="h-4 w-4" />} 
+          icon={
+            <img 
+              src={VectorLeft} 
+              alt="Отменить действие" 
+              className="h-4 w-4" 
+            />
+          } 
           onClick={() => editor.chain().focus().undo().run()} 
           disabled={!state.canUndo} 
           noBorder
           aria-label="Отменить (Ctrl+Z)"
         />
         <ToolbarButton 
-          icon={<img src={VectorRight} alt="Повторить действие" className="h-4 w-4" />} 
+          icon={
+            <img 
+              src={VectorRight} 
+              alt="Повторить действие" 
+              className="h-4 w-4" 
+            />
+          } 
           onClick={() => editor.chain().focus().redo().run()} 
           disabled={!state.canRedo} 
           noBorder
@@ -211,12 +231,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           aria-label="Курсив (Ctrl+I)"
         />
         <ToolbarButton
-          label="U"
-          onClick={() => editor.chain().focus().toggleUnderline().run()}
-          pressed={state.isUnderline}
-          disabled={!state.canUnderline}
-        />
-        <ToolbarButton
           icon={
             <img 
               src={T1} 
@@ -250,7 +264,7 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           noBorder={false}
           size="sm"
           isFirst={false}
-          isLast={false}
+          isLast={true}
           isInGroup={true}
           aria-label="Подчёркнутый (Ctrl+U)"
         />
@@ -331,16 +345,25 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           label="L"
           onClick={() => alignSelection('left')}
           pressed={state.isAlignLeft}
+          isFirst={true}
+          isLast={false}
+          isInGroup={true}
         />
         <ToolbarButton
           label="C"
           onClick={() => alignSelection('center')}
           pressed={state.isAlignCenter}
+          isFirst={false}
+          isLast={false}
+          isInGroup={true}
         />
         <ToolbarButton
           label="R"
           onClick={() => alignSelection('right')}
           pressed={state.isAlignRight}
+          isFirst={false}
+          isLast={true}
+          isInGroup={true}
         />
 
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
@@ -368,17 +391,10 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           onClick={() => editor.chain().focus().toggleTaskList().run()}
           pressed={state.isTaskList}
           disabled={!state.canTaskList}
-        />
-        <ToolbarButton
-          icon={<Quote className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
-          onClick={() => editor.chain().focus().toggleBlockquote().run()}
-          pressed={state.isBlockquote}
           isFirst={false}
-          isLast={false}
+          isLast={true}
           isInGroup={true}
-          aria-label="Цитата"
         />
-
 
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
@@ -389,10 +405,48 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
             onOpenLinkModal({ top: rect.bottom + 8, left: rect.left });
           }}
           pressed={state.isLink}
+          isFirst={true}
+          isLast={true}
+          isInGroup={true}
         />
+
+        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
         <ToolbarButton
+          icon={<Code2 className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
+          onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+          pressed={state.isCodeBlock}
+          isFirst={false}
+          isLast={true}
+          isInGroup={true}
+          aria-label="Блок кода"
+        />
+
+        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
+        <ToolbarButton
+          icon={<Quote className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
+          onClick={() => editor.chain().focus().toggleBlockquote().run()}
+          pressed={state.isBlockquote}
+          isFirst={true}
+          isLast={true}
+          isInGroup={true}
+          aria-label="Цитата"
+        />
+
+        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
+        <ToolbarButton
+          icon={
+            <Image className="h-4 w-4" 
+              style={{ color: 'rgba(80, 87, 98, 1)' }} 
+            />
+          }
           label="Img"
           onClick={() => onOpenImageModal()}
+          isFirst={true}
+          isLast={true}
+          isInGroup={true}
         />
 
         {state.isLink && state.linkHref ? (
@@ -404,8 +458,14 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           </div>
         ) : null}
 
+        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
         <ToolbarButton
-          icon={<Image className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
+          icon={
+            <Image className="h-4 w-4" 
+              style={{ color: 'rgba(80, 87, 98, 1)' }} 
+            />
+          }
           onClick={() => editor.chain().focus().clearNodes().run()}
           disabled={!state.canClearNodes}
           isFirst={true}
