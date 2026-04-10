@@ -65,4 +65,102 @@
   select {
     font: inherit;
   }
+
+  .tiptap {
+    outline: none;
+    min-height: 100%;
+    font-family: var(--font-compact);
+    font-size: 1.0625rem;
+    line-height: 1.65;
+    color: var(--color-editor-text-primary);
+  }
+
+  .tiptap > *:first-child {
+    margin-top: 0;
+  }
+
+  .tiptap p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    color: var(--color-editor-text-tertiary);
+    pointer-events: none;
+    height: 0;
+    float: left;
+  }
+
+  .tiptap h1,
+  .tiptap h2,
+  .tiptap h3,
+  .tiptap h4,
+  .tiptap h5,
+  .tiptap h6 {
+    line-height: 1.12;
+    margin-top: 1.8rem;
+    margin-bottom: 0.8rem;
+    text-wrap: pretty;
+    font-family: var(--font-wide);
+  }
+
+  .tiptap h1 {
+    font-size: clamp(2rem, 4vw, 3rem);
+    font-weight: 600;
+  }
+
+  .tiptap h2 {
+    font-size: clamp(1.55rem, 3vw, 2.1rem);
+    font-weight: 550;
+  }
+
+  .tiptap h3 {
+    font-size: clamp(1.2rem, 2.2vw, 1.55rem);
+    font-weight: 550;
+  }
+
+  .tiptap ul,
+  .tiptap ol {
+    margin: 1.1rem 0;
+    padding-left: 1.5rem;
+  }
+
+  .tiptap li {
+    margin: 0.3rem 0;
+  }
+
+  .tiptap code {
+    background-color: #ece8ff;
+    border-radius: 0.35rem;
+    color: #4f3ea6;
+    font-size: 0.9rem;
+    padding: 0.18rem 0.28rem;
+  }
+
+  .tiptap pre {
+    background: #1b2438;
+    border-radius: 0.65rem;
+    color: #f5f9ff;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+      monospace;
+    margin: 1.35rem 0;
+    overflow-x: auto;
+    padding: 0.9rem 1rem;
+  }
+
+  .tiptap pre code {
+    background: none;
+    color: inherit;
+    font-size: 0.85rem;
+    padding: 0;
+  }
+
+  .tiptap blockquote {
+    border-left: 3px solid var(--color-editor-border-subtle);
+    margin: 1.25rem 0;
+    padding-left: 0.95rem;
+    color: #596273;
+  }
+
+  .tiptap hr {
+    border: none;
+    border-top: 1px solid var(--color-editor-border-subtle);
+    margin: 1.9rem 0;
+  }
 }

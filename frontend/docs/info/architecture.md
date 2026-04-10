@@ -9,6 +9,7 @@
 - React + TypeScript как базовый UI-слой.
 - Vite как сборщик и dev server.
 - Tailwind CSS как основной utility-first styling layer.
+- CSS используется только для глобальных переменных, reset-стилей и редких случаев, где Tailwind неудобен.
 - Tiptap как редакторное ядро.
 - Yjs как слой коллаборации.
 - Local cache + backend sync как слой сохранения.
@@ -43,7 +44,8 @@
 - `types/` — общие типы и DTO, не привязанные к одной фиче.
 - `styles/` — глобальные стили, токены, базовые переменные и layout primitives.
 
-Tailwind utilities используются напрямую в компонентах для layout и composition.
+Tailwind utilities используются напрямую в компонентах для layout, spacing, sizing и composition.
+CSS в `shared/styles/` остается для global tokens, reset-слоёв, `@font-face` и редких исключений, где утилиты Tailwind слишком шумные.
 
 ### `entities/`
 
@@ -58,20 +60,13 @@ Tailwind utilities используются напрямую в компонен
 
 Законченные пользовательские действия.
 
-- `page-editor/` — редактирование страницы.
+- `page-editor/` — редактор страницы: shell, toolbar, slash-команды, editor state.
+- `slash-menu/` — переиспользуемый dropdown/palette для команд.
 - `insert-table/` — вставка таблицы.
-- `slash-menu/` — меню команд.
 - `backlinks/` — обратные ссылки.
 - `autosave/` — debounce → локальный кеш → backend sync.
 - `collaboration/` — Yjs + websocket provider.
 - `comments/`, `ai-assist/` и т.д.
-
-### `widgets/`
-
-Крупные интерфейсные блоки.
-
-- `editor-shell/` — toolbar, sidebars, editor wrapper.
-- `backlinks-panel/`, `graph-panel/` и т.д.
 
 ### `pages/`
 
@@ -96,6 +91,8 @@ Tailwind utilities используются напрямую в компонен
 - `persistence adapter` — local cache, autosave, backend sync.
 - `UI adapter` — React toolbar, slash-menu, side panels.
 
+Практически это означает, что на текущем этапе editor core живет внутри `features/page-editor`, а не в отдельном пакете. Выносить его дальше стоит только когда появится повторное использование между страницами или отдельная команда для editor platform layer.
+
 ## Поток данных (минимальный)
 
 1. Пользователь меняет документ в editor core.
@@ -106,6 +103,6 @@ Tailwind utilities используются напрямую в компонен
 
 ## Рекомендации
 
-- Вынесите editor core в отдельный пакет/папку.
+- Не дробите editor core раньше времени: держите его в `features/page-editor`, пока нет повторного использования.
 - Используйте semantic tokens и shared UI primitives.
 - Начинайте с минимального offline-first сценария и расширяйте адаптерами.
