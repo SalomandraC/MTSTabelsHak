@@ -238,6 +238,11 @@
     flex: 0 1 auto;
     max-width: min(100%, 42rem);
   }
+
+  .tiptap .ProseMirror-dropcursor {
+    border-left: 2px solid #d92c2c !important;
+    margin-left: -1px;
+  }
 }
 
 @layer components {

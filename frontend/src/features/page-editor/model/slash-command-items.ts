@@ -48,16 +48,6 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     },
   },
   {
-    id: 'root-block',
-    label: 'Блок',
-    hint: 'Добавить перетаскиваемый блок как в Notion',
-    keywords: ['block', 'root', 'section', 'блок', 'секция', 'notion'],
-    icon: '+',
-    run: (editor) => {
-      editor.chain().focus().insertRootBlock().run();
-    },
-  },
-  {
     id: 'heading-1',
     label: 'Heading 1',
     hint: 'Big section title',
@@ -107,16 +97,6 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     icon: '"',
     run: (editor) => {
       editor.chain().focus().toggleBlockquote().run();
-    },
-  },
-  {
-    id: 'code-block',
-    label: 'Code block',
-    hint: 'Display code with formatting',
-    keywords: ['code', 'snippet', 'pre'],
-    icon: '</>',
-    run: (editor) => {
-      editor.chain().focus().toggleCodeBlock().run();
     },
   },
   {

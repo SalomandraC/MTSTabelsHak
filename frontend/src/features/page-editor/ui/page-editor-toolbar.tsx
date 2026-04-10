@@ -75,7 +75,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
       isTaskList: false,
       canTaskList: false,
       isBlockquote: false,
-      isCodeBlock: false,
       canUndo: false,
       canRedo: false,
     };
@@ -188,12 +187,7 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           pressed={state.isBlockquote}
         />
         <ToolbarButton
-          label="Block"
-          onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-          pressed={state.isCodeBlock}
-        />
-        <ToolbarButton
-          label="+Block"
+          label="Блок"
           onClick={() => editor.chain().focus().insertRootBlock().run()}
         />
 

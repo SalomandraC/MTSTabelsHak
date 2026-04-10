@@ -1,4 +1,6 @@
 import { Extension, textInputRule } from '@tiptap/core';
+import Document from '@tiptap/extension-document';
+import Dropcursor from '@tiptap/extension-dropcursor';
 import Highlight from '@tiptap/extension-highlight';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -13,6 +15,10 @@ import StarterKit from '@tiptap/starter-kit';
 import { ImageBlock } from './image-block';
 import { RootBlock } from './root-block';
 
+const RootDocument = Document.extend({
+  content: 'rootblock+',
+});
+
 const DashShortcut = Extension.create({
   name: 'dashShortcut',
   addInputRules() {
@@ -26,8 +32,8 @@ const DashShortcut = Extension.create({
 });
 
 export const initialContent = `
-<h1>Новая страница</h1>
-<p></p>
+<div data-type="rootblock"><h1>Новая страница</h1></div>
+<div data-type="rootblock"><p></p></div>
 `;
 
 export function createPageEditorExtensions() {
@@ -36,6 +42,11 @@ export function createPageEditorExtensions() {
     Highlight,
     Typography,
     DashShortcut,
+    Dropcursor.configure({
+      color: '#d92c2c',
+      width: 2,
+    }),
+    RootDocument,
     RootBlock,
     ImageBlock,
     TaskList,
@@ -48,7 +59,9 @@ export function createPageEditorExtensions() {
     TextAlign.configure({
       types: ['heading', 'paragraph', 'taskItem'],
     }),
-    StarterKit,
+    StarterKit.configure({
+      document: false,
+    }),
     Placeholder.configure({
       emptyEditorClass: 'is-editor-empty',
       placeholder: 'Начните вводить содержимое или нажмите / чтобы использовать команды',
