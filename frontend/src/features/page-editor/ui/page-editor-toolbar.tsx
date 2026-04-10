@@ -4,6 +4,26 @@ import type { MouseEvent } from 'react';
 
 import { menuBarStateSelector } from '../model/menu-state';
 
+import VectorLeft from '../../../app/images/VectorLeft.svg';
+import VectorRight from '../../../app/images/VectorRight.svg';
+import B from '../../../app/images/B.svg';
+import Tk from '../../../app/images/Tk.svg';
+import H1 from '../../../app/images/H1.svg';
+import H2 from '../../../app/images/H2.svg';
+import H3 from '../../../app/images/H3.svg';
+import T from '../../../app/images/T.svg';
+import T1 from '../../../app/images/T1.svg';
+import U from '../../../app/images/U.svg';
+
+import {
+  List,
+  ListOrdered,
+  Quote,
+  Code2,
+  Image,
+  ListChecks,
+} from 'lucide-react';
+
 type PageEditorToolbarProps = {
   editor: Editor | null;
   onOpenLinkModal: (position?: { top: number; left: number }) => void;
@@ -11,30 +31,66 @@ type PageEditorToolbarProps = {
 };
 
 type ToolbarButtonProps = {
-  label: string;
+  label?: React.ReactNode;
+  icon?: React.ReactNode;
   pressed?: boolean;
   disabled?: boolean;
-  onClick: (event: MouseEvent<HTMLButtonElement>) => void;
+  onClick: () => void;
 };
 
-function ToolbarButton({ label, pressed = false, disabled = false, onClick }: ToolbarButtonProps) {
+function ToolbarButton({ 
+  label, 
+  icon, 
+  pressed = false, 
+  disabled = false, 
+  noBorder = false, 
+  size = 'md',
+  isFirst = false,
+  isLast = false,
+  isInGroup = false,
+  onClick,
+  'aria-label': ariaLabel,
+}: ToolbarButtonProps) {
+  const sizeClasses = size === 'sm' 
+    ? 'h-7 w-7 min-w-7' 
+    : 'h-8 min-w-8';
+
+  const radiusClasses = noBorder 
+    ? '' 
+    : isFirst && isLast
+      ? 'rounded-md'  
+      : isFirst 
+        ? 'rounded-l-md'  
+        : isLast 
+          ? 'rounded-r-md' 
+          : 'rounded-none'; 
+  
+  const marginClass = isInGroup && !isFirst ? '-ml-px' : '';
+  
+  const paddingClass = isInGroup ? 'px-1.5' : 'px-2';
+
+  const zIndexClass = pressed ? 'z-20' : (isInGroup && isFirst ? 'z-10' : '');
+  
   const className = [
-    'inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-md border px-2 text-xs font-semibold transition-colors',
-    'border-editor-border-control bg-editor-bg-control text-editor-icon hover:bg-[#e8ebf1] hover:text-editor-text-primary',
-    pressed ? 'border-[#bac3d4] bg-[#dde6ff] text-[#23355f]' : '',
-    disabled ? 'cursor-not-allowed opacity-45 hover:bg-editor-bg-control hover:text-editor-icon' : '',
+    'inline-flex shrink-0 items-center justify-center py-0.5 text-xs font-semibold transition-colors relative',
+    marginClass,
+    paddingClass,
+    sizeClasses,
+    radiusClasses,
+    zIndexClass, 
+    noBorder ? '' : 'border border-editor-border-control',
+    isInGroup 
+      ? 'bg-transparent text-[rgba(80,87,98,1)] hover:bg-[#d5d9e0]' 
+      : 'bg-transparent text-editor-icon hover:bg-[#e8ebf1] hover:text-editor-text-primary',
+    pressed && isInGroup ? 'border-red-500 !border-opacity-100' : '',
+    pressed && !isInGroup ? 'border-red-500 !border-opacity-100' : '',
+    disabled ? 'cursor-not-allowed opacity-45 hover:bg-transparent' : '',
   ]
-    .join(' ')
-    .trim();
+    .filter(Boolean)
+    .join(' ');
 
   return (
-    <button
-      type="button"
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onClick}
-      disabled={disabled}
-      className={className}
-    >
+    <button type="button" onClick={onClick} disabled={disabled} className={className}>
       {label}
     </button>
   );
@@ -51,30 +107,19 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
       canBold: false,
       isItalic: false,
       canItalic: false,
-      isUnderline: false,
-      canUnderline: false,
       isStrike: false,
       canStrike: false,
       isCode: false,
       canCode: false,
-      isLink: false,
-      linkLabel: '',
-      linkHref: '',
-      canUnsetLink: false,
       canClearNodes: false,
       isParagraph: false,
       isHeading1: false,
       isHeading2: false,
       isHeading3: false,
-      isImageSelected: false,
-      isAlignLeft: false,
-      isAlignCenter: false,
-      isAlignRight: false,
       isBulletList: false,
       isOrderedList: false,
-      isTaskList: false,
-      canTaskList: false,
       isBlockquote: false,
+      isCodeBlock: false,
       canUndo: false,
       canRedo: false,
     };
@@ -83,29 +128,64 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
     return null;
   }
 
-  const alignSelection = (align: 'left' | 'center' | 'right') => {
-    editor.chain().focus().setTextAlign(align).setImageAlignInSelection(align).run();
-  };
-
   return (
-    <div className="sticky top-0 z-20 border-b border-editor-border-subtle bg-editor-bg-toolbar px-2 py-2 sm:px-4">
-      <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap pb-0.5">
-        <ToolbarButton label="Undo" onClick={() => editor.chain().focus().undo().run()} disabled={!state.canUndo} />
-        <ToolbarButton label="Redo" onClick={() => editor.chain().focus().redo().run()} disabled={!state.canRedo} />
+    <div className="sticky top-0 z-20 bg-[rgba(245,247,250,1)] px-2 py-2 sm:px-4">
+      <div className="flex items-center gap-0 overflow-x-auto whitespace-nowrap pb-0.5" role="toolbar" aria-label="Панель инструментов редактора">
+
+        <ToolbarButton 
+          icon={<img src={VectorLeft} alt="Отменить действие" className="h-4 w-4" />} 
+          onClick={() => editor.chain().focus().undo().run()} 
+          disabled={!state.canUndo} 
+          noBorder
+          aria-label="Отменить (Ctrl+Z)"
+        />
+        <ToolbarButton 
+          icon={<img src={VectorRight} alt="Повторить действие" className="h-4 w-4" />} 
+          onClick={() => editor.chain().focus().redo().run()} 
+          disabled={!state.canRedo} 
+          noBorder
+          aria-label="Повторить (Ctrl+Y)"
+        />
 
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
         <ToolbarButton
-          label="B"
+          icon={
+            <img 
+              src={B} 
+              alt="Полужирное начертание" 
+              className="h-4 w-4"
+              style={state.isBold ? { filter: redFilter } : {}}
+            />
+          }
           onClick={() => editor.chain().focus().toggleBold().run()}
           pressed={state.isBold}
           disabled={!state.canBold}
+          noBorder={false}
+          size="sm"
+          isFirst={true}  
+          isLast={false}
+          isInGroup={true}
+          aria-label="Полужирный (Ctrl+B)"
         />
         <ToolbarButton
-          label="I"
+          icon={
+            <img 
+              src={Tk} 
+              alt="Курсивное начертание" 
+              className="h-4 w-4"
+              style={state.isItalic ? { filter: redFilter } : {}}
+            />
+          }
           onClick={() => editor.chain().focus().toggleItalic().run()}
           pressed={state.isItalic}
           disabled={!state.canItalic}
+          noBorder={false}
+          size="sm"
+          isFirst={false}
+          isLast={false}
+          isInGroup={true}
+          aria-label="Курсив (Ctrl+I)"
         />
         <ToolbarButton
           label="U"
@@ -114,35 +194,112 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           disabled={!state.canUnderline}
         />
         <ToolbarButton
-          label="S"
+          icon={
+            <img 
+              src={T1} 
+              alt="Зачёркнутый текст" 
+              className="h-4 w-4"
+              style={state.isStrike ? { filter: redFilter } : {}}
+            />
+          }
           onClick={() => editor.chain().focus().toggleStrike().run()}
           pressed={state.isStrike}
           disabled={!state.canStrike}
+          noBorder={false}
+          size="sm"
+          isFirst={false}
+          isLast={false}
+          isInGroup={true}
+          aria-label="Зачёркнутый"
         />
         <ToolbarButton
-          label="Code"
-          onClick={() => editor.chain().focus().toggleCode().run()}
-          pressed={state.isCode}
-          disabled={!state.canCode}
+          icon={
+            <img 
+              src={U} 
+              alt="Подчёркнутый текст" 
+              className="h-4 w-4"
+              style={state.isUnderline ? { filter: redFilter } : {}}
+            />
+          }
+          onClick={() => editor.chain().focus().toggleUnderline?.().run()}
+          pressed={state.isUnderline}
+          disabled={!state.canUnderline}
+          noBorder={false}
+          size="sm"
+          isFirst={false}
+          isLast={false}
+          isInGroup={true}
+          aria-label="Подчёркнутый (Ctrl+U)"
         />
 
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
-        <ToolbarButton label="P" onClick={() => editor.chain().focus().setParagraph().run()} pressed={state.isParagraph} />
+        <ToolbarButton 
+          icon={
+            <img 
+              src={T} 
+              alt="Обычный текст (параграф)" 
+              className="h-4 w-4"
+              style={state.isParagraph ? { filter: redFilter } : {}}
+            />
+          } 
+          onClick={() => editor.chain().focus().setParagraph().run()} 
+          pressed={state.isParagraph} 
+          isFirst={true}
+          isLast={true}
+          isInGroup={true}
+          aria-label="Обычный текст"
+        />
+
+        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
         <ToolbarButton
-          label="H1"
+          icon={
+            <img 
+              src={H1} 
+              alt="Заголовок 1 уровня" 
+              className="h-4 w-4"
+              style={state.isHeading1 ? { filter: redFilter } : {}}
+            />
+          } 
           onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
           pressed={state.isHeading1}
+          isFirst={true}
+          isLast={false}
+          isInGroup={true}
+          aria-label="Заголовок 1"
         />
         <ToolbarButton
-          label="H2"
+          icon={
+            <img 
+              src={H2} 
+              alt="Заголовок 2 уровня" 
+              className="h-4 w-4"
+              style={state.isHeading2 ? { filter: redFilter } : {}}
+            />
+          } 
           onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
           pressed={state.isHeading2}
+          isFirst={false}
+          isLast={false}
+          isInGroup={true}
+          aria-label="Заголовок 2"
         />
         <ToolbarButton
-          label="H3"
+          icon={
+            <img 
+              src={H3} 
+              alt="Заголовок 3 уровня" 
+              className="h-4 w-4"
+              style={state.isHeading3 ? { filter: redFilter } : {}}
+            />
+          } 
           onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
           pressed={state.isHeading3}
+          isFirst={false}
+          isLast={true}
+          isInGroup={true}
+          aria-label="Заголовок 3"
         />
 
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
@@ -166,14 +323,22 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
         <ToolbarButton
-          label="UL"
+          icon={<List className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
           onClick={() => editor.chain().focus().toggleBulletList().run()}
           pressed={state.isBulletList}
+          isFirst={true}
+          isLast={false}
+          isInGroup={true}
+          aria-label="Маркированный список"
         />
         <ToolbarButton
-          label="OL"
+          icon={<ListOrdered className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
           pressed={state.isOrderedList}
+          isFirst={false}
+          isLast={false}
+          isInGroup={true}
+          aria-label="Нумерованный список"
         />
         <ToolbarButton
           label="Task"
@@ -182,13 +347,18 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           disabled={!state.canTaskList}
         />
         <ToolbarButton
-          label="Quote"
+          icon={<Quote className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
           onClick={() => editor.chain().focus().toggleBlockquote().run()}
           pressed={state.isBlockquote}
+          isFirst={false}
+          isLast={false}
+          isInGroup={true}
+          aria-label="Цитата"
         />
         <ToolbarButton
-          label="Блок"
-          onClick={() => editor.chain().focus().insertRootBlock().run()}
+          label="Block"
+          onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+          pressed={state.isCodeBlock}
         />
 
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
@@ -216,9 +386,13 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
         ) : null}
 
         <ToolbarButton
-          label="Clear"
+          icon={<Image className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
           onClick={() => editor.chain().focus().clearNodes().run()}
           disabled={!state.canClearNodes}
+          isFirst={true}
+          isLast={true}
+          isInGroup={true}
+          aria-label="Очистить форматирование"
         />
       </div>
     </div>

@@ -1,4 +1,5 @@
 import React from 'react';
+import DOC from '../../../app/images/Doc.svg';
 
 type PageEditorHeaderProps = {
   title: string;
@@ -7,7 +8,7 @@ type PageEditorHeaderProps = {
 };
 
 export function PageEditorHeader({ title, description, onSave }: PageEditorHeaderProps) {
-  const [isEditing, setIsEditing] = React.useState(false);
+  const [editingField, setEditingField] = React.useState<'title' | 'description' | null>(null);
   const [localTitle, setLocalTitle] = React.useState(title);
   const [localDescription, setLocalDescription] = React.useState(description);
 
@@ -15,62 +16,88 @@ export function PageEditorHeader({ title, description, onSave }: PageEditorHeade
   React.useEffect(() => setLocalDescription(description), [description]);
 
   const handleSave = () => {
-    onSave?.(localTitle.trim() || 'Новая страница', localDescription.trim() || '');
-    setIsEditing(false);
+    const newTitle = localTitle.trim() || 'Новая страница';
+    const newDescription = localDescription.trim();
+    
+    if (newTitle !== title || newDescription !== description) {
+      onSave?.(newTitle, newDescription);
+    }
+    
+    setEditingField(null);
   };
 
-  const handleCancel = () => {
-    setLocalTitle(title);
-    setLocalDescription(description);
-    setIsEditing(false);
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSave();
+    }
+    if (e.key === 'Escape') {
+      setEditingField(null);
+      setLocalTitle(title);
+      setLocalDescription(description);
+    }
   };
 
   return (
-    <header className="flex items-center gap-3 border-b border-editor-border-subtle bg-editor-bg-page px-3 py-3 sm:px-4 sm:py-4">
-      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-editor-border-control bg-editor-bg-control text-[0.65rem] font-semibold text-editor-brand">
-        []
+    <header className="flex items-start gap-3 border-b border-editor-border-subtle bg-editor-bg-page px-3 py-3 sm:px-4 sm:py-4">
+      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-[0.65rem] font-semibold text-editor-brand mt-0.5">
+        <img 
+          src={DOC} 
+          alt="Иконка страницы" 
+          className="h-4 w-4"
+        />
       </span>
+      
       <div className="min-w-0 flex-1">
-        {!isEditing ? (
-          <div className="flex items-center gap-3">
-            <div className="min-w-0 flex-1">
-              <h1 className="truncate font-wide text-sm leading-5 text-editor-text-primary">{title}</h1>
-              <p className="truncate text-sm leading-5 text-editor-text-tertiary">{description}</p>
-            </div>
-            <button
-              onClick={() => setIsEditing(true)}
-              className="rounded-md bg-editor-bg-control px-2 py-1 text-sm text-editor-text-primary hover:opacity-90"
-              aria-label="Edit page metadata"
-            >
-              Ред.
-            </button>
-          </div>
-        ) : (
-          <div className="flex w-full items-center gap-3">
-            <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            {editingField === 'title' ? (
               <input
+                type="text"
                 value={localTitle}
                 onChange={(e) => setLocalTitle(e.target.value)}
-                className="w-full rounded-md border border-editor-border-control bg-editor-bg-input px-2 py-1 text-sm font-wide text-editor-text-primary"
+                onBlur={handleSave}
+                onKeyDown={handleKeyDown}
+                className="w-full font-wide text-sm leading-5 text-editor-text-primary bg-editor-bg-input border border-editor-border-control rounded-md px-2 py-1 focus:outline-none focus:border-editor-brand"
                 placeholder="Название страницы"
+                autoFocus
               />
+            ) : (
+              <h1
+                className="truncate font-wide text-sm leading-5 text-editor-text-primary cursor-text hover:bg-editor-bg-control/50 rounded px-1 -mx-1 transition-colors"
+                onDoubleClick={() => {
+                  setLocalTitle(title);
+                  setEditingField('title');
+                }}
+              >
+                {title}
+              </h1>
+            )}
+            {editingField === 'description' ? (
               <input
+                type="text"
                 value={localDescription}
                 onChange={(e) => setLocalDescription(e.target.value)}
-                className="mt-1 w-full rounded-md border border-editor-border-control bg-editor-bg-input px-2 py-1 text-sm text-editor-text-tertiary"
-                placeholder="Описание (необязательно)"
+                onBlur={handleSave}
+                onKeyDown={handleKeyDown}
+                className="mt-1 w-full text-sm leading-5 bg-editor-bg-input border border-editor-border-control rounded-md px-2 py-1 focus:outline-none focus:border-editor-brand"
+                style={{ color: 'rgba(150, 159, 168, 1)' }}
+                placeholder="Добавить описание"
+                autoFocus
               />
-            </div>
-            <div className="flex gap-2">
-              <button onClick={handleSave} className="rounded-md bg-editor-brand px-2 py-1 text-sm text-white">
-                Сохранить
-              </button>
-              <button onClick={handleCancel} className="rounded-md border border-editor-border-control px-2 py-1 text-sm">
-                Отмена
-              </button>
-            </div>
+            ) : (
+              <p
+                className="truncate text-sm leading-5 cursor-text hover:bg-editor-bg-control/50 rounded px-1 -mx-1 transition-colors"
+                style={{ color: 'rgba(150, 159, 168, 1)' }}
+                onDoubleClick={() => {
+                  setLocalDescription(description);
+                  setEditingField('description');
+                }}
+              >
+                {description || 'Добавить описание'}
+              </p>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </header>
   );
