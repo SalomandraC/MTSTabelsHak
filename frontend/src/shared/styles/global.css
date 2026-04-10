@@ -67,16 +67,24 @@
   
 @font-face {
   font-family: 'MTS Compact';
-  src: url('../../app/fonts/MTS-Compact.woff2') format('woff2');
-  font-weight: 300 700;
+  src: url('../../app/fonts/MTSWide-Medium-MH5A5AEJ.ttf') format('truetype');
+  font-weight: 400 600;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
   font-family: 'MTS Wide';
-  src: url('../../app/fonts/MTS-Wide.woff2') format('woff2');
-  font-weight: 400 700;
+  src: url('../../app/fonts/MTSWide-Medium-MH5A5AEJ.ttf') format('truetype');
+  font-weight: 400 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'MTS Wide';
+  src: url('../../app/fonts/MTSWide-Bold-XQ34CV62.ttf') format('truetype');
+  font-weight: 700;
   font-style: normal;
   font-display: swap;
 }
