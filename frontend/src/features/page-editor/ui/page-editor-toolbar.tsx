@@ -54,6 +54,57 @@ type ToolbarButtonProps = {
   onClick: ((event: React.MouseEvent<HTMLButtonElement>) => void) | (() => void);
 };
 
+function areMenuStatesEqual(
+  previous: ReturnType<typeof menuBarStateSelector> | null,
+  next: ReturnType<typeof menuBarStateSelector> | null,
+) {
+  if (previous === next) {
+    return true;
+  }
+
+  if (!previous || !next) {
+    return false;
+  }
+
+  return (
+    previous.isBold === next.isBold &&
+    previous.canBold === next.canBold &&
+    previous.isItalic === next.isItalic &&
+    previous.canItalic === next.canItalic &&
+    previous.isStrike === next.isStrike &&
+    previous.canStrike === next.canStrike &&
+    previous.isCode === next.isCode &&
+    previous.canCode === next.canCode &&
+    previous.isUnderline === next.isUnderline &&
+    previous.canUnderline === next.canUnderline &&
+    previous.canClearNodes === next.canClearNodes &&
+    previous.isParagraph === next.isParagraph &&
+    previous.isHeading1 === next.isHeading1 &&
+    previous.isHeading2 === next.isHeading2 &&
+    previous.isHeading3 === next.isHeading3 &&
+    previous.isAlignLeft === next.isAlignLeft &&
+    previous.isAlignCenter === next.isAlignCenter &&
+    previous.isAlignRight === next.isAlignRight &&
+    previous.isBulletList === next.isBulletList &&
+    previous.canBulletList === next.canBulletList &&
+    previous.isOrderedList === next.isOrderedList &&
+    previous.canOrderedList === next.canOrderedList &&
+    previous.isTaskList === next.isTaskList &&
+    previous.canTaskList === next.canTaskList &&
+    previous.isBlockquote === next.isBlockquote &&
+    previous.isCodeBlock === next.isCodeBlock &&
+    previous.canCodeBlock === next.canCodeBlock &&
+    previous.isLink === next.isLink &&
+    previous.linkHref === next.linkHref &&
+    previous.linkLabel === next.linkLabel &&
+    previous.canUnsetLink === next.canUnsetLink &&
+    previous.isImageSelected === next.isImageSelected &&
+    previous.canUndo === next.canUndo &&
+    previous.canRedo === next.canRedo &&
+    previous.canClearFormatting === next.canClearFormatting
+  );
+}
+
 function ToolbarButton({ 
   label, 
   icon, 
@@ -122,6 +173,7 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
     useEditorState({
       editor,
       selector: menuBarStateSelector,
+      equalityFn: areMenuStatesEqual,
     }) ??
     {
       isBold: false,
@@ -154,7 +206,8 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
       isLink: false,
       linkHref: undefined,
       linkLabel: undefined,
-      isImage: false,
+      canUnsetLink: false,
+      isImageSelected: false,
       canUndo: false,
       canRedo: false,
       canClearFormatting: false,
