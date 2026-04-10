@@ -96,7 +96,6 @@ export function FloatingToolbar({ editor, onOpenLinkModal }: FloatingToolbarProp
       return;
     }
 
-    // Проверяем что есть текстовое содержимое в выделении
     let hasTextContent = false;
     editorState.doc.nodesBetween(from, to, (node) => {
       if (node.isText) {
@@ -109,12 +108,10 @@ export function FloatingToolbar({ editor, onOpenLinkModal }: FloatingToolbarProp
       return;
     }
 
-    // Получаем координаты выделения из ProseMirror
     const view = editor.view;
     const start = view.coordsAtPos(from);
     const end = view.coordsAtPos(to);
 
-    // Вычисляем позицию по центру выделения
     const top = Math.min(start.top, end.top);
     const left = (start.left + end.left) / 2;
 
@@ -122,15 +119,11 @@ export function FloatingToolbar({ editor, onOpenLinkModal }: FloatingToolbarProp
     setVisible(true);
   }, [editor]);
 
-  // Подписываемся на транзакции редактора — они срабатывают ПОСЛЕ
-  // обновления внутреннего состояния, поэтому selection всегда актуален
   useEffect(() => {
     if (!editor) return;
 
-    // Сразу проверяем текущее состояние
     updatePosition();
 
-    // Слушаем транзакции (selection, content, focus — всё)
     editor.on('transaction', updatePosition);
 
     return () => {
@@ -142,10 +135,9 @@ export function FloatingToolbar({ editor, onOpenLinkModal }: FloatingToolbarProp
     return null;
   }
 
-  // Позиционируем тулбар по центру над выделением
   const style: React.CSSProperties = {
     position: 'fixed',
-    top: position.top - 40, // 40px — высота тулбара + отступ
+    top: position.top - 40,
     left: position.left,
     transform: 'translateX(-50%)',
     zIndex: 50,
