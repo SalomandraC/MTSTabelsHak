@@ -1,17 +1,19 @@
 import type { Editor } from '@tiptap/core';
 import { useEditorState } from '@tiptap/react';
+import type { MouseEvent } from 'react';
 
 import { menuBarStateSelector } from '../model/menu-state';
 
 type PageEditorToolbarProps = {
   editor: Editor | null;
+  onOpenLinkModal: (position?: { top: number; left: number }) => void;
 };
 
 type ToolbarButtonProps = {
   label: string;
   pressed?: boolean;
   disabled?: boolean;
-  onClick: () => void;
+  onClick: (event: MouseEvent<HTMLButtonElement>) => void;
 };
 
 function ToolbarButton({ label, pressed = false, disabled = false, onClick }: ToolbarButtonProps) {
@@ -31,7 +33,7 @@ function ToolbarButton({ label, pressed = false, disabled = false, onClick }: To
   );
 }
 
-export function PageEditorToolbar({ editor }: PageEditorToolbarProps) {
+export function PageEditorToolbar({ editor, onOpenLinkModal }: PageEditorToolbarProps) {
   const state =
     useEditorState({
       editor,
@@ -42,15 +44,24 @@ export function PageEditorToolbar({ editor }: PageEditorToolbarProps) {
       canBold: false,
       isItalic: false,
       canItalic: false,
+      isUnderline: false,
+      canUnderline: false,
       isStrike: false,
       canStrike: false,
       isCode: false,
       canCode: false,
+      isLink: false,
+      linkLabel: '',
+      linkHref: '',
+      canUnsetLink: false,
       canClearNodes: false,
       isParagraph: false,
       isHeading1: false,
       isHeading2: false,
       isHeading3: false,
+      isAlignLeft: false,
+      isAlignCenter: false,
+      isAlignRight: false,
       isBulletList: false,
       isOrderedList: false,
       isBlockquote: false,
@@ -82,6 +93,12 @@ export function PageEditorToolbar({ editor }: PageEditorToolbarProps) {
           onClick={() => editor.chain().focus().toggleItalic().run()}
           pressed={state.isItalic}
           disabled={!state.canItalic}
+        />
+        <ToolbarButton
+          label="U"
+          onClick={() => editor.chain().focus().toggleUnderline().run()}
+          pressed={state.isUnderline}
+          disabled={!state.canUnderline}
         />
         <ToolbarButton
           label="S"
@@ -118,6 +135,24 @@ export function PageEditorToolbar({ editor }: PageEditorToolbarProps) {
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
         <ToolbarButton
+          label="L"
+          onClick={() => editor.chain().focus().setTextAlign('left').run()}
+          pressed={state.isAlignLeft}
+        />
+        <ToolbarButton
+          label="C"
+          onClick={() => editor.chain().focus().setTextAlign('center').run()}
+          pressed={state.isAlignCenter}
+        />
+        <ToolbarButton
+          label="R"
+          onClick={() => editor.chain().focus().setTextAlign('right').run()}
+          pressed={state.isAlignRight}
+        />
+
+        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
+        <ToolbarButton
           label="UL"
           onClick={() => editor.chain().focus().toggleBulletList().run()}
           pressed={state.isBulletList}
@@ -139,6 +174,24 @@ export function PageEditorToolbar({ editor }: PageEditorToolbarProps) {
         />
 
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
+        <ToolbarButton
+          label="@"
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            onOpenLinkModal({ top: rect.bottom + 8, left: rect.left });
+          }}
+          pressed={state.isLink}
+        />
+
+        {state.isLink && state.linkHref ? (
+          <div className="mx-1 inline-flex h-8 min-w-[15rem] items-center rounded-md border border-[#d2d8e3] bg-[#eef2ff] px-2 text-xs text-[#2a3962]">
+            <span className="mr-2 shrink-0 font-semibold">Ссылка:</span>
+            <span className="truncate">{state.linkLabel}</span>
+            <span className="mx-2 text-[#6b7898]">|</span>
+            <span className="truncate text-[#546384]">{state.linkHref}</span>
+          </div>
+        ) : null}
 
         <ToolbarButton
           label="Clear"

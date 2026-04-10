@@ -1,5 +1,8 @@
+import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
+import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
+import Underline from '@tiptap/extension-underline';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -9,6 +12,7 @@ import type { SlashMenuItem } from '../../slash-menu';
 import type { PageEditorSlashCommandItem } from '../model/slash-command-items';
 import { slashCommandItems } from '../model/slash-command-items';
 import { PageEditorHeader } from './page-editor-header';
+import { PageLinkModal } from './page-link-modal';
 import { PageEditorToolbar } from './page-editor-toolbar';
 
 type SlashState = {
@@ -16,6 +20,11 @@ type SlashState = {
   query: string;
   from: number;
   to: number;
+  top: number;
+  left: number;
+};
+
+type ModalPosition = {
   top: number;
   left: number;
 };
@@ -35,7 +44,7 @@ const baseSlashState: SlashState = {
 };
 
 function isQueryValid(query: string) {
-  return /^[a-zA-Z0-9_-]*$/.test(query);
+  return /^[\p{L}\p{N}_-]*$/u.test(query);
 }
 
 export function PageEditor() {
@@ -44,10 +53,24 @@ export function PageEditor() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [title, setTitle] = useState('Новая страница');
   const [description, setDescription] = useState('Добавить описание');
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+  const [linkText, setLinkText] = useState('');
+  const [linkUrl, setLinkUrl] = useState('');
+  const [openInNewTab, setOpenInNewTab] = useState(false);
+  const [isEditingExistingLink, setIsEditingExistingLink] = useState(false);
+  const [linkModalPosition, setLinkModalPosition] = useState<ModalPosition>({ top: 80, left: 80 });
 
   const editor = useEditor({
     extensions: [
       TextStyle,
+      Link.configure({
+        openOnClick: false,
+        autolink: true,
+      }),
+      Underline,
+      TextAlign.configure({
+        types: ['heading', 'paragraph'],
+      }),
       StarterKit,
       Placeholder.configure({
         emptyEditorClass: 'is-editor-empty',
@@ -135,7 +158,7 @@ export function PageEditor() {
     return slashCommandItems.filter((item) => {
       return (
         item.label.toLowerCase().includes(normalized) ||
-        item.keywords.some((keyword) => keyword.includes(normalized))
+        item.keywords.some((keyword) => keyword.toLowerCase().includes(normalized))
       );
     });
   }, [slashState.query]);
@@ -146,6 +169,12 @@ export function PageEditor() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (isLinkModalOpen && event.key === 'Escape') {
+        event.preventDefault();
+        setIsLinkModalOpen(false);
+        return;
+      }
+
       if (!slashState.isOpen || !editor) {
         return;
       }
@@ -179,7 +208,90 @@ export function PageEditor() {
     return () => {
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [editor, filteredItems, selectedIndex, slashState.isOpen]);
+  }, [editor, filteredItems, isLinkModalOpen, selectedIndex, slashState.isOpen]);
+
+  const normalizeUrl = (rawUrl: string) => {
+    const trimmed = rawUrl.trim();
+    if (!trimmed) {
+      return '';
+    }
+
+    if (/^https?:\/\//i.test(trimmed)) {
+      return trimmed;
+    }
+
+    return `https://${trimmed}`;
+  };
+
+  const openLinkModal = (position?: ModalPosition) => {
+    if (!editor) {
+      return;
+    }
+
+    const modalWidth = 424;
+    const modalHeight = 240;
+    const baseLeft = position?.left ?? 80;
+    const baseTop = position?.top ?? 80;
+    const clampedLeft = Math.max(8, Math.min(baseLeft, window.innerWidth - modalWidth - 8));
+    const clampedTop = Math.max(8, Math.min(baseTop, window.innerHeight - modalHeight - 8));
+
+    const selectedText = editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' ');
+    const currentHref = ((editor.getAttributes('link').href as string | undefined) ?? '').trim();
+    const isExisting = editor.isActive('link') && Boolean(currentHref);
+    setIsEditingExistingLink(isExisting);
+    setLinkText(selectedText || currentHref);
+    setLinkUrl(currentHref);
+    setOpenInNewTab(false);
+    setLinkModalPosition({ top: clampedTop, left: clampedLeft });
+    setIsLinkModalOpen(true);
+  };
+
+  const handleInsertLink = () => {
+    if (!editor) {
+      return;
+    }
+
+    const href = normalizeUrl(linkUrl);
+    if (!href) {
+      return;
+    }
+
+    const target = openInNewTab ? '_blank' : null;
+    const rel = openInNewTab ? 'noopener noreferrer' : null;
+
+    if (linkText.trim()) {
+      editor
+        .chain()
+        .focus()
+        .insertContent({
+          type: 'text',
+          text: linkText.trim(),
+          marks: [{ type: 'link', attrs: { href, target, rel } }],
+        })
+        .run();
+    } else {
+      editor.chain().focus().setLink({ href, target, rel }).run();
+    }
+
+    setIsLinkModalOpen(false);
+    setLinkText('');
+    setLinkUrl('');
+    setOpenInNewTab(false);
+    setIsEditingExistingLink(false);
+  };
+
+  const handleDeleteLink = () => {
+    if (!editor) {
+      return;
+    }
+
+    editor.chain().focus().unsetLink().run();
+    setIsLinkModalOpen(false);
+    setLinkText('');
+    setLinkUrl('');
+    setOpenInNewTab(false);
+    setIsEditingExistingLink(false);
+  };
 
   const applySlashItem = (item: PageEditorSlashCommandItem | SlashMenuItem) => {
     if (!editor || !('run' in item)) {
@@ -187,6 +299,14 @@ export function PageEditor() {
     }
 
     editor.chain().focus().deleteRange({ from: slashState.from, to: slashState.to }).run();
+
+    if (item.id === 'link') {
+      const modalAnchor = { top: slashState.top, left: slashState.left };
+      setSlashState(baseSlashState);
+      openLinkModal(modalAnchor);
+      return;
+    }
+
     item.run(editor);
     setSlashState(baseSlashState);
   };
@@ -195,7 +315,7 @@ export function PageEditor() {
     <main className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top_left,#f5f8ff_0%,#ffffff_32%,#ffffff_100%)] px-3 py-3 sm:px-6 sm:py-6">
       <section className="mx-auto flex min-h-[calc(100vh-1.5rem)] w-full max-w-[1400px] flex-1 flex-col overflow-hidden rounded-[14px] border border-editor-border-subtle bg-editor-bg-page shadow-[0_6px_24px_rgba(17,25,40,0.05)] sm:min-h-[calc(100vh-3rem)]">
         <PageEditorHeader title={title} description={description} onSave={handleSaveMeta} />
-        <PageEditorToolbar editor={editor} />
+        <PageEditorToolbar editor={editor} onOpenLinkModal={openLinkModal} />
 
         <div ref={wrapperRef} className="relative flex-1 px-2 pb-8 pt-3 sm:px-6 sm:pb-10 sm:pt-5">
           <EditorContent editor={editor} />
@@ -207,6 +327,20 @@ export function PageEditor() {
             position={{ top: slashState.top, left: slashState.left }}
             onHover={setSelectedIndex}
             onSelect={applySlashItem}
+          />
+          <PageLinkModal
+            isOpen={isLinkModalOpen}
+            position={linkModalPosition}
+            linkText={linkText}
+            url={linkUrl}
+            openInNewTab={openInNewTab}
+            isExistingLink={isEditingExistingLink}
+            onLinkTextChange={setLinkText}
+            onUrlChange={setLinkUrl}
+            onOpenInNewTabChange={setOpenInNewTab}
+            onSubmit={handleInsertLink}
+            onDeleteLink={handleDeleteLink}
+            onClose={() => setIsLinkModalOpen(false)}
           />
         </div>
       </section>

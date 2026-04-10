@@ -17,6 +17,16 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
       editor.chain().focus().setParagraph().run();
     },
   },
+   {
+    id: 'link',
+    label: 'Ссылка',
+    hint: 'Добавить ссылку с текстом',
+    keywords: ['ссылка', 'линк', 'link', 'url', 'href'],
+    icon: 'L',
+    run: () => {
+      // Handled in PageEditor with modal flow.
+    },
+  },
   {
     id: 'heading-1',
     label: 'Heading 1',

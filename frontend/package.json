@@ -15,8 +15,11 @@
   },
   "dependencies": {
     "@tiptap/core": "^3.22.3",
+    "@tiptap/extension-link": "^3.22.3",
     "@tiptap/extension-placeholder": "^3.22.3",
+    "@tiptap/extension-text-align": "^3.22.3",
     "@tiptap/extension-text-style": "^3.22.3",
+    "@tiptap/extension-underline": "^3.22.3",
     "@tiptap/react": "^3.22.3",
     "@tiptap/starter-kit": "^3.22.3",
     "react": "^18.3.1",

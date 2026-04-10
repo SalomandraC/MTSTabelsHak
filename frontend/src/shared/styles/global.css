@@ -23,6 +23,11 @@
     --color-editor-icon: #505762;
     --color-editor-text-primary: #1D2023;
     --color-editor-text-tertiary: #969FA8;
+    --link-color: #7b67ee;
+    --color-modal-primary-bg: #ff0037;
+    --color-modal-primary-text: #ffffff;
+    --color-modal-secondary-bg: #e8eaee;
+    --color-modal-secondary-text: #2e3238;
   }
 
   * {
@@ -162,5 +167,31 @@
     border: none;
     border-top: 1px solid var(--color-editor-border-subtle);
     margin: 1.9rem 0;
+  }
+
+  .tiptap a {
+    color: var(--link-color);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+}
+
+@layer components {
+  .modal-action-primary {
+    border: 0;
+    background: var(--color-modal-primary-bg);
+    color: var(--color-modal-primary-text);
+  }
+
+  .modal-action-primary:disabled {
+    background: rgba(188, 195, 208, 0.5);
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .modal-action-secondary {
+    border: 0;
+    background: var(--color-modal-secondary-bg);
+    color: var(--color-modal-secondary-text);
   }
 }

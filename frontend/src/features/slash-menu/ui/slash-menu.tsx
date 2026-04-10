@@ -31,7 +31,7 @@ export function SlashMenu({
     return items.filter((item) => {
       return (
         item.label.toLowerCase().includes(normalized) ||
-        item.keywords.some((keyword) => keyword.includes(normalized))
+        item.keywords.some((keyword) => keyword.toLowerCase().includes(normalized))
       );
     });
   }, [items, query]);
