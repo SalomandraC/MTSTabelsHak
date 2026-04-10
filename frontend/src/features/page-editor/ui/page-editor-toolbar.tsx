@@ -24,6 +24,8 @@ import {
   ListChecks,
 } from 'lucide-react';
 
+const redFilter = 'invert(0.3) sepia(1) saturate(5) hue-rotate(-10deg)';
+
 type PageEditorToolbarProps = {
   editor: Editor | null;
   onOpenLinkModal: (position?: { top: number; left: number }) => void;
@@ -35,7 +37,13 @@ type ToolbarButtonProps = {
   icon?: React.ReactNode;
   pressed?: boolean;
   disabled?: boolean;
-  onClick: () => void;
+  onClick: ((event: React.MouseEvent<HTMLButtonElement>) => void) | (() => void);
+  noBorder?: boolean;
+  size?: 'sm' | 'md';
+  isFirst?: boolean;
+  isLast?: boolean;
+  isInGroup?: boolean;
+  'aria-label'?: string;
 };
 
 function ToolbarButton({ 
@@ -111,15 +119,26 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
       canStrike: false,
       isCode: false,
       canCode: false,
+      isUnderline: false,
+      canUnderline: false,
       canClearNodes: false,
       isParagraph: false,
       isHeading1: false,
       isHeading2: false,
       isHeading3: false,
+      isAlignLeft: false,
+      isAlignCenter: false,
+      isAlignRight: false,
       isBulletList: false,
       isOrderedList: false,
+      isTaskList: false,
+      canTaskList: false,
       isBlockquote: false,
       isCodeBlock: false,
+      isLink: false,
+      linkHref: undefined,
+      linkLabel: undefined,
+      isImage: false,
       canUndo: false,
       canRedo: false,
     };
@@ -127,6 +146,10 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
   if (!editor) {
     return null;
   }
+
+  const alignSelection = (align: 'left' | 'center' | 'right') => {
+    editor.chain().focus().setTextAlign(align).run();
+  };
 
   return (
     <div className="sticky top-0 z-20 bg-[rgba(245,247,250,1)] px-2 py-2 sm:px-4">
@@ -355,17 +378,13 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           isInGroup={true}
           aria-label="Цитата"
         />
-        <ToolbarButton
-          label="Block"
-          onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-          pressed={state.isCodeBlock}
-        />
+
 
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
         <ToolbarButton
           label="@"
-          onClick={(event) => {
+          onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
             const rect = event.currentTarget.getBoundingClientRect();
             onOpenLinkModal({ top: rect.bottom + 8, left: rect.left });
           }}
