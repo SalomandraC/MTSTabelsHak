@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useEditor } from '@tiptap/react';
 
@@ -53,6 +53,9 @@ export function usePageEditorController() {
   const [imageFileName, setImageFileName] = useState('');
   const [imageFileSizeLabel, setImageFileSizeLabel] = useState('');
   const [imagePreviewSrc, setImagePreviewSrc] = useState('');
+
+  const slashStateRef = useRef(baseSlashState);
+  const selectedIndexRef = useRef(0);
 
   const extensions = useMemo(() => createPageEditorExtensions(), []);
 
@@ -225,6 +228,20 @@ export function usePageEditorController() {
     });
   }, [slashState.query]);
 
+  const filteredItemsRef = useRef(filteredItems);
+
+  useEffect(() => {
+    slashStateRef.current = slashState;
+  }, [slashState]);
+
+  useEffect(() => {
+    selectedIndexRef.current = selectedIndex;
+  }, [selectedIndex]);
+
+  useEffect(() => {
+    filteredItemsRef.current = filteredItems;
+  }, [filteredItems]);
+
   useEffect(() => {
     setSelectedIndex(0);
   }, [slashState.query, slashState.isOpen]);
@@ -372,6 +389,12 @@ export function usePageEditorController() {
     setSlashState(baseSlashState);
   };
 
+  const applySlashItemRef = useRef(applySlashItem);
+
+  useEffect(() => {
+    applySlashItemRef.current = applySlashItem;
+  }, [applySlashItem]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (isLinkModalOpen && event.key === 'Escape') {
@@ -386,7 +409,7 @@ export function usePageEditorController() {
         return;
       }
 
-      if (!slashState.isOpen || !editor) {
+      if (!slashStateRef.current.isOpen || !editor) {
         return;
       }
 
@@ -397,31 +420,57 @@ export function usePageEditorController() {
       }
 
       if (event.key === 'ArrowDown') {
+        if (filteredItemsRef.current.length === 0) {
+          return;
+        }
+
         event.preventDefault();
-        setSelectedIndex((current) => (current + 1) % Math.max(filteredItems.length, 1));
+        setSelectedIndex((current) => (current + 1) % filteredItemsRef.current.length);
         return;
       }
 
       if (event.key === 'ArrowUp') {
+        if (filteredItemsRef.current.length === 0) {
+          return;
+        }
+
         event.preventDefault();
-        setSelectedIndex(
-          (current) => (current - 1 + Math.max(filteredItems.length, 1)) % Math.max(filteredItems.length, 1),
-        );
+        setSelectedIndex((current) => (current - 1 + filteredItemsRef.current.length) % filteredItemsRef.current.length);
         return;
       }
 
-      if (event.key === 'Enter' && filteredItems.length > 0) {
+      if (event.key === 'ArrowRight' && filteredItemsRef.current.length > 0) {
         event.preventDefault();
-        applySlashItem(filteredItems[selectedIndex]);
+        const currentItem = filteredItemsRef.current[selectedIndexRef.current] ?? filteredItemsRef.current[0];
+
+        if (currentItem) {
+          applySlashItemRef.current(currentItem);
+        }
+        return;
+      }
+
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        setSlashState(baseSlashState);
+        return;
+      }
+
+      if (event.key === 'Enter' && filteredItemsRef.current.length > 0) {
+        event.preventDefault();
+        const currentItem = filteredItemsRef.current[selectedIndexRef.current] ?? filteredItemsRef.current[0];
+
+        if (currentItem) {
+          applySlashItemRef.current(currentItem);
+        }
       }
     };
 
-    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKeyDown, true);
 
     return () => {
-      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [editor, filteredItems, isImageModalOpen, isLinkModalOpen, selectedIndex, slashState.isOpen]);
+  }, [closeImageModal, editor, isImageModalOpen, isLinkModalOpen]);
 
   return {
     editor,

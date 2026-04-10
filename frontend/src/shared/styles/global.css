@@ -240,6 +240,30 @@
 }
 
 @layer components {
+  .slash-menu-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #c4cedf #eef2f8;
+  }
+
+  .slash-menu-scroll::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  .slash-menu-scroll::-webkit-scrollbar-track {
+    background: #eef2f8;
+    border-radius: 999px;
+  }
+
+  .slash-menu-scroll::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #cfd8e8 0%, #b8c4da 100%);
+    border-radius: 999px;
+    border: 2px solid #eef2f8;
+  }
+
+  .slash-menu-scroll::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #becae1 0%, #a9b8d3 100%);
+  }
+
   .modal-action-primary {
     border: 0;
     background: var(--color-modal-primary-bg);
