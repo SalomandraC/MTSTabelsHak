@@ -192,12 +192,12 @@ export function PageEditor() {
   };
 
   return (
-    <main className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top_left,#f5f8ff_0%,#ffffff_32%,#ffffff_100%)] px-3 py-3 sm:px-6 sm:py-6">
-      <section className="mx-auto flex min-h-[calc(100vh-1.5rem)] w-full max-w-[1400px] flex-1 flex-col overflow-hidden rounded-[14px] border border-editor-border-subtle bg-editor-bg-page shadow-[0_6px_24px_rgba(17,25,40,0.05)] sm:min-h-[calc(100vh-3rem)]">
+    <main className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top_left,#f5f8ff_0%,#ffffff_32%,#ffffff_100%)] px-0 py-0">
+      <section className="flex w-full flex-1 flex-col bg-editor-bg-page">
         <PageEditorHeader title={title} description={description} onSave={handleSaveMeta} />
         <PageEditorToolbar editor={editor} />
 
-        <div ref={wrapperRef} className="relative flex-1 px-2 pb-8 pt-3 sm:px-6 sm:pb-10 sm:pt-5">
+        <div ref={wrapperRef} className="relative flex-1 px-2 pb-8 pt-3 sm:px-6 sm:pb-10 sm:pt-5 mx-auto">
           <EditorContent editor={editor} />
           <SlashMenu
             isOpen={slashState.isOpen}
