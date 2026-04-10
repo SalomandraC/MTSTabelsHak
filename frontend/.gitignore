@@ -1,0 +1,33 @@
+node_modules/
+dist/
+.env
+.DS_Store
+# Vite cache
+.vite/
+
+# Local env files
+.env.local
+.env.*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor directories
+.vscode/
+.idea/
+
+# TypeScript
+*.tsbuildinfo
+
+# Caches and coverage
+.cache/
+coverage/
+
+# Alternative build output
+build/
+
+# Pakage lock files
+package-lock.json

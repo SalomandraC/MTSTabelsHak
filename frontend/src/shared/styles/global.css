@@ -1,0 +1,68 @@
+@import 'tailwindcss';
+
+@layer base {
+  :root {
+    color-scheme: light;
+    font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* Font stacks */
+    --font-sans: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+    --font-compact: 'MTS Compact', var(--font-sans);
+    --font-wide: 'MTS Wide', var(--font-sans);
+
+    /* Color tokens (editor) */
+    --color-editor-brand: #7B67EE;
+    --color-editor-bg-page: #FFFFFF;
+    --color-editor-bg-toolbar: #F5F7FA;
+    --color-editor-bg-control: #F0F1F3;
+    --color-editor-border-subtle: #E0E0E0;
+    --color-editor-border-control: #D7D9DD;
+    --color-editor-icon: #505762;
+    --color-editor-text-primary: #1D2023;
+    --color-editor-text-tertiary: #969FA8;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+    margin: 0;
+  }
+
+  body {
+    min-height: 100vh;
+    font-family: var(--font-sans);
+    background-color: var(--color-editor-bg-page);
+    color: var(--color-editor-text-primary);
+  }
+  
+@font-face {
+  font-family: 'MTS Compact';
+  src: url('../../app/fonts/MTS-Compact.woff2') format('woff2');
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'MTS Wide';
+  src: url('../../app/fonts/MTS-Wide.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+}
