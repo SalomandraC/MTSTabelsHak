@@ -652,7 +652,7 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           onClick={() => editor.chain().focus().toggleCodeBlock().run()}
           pressed={state.isCodeBlock}
           disabled={!state.canCodeBlock}
-          isFirst={false}
+          isFirst={true}
           isLast={true}
           isInGroup={true}
           aria-label="Блок кода"
