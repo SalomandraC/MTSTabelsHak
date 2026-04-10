@@ -85,8 +85,15 @@ paths:
       description: |
         Возвращает список страниц для sidebar, picker ссылок и slash-menu при вставке page-link.
         Если передан параметр `query`, backend выполняет поиск по заголовкам и индексу страниц.
+        Параметр `spaceId` обязателен, потому что wiki-дерево и поисковый индекс изолированы по пространствам.
       operationId: listPages
       parameters:
+        - name: spaceId
+          in: query
+          required: true
+          description: Идентификатор wiki-пространства, внутри которого выполняется поиск страниц
+          schema:
+            type: string
         - name: query
           in: query
           required: false
@@ -126,6 +133,7 @@ paths:
         - кнопки "New page"
         - slash-menu команды создания связанной страницы
         - сценариев "Create linked page"
+        Страница всегда создается внутри иерархии пространства и может быть помещена в папку через `parentNodeId`.
       operationId: createPage
       requestBody:
         required: true
@@ -144,6 +152,134 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/spaces/{spaceId}/wiki/tree:
+    get:
+      tags: [Pages]
+      summary: Получить дерево wiki-структуры пространства
+      description: |
+        Возвращает полную иерархию папок и страниц внутри пространства.
+        Используется для sidebar navigation, page picker и перемещения страниц по дереву.
+      operationId: getWikiTree
+      parameters:
+        - $ref: '#/components/parameters/SpaceId'
+      responses:
+        '200':
+          description: Дерево wiki получено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WikiTreeNode'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/folders:
+    post:
+      tags: [Pages]
+      summary: Создать папку в wiki-дереве
+      description: |
+        Создает папку внутри пространства или внутри другой папки.
+        Папки являются first-class сущностями и используются для вложенной структуры вики.
+      operationId: createFolder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFolderRequest'
+      responses:
+        '201':
+          description: Папка создана
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/folders/{folderId}:
+    patch:
+      tags: [Pages]
+      summary: Обновить папку
+      description: |
+        Обновляет метаданные папки: название, иконку или архивный статус.
+      operationId: updateFolder
+      parameters:
+        - name: folderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFolderRequest'
+      responses:
+        '200':
+          description: Папка обновлена
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Pages]
+      summary: Архивировать папку и вложенное поддерево
+      description: |
+        Выполняет soft-delete папки и всех вложенных страниц/папок.
+      operationId: deleteFolder
+      parameters:
+        - name: folderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Папка архивирована
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/nodes/{nodeId}/move:
+    post:
+      tags: [Pages]
+      summary: Переместить папку или страницу в дереве
+      description: |
+        Изменяет `parentId` и позицию ноды внутри нового родителя.
+        Используется drag-and-drop навигацией и действиями в sidebar.
+      operationId: moveNode
+      parameters:
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveNodeRequest'
+      responses:
+        '200':
+          description: Нода перемещена
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /api/v1/pages/{pageId}:
     get:
@@ -1087,15 +1223,17 @@ components:
 
     CreatePageRequest:
       type: object
-      required: [title]
+      required: [spaceId, title]
       properties:
+        spaceId:
+          type: string
         title:
           type: string
           maxLength: 255
         icon:
           type: string
           nullable: true
-        parentPageId:
+        parentNodeId:
           type: string
           format: uuid
           nullable: true
@@ -1116,6 +1254,76 @@ components:
       properties:
         page:
           $ref: '#/components/schemas/PageSummary'
+
+    WikiTreeNode:
+      type: object
+      required: [id, spaceId, type, title, position, isArchived, children]
+      properties:
+        id:
+          type: string
+          format: uuid
+        spaceId:
+          type: string
+        type:
+          type: string
+          enum: [folder, page]
+        title:
+          type: string
+        icon:
+          type: string
+          nullable: true
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+        position:
+          type: integer
+        isArchived:
+          type: boolean
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/WikiTreeNode'
+
+    CreateFolderRequest:
+      type: object
+      required: [spaceId, title]
+      properties:
+        spaceId:
+          type: string
+        parentNodeId:
+          type: string
+          format: uuid
+          nullable: true
+        title:
+          type: string
+          maxLength: 255
+        icon:
+          type: string
+          nullable: true
+
+    UpdateFolderRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 255
+        icon:
+          type: string
+          nullable: true
+        isArchived:
+          type: boolean
+
+    MoveNodeRequest:
+      type: object
+      properties:
+        targetParentId:
+          type: string
+          format: uuid
+          nullable: true
+        position:
+          type: integer
+          minimum: 0
 
     UpdatePageRequest:
       type: object
