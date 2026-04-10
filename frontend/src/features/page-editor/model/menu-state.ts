@@ -1,4 +1,5 @@
 import type { Editor } from '@tiptap/core';
+import { NodeSelection } from '@tiptap/pm/state';
 import type { EditorStateSnapshot } from '@tiptap/react';
 
 const emptyMenuBarState = {
@@ -21,6 +22,7 @@ const emptyMenuBarState = {
   isHeading1: false,
   isHeading2: false,
   isHeading3: false,
+  isImageSelected: false,
   isAlignLeft: false,
   isAlignCenter: false,
   isAlignRight: false,
@@ -40,8 +42,14 @@ export function menuBarStateSelector(ctx: EditorStateSnapshot<Editor | null>) {
   }
 
   const { from, to, empty } = ctx.editor.state.selection;
+  const selection = ctx.editor.state.selection;
   const linkText = empty ? '' : ctx.editor.state.doc.textBetween(from, to, ' ');
   const linkHref = (ctx.editor.getAttributes('link').href as string | undefined) ?? '';
+  const isImageSelection = selection instanceof NodeSelection && selection.node.type.name === 'image';
+  const selectedImageAlign = isImageSelection
+    ? ((selection.node.attrs.align as 'left' | 'center' | 'right' | undefined) ?? 'left')
+    : null;
+  const textAlign = (ctx.editor.getAttributes('paragraph').textAlign as 'left' | 'center' | 'right' | undefined) ?? 'left';
 
   return {
     isBold: ctx.editor.isActive('bold') ?? false,
@@ -63,9 +71,10 @@ export function menuBarStateSelector(ctx: EditorStateSnapshot<Editor | null>) {
     isHeading1: ctx.editor.isActive('heading', { level: 1 }) ?? false,
     isHeading2: ctx.editor.isActive('heading', { level: 2 }) ?? false,
     isHeading3: ctx.editor.isActive('heading', { level: 3 }) ?? false,
-    isAlignLeft: ctx.editor.isActive({ textAlign: 'left' }) ?? false,
-    isAlignCenter: ctx.editor.isActive({ textAlign: 'center' }) ?? false,
-    isAlignRight: ctx.editor.isActive({ textAlign: 'right' }) ?? false,
+    isImageSelected: isImageSelection,
+    isAlignLeft: isImageSelection ? selectedImageAlign === 'left' : textAlign === 'left',
+    isAlignCenter: isImageSelection ? selectedImageAlign === 'center' : textAlign === 'center',
+    isAlignRight: isImageSelection ? selectedImageAlign === 'right' : textAlign === 'right',
     isBulletList: ctx.editor.isActive('bulletList') ?? false,
     isOrderedList: ctx.editor.isActive('orderedList') ?? false,
     isTaskList: ctx.editor.isActive('taskList') ?? false,

@@ -38,6 +38,26 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     },
   },
   {
+    id: 'image',
+    label: 'Изображение',
+    hint: 'Загрузить изображение в документ',
+    keywords: ['image', 'img', 'photo', 'картинка', 'изображение'],
+    icon: '🖼',
+    run: () => {
+      // Handled in PageEditor with modal flow.
+    },
+  },
+  {
+    id: 'root-block',
+    label: 'Блок',
+    hint: 'Добавить перетаскиваемый блок как в Notion',
+    keywords: ['block', 'root', 'section', 'блок', 'секция', 'notion'],
+    icon: '+',
+    run: (editor) => {
+      editor.chain().focus().insertRootBlock().run();
+    },
+  },
+  {
     id: 'heading-1',
     label: 'Heading 1',
     hint: 'Big section title',

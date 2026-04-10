@@ -175,6 +175,36 @@
     text-underline-offset: 2px;
   }
 
+  .tiptap img {
+    display: block;
+    max-width: min(100%, 42rem);
+    height: auto;
+    border-radius: 0.75rem;
+    margin: 1rem 0;
+    border: 1px solid var(--color-editor-border-subtle);
+    cursor: pointer;
+  }
+
+  .tiptap img[data-align='left'] {
+    margin-left: 0;
+    margin-right: auto;
+  }
+
+  .tiptap img[data-align='center'] {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .tiptap img[data-align='right'] {
+    margin-left: auto;
+    margin-right: 0;
+  }
+
+  .tiptap img.ProseMirror-selectednode {
+    outline: 2px solid #7b67ee;
+    outline-offset: 2px;
+  }
+
   .tiptap ul[data-type='taskList'] {
     list-style: none;
     margin: 1rem 0;
@@ -185,7 +215,18 @@
     align-items: flex-start;
     display: flex;
     gap: 0.5rem;
+    justify-content: flex-start;
     margin: 0.35rem 0;
+  }
+
+  .tiptap ul[data-type='taskList'] li[style*='text-align:center'],
+  .tiptap ul[data-type='taskList'] li[style*='text-align: center'] {
+    justify-content: center;
+  }
+
+  .tiptap ul[data-type='taskList'] li[style*='text-align:right'],
+  .tiptap ul[data-type='taskList'] li[style*='text-align: right'] {
+    justify-content: flex-end;
   }
 
   .tiptap ul[data-type='taskList'] li > label {
@@ -194,7 +235,8 @@
   }
 
   .tiptap ul[data-type='taskList'] li > div {
-    flex: 1;
+    flex: 0 1 auto;
+    max-width: min(100%, 42rem);
   }
 }
 

@@ -15,7 +15,9 @@
   },
   "dependencies": {
     "@tiptap/core": "^3.22.3",
+    "@tiptap/extension-file-handler": "^3.22.3",
     "@tiptap/extension-highlight": "^3.22.3",
+    "@tiptap/extension-image": "^3.22.3",
     "@tiptap/extension-link": "^3.22.3",
     "@tiptap/extension-placeholder": "^3.22.3",
     "@tiptap/extension-task-item": "^3.22.3",

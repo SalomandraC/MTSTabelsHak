@@ -1,1 +1,1 @@
-export { PageEditor } from './ui/page-editor';
+export { PageEditor } from './ui/page-editor.tsx';

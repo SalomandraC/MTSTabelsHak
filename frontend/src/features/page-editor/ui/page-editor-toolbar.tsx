@@ -7,6 +7,7 @@ import { menuBarStateSelector } from '../model/menu-state';
 type PageEditorToolbarProps = {
   editor: Editor | null;
   onOpenLinkModal: (position?: { top: number; left: number }) => void;
+  onOpenImageModal: () => void;
 };
 
 type ToolbarButtonProps = {
@@ -27,13 +28,19 @@ function ToolbarButton({ label, pressed = false, disabled = false, onClick }: To
     .trim();
 
   return (
-    <button type="button" onClick={onClick} disabled={disabled} className={className}>
+    <button
+      type="button"
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={onClick}
+      disabled={disabled}
+      className={className}
+    >
       {label}
     </button>
   );
 }
 
-export function PageEditorToolbar({ editor, onOpenLinkModal }: PageEditorToolbarProps) {
+export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }: PageEditorToolbarProps) {
   const state =
     useEditorState({
       editor,
@@ -59,6 +66,7 @@ export function PageEditorToolbar({ editor, onOpenLinkModal }: PageEditorToolbar
       isHeading1: false,
       isHeading2: false,
       isHeading3: false,
+      isImageSelected: false,
       isAlignLeft: false,
       isAlignCenter: false,
       isAlignRight: false,
@@ -75,6 +83,10 @@ export function PageEditorToolbar({ editor, onOpenLinkModal }: PageEditorToolbar
   if (!editor) {
     return null;
   }
+
+  const alignSelection = (align: 'left' | 'center' | 'right') => {
+    editor.chain().focus().setTextAlign(align).setImageAlignInSelection(align).run();
+  };
 
   return (
     <div className="sticky top-0 z-20 border-b border-editor-border-subtle bg-editor-bg-toolbar px-2 py-2 sm:px-4">
@@ -138,17 +150,17 @@ export function PageEditorToolbar({ editor, onOpenLinkModal }: PageEditorToolbar
 
         <ToolbarButton
           label="L"
-          onClick={() => editor.chain().focus().setTextAlign('left').run()}
+          onClick={() => alignSelection('left')}
           pressed={state.isAlignLeft}
         />
         <ToolbarButton
           label="C"
-          onClick={() => editor.chain().focus().setTextAlign('center').run()}
+          onClick={() => alignSelection('center')}
           pressed={state.isAlignCenter}
         />
         <ToolbarButton
           label="R"
-          onClick={() => editor.chain().focus().setTextAlign('right').run()}
+          onClick={() => alignSelection('right')}
           pressed={state.isAlignRight}
         />
 
@@ -180,6 +192,10 @@ export function PageEditorToolbar({ editor, onOpenLinkModal }: PageEditorToolbar
           onClick={() => editor.chain().focus().toggleCodeBlock().run()}
           pressed={state.isCodeBlock}
         />
+        <ToolbarButton
+          label="+Block"
+          onClick={() => editor.chain().focus().insertRootBlock().run()}
+        />
 
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
@@ -190,6 +206,10 @@ export function PageEditorToolbar({ editor, onOpenLinkModal }: PageEditorToolbar
             onOpenLinkModal({ top: rect.bottom + 8, left: rect.left });
           }}
           pressed={state.isLink}
+        />
+        <ToolbarButton
+          label="Img"
+          onClick={() => onOpenImageModal()}
         />
 
         {state.isLink && state.linkHref ? (
