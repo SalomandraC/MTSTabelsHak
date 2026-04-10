@@ -12,3 +12,5 @@
 - ✅ Добавлены markdown shortcuts через Tiptap extensions `Highlight` и `Typography` в `PageEditor`.
 - ✅ Базовые markdown input-rules от `StarterKit` активны (`#`, `##`, `>`, `-`, `*`, `1.` и т.д.).
 - ✅ Сборка `npm run build` проходит без ошибок.
+- ✅ Добавлен checklist через `TaskList` + `TaskItem` extensions.
+- ✅ Чеклист доступен в slash-меню (`Чеклист`) и в toolbar (`Task`).

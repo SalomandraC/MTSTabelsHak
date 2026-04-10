@@ -4,6 +4,8 @@ import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
+import TaskItem from '@tiptap/extension-task-item';
+import TaskList from '@tiptap/extension-task-list';
 import Typography from '@tiptap/extension-typography';
 import Underline from '@tiptap/extension-underline';
 import { EditorContent, useEditor } from '@tiptap/react';
@@ -81,6 +83,8 @@ export function PageEditor() {
       Highlight,
       Typography,
       DashShortcut,
+      TaskList,
+      TaskItem.configure({ nested: true }),
       Link.configure({
         openOnClick: false,
         autolink: true,

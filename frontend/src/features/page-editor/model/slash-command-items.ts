@@ -17,7 +17,7 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
       editor.chain().focus().setParagraph().run();
     },
   },
-   {
+  {
     id: 'link',
     label: 'Ссылка',
     hint: 'Добавить ссылку с текстом',
@@ -25,6 +25,16 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     icon: 'L',
     run: () => {
       // Handled in PageEditor with modal flow.
+    },
+  },
+  {
+    id: 'task-list',
+    label: 'Чеклист',
+    hint: 'Создать список задач с чекбоксами',
+    keywords: ['checklist', 'task', 'todo', 'чеклист', 'задача'],
+    icon: '[]',
+    run: (editor) => {
+      editor.chain().focus().toggleTaskList().run();
     },
   },
   {

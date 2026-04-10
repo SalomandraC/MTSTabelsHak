@@ -18,6 +18,8 @@
     "@tiptap/extension-highlight": "^3.22.3",
     "@tiptap/extension-link": "^3.22.3",
     "@tiptap/extension-placeholder": "^3.22.3",
+    "@tiptap/extension-task-item": "^3.22.3",
+    "@tiptap/extension-task-list": "^3.22.3",
     "@tiptap/extension-text-align": "^3.22.3",
     "@tiptap/extension-text-style": "^3.22.3",
     "@tiptap/extension-typography": "^3.22.3",

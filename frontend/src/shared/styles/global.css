@@ -174,6 +174,28 @@
     text-decoration: underline;
     text-underline-offset: 2px;
   }
+
+  .tiptap ul[data-type='taskList'] {
+    list-style: none;
+    margin: 1rem 0;
+    padding: 0;
+  }
+
+  .tiptap ul[data-type='taskList'] li {
+    align-items: flex-start;
+    display: flex;
+    gap: 0.5rem;
+    margin: 0.35rem 0;
+  }
+
+  .tiptap ul[data-type='taskList'] li > label {
+    margin-top: 0.15rem;
+    user-select: none;
+  }
+
+  .tiptap ul[data-type='taskList'] li > div {
+    flex: 1;
+  }
 }
 
 @layer components {

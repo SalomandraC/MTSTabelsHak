@@ -64,6 +64,8 @@ export function PageEditorToolbar({ editor, onOpenLinkModal }: PageEditorToolbar
       isAlignRight: false,
       isBulletList: false,
       isOrderedList: false,
+      isTaskList: false,
+      canTaskList: false,
       isBlockquote: false,
       isCodeBlock: false,
       canUndo: false,
@@ -161,6 +163,12 @@ export function PageEditorToolbar({ editor, onOpenLinkModal }: PageEditorToolbar
           label="OL"
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
           pressed={state.isOrderedList}
+        />
+        <ToolbarButton
+          label="Task"
+          onClick={() => editor.chain().focus().toggleTaskList().run()}
+          pressed={state.isTaskList}
+          disabled={!state.canTaskList}
         />
         <ToolbarButton
           label="Quote"
