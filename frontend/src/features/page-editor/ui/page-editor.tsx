@@ -2,6 +2,7 @@ import { EditorContent } from '@tiptap/react';
 
 import { SlashMenu } from '../../slash-menu';
 import { usePageEditorController } from '../model/use-page-editor-controller';
+import { FloatingToolbar } from './floating-toolbar';
 import { PageEditorHeader } from './page-editor-header';
 import { PageImageModal } from './page-image-modal';
 import { PageLinkModal } from './page-link-modal';
@@ -26,6 +27,12 @@ export function PageEditor() {
 
         <div className="relative flex-1 px-2 pb-8 pt-3 sm:px-6 sm:pb-10 sm:pt-5 mx-[20%]">
           <EditorContent editor={controller.editor} />
+          {controller.editor && (
+            <FloatingToolbar
+              editor={controller.editor}
+              onOpenLinkModal={() => controller.openLinkModal()}
+            />
+          )}
           <SlashMenu
             isOpen={controller.slashState.isOpen}
             items={controller.filteredItems}
