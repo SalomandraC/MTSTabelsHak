@@ -403,7 +403,11 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           aria-label="Нумерованный список"
         />
         <ToolbarButton
-          label="Task"
+          icon={
+            <ListChecks className="h-4 w-4" 
+              style={{ color: 'rgba(80, 87, 98, 1)' }} 
+            />
+          }
           onClick={() => editor.chain().focus().toggleTaskList().run()}
           pressed={state.isTaskList}
           disabled={!state.canTaskList}
