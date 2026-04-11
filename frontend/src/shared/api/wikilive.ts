@@ -405,6 +405,17 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return response.json() as Promise<T>;
 }
 
+async function requestWithAuth<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  if (!accessToken) {
+    await refreshAccessToken();
+  }
+
+  return request<T>(path, {
+    ...options,
+    authMode: 'required',
+  });
+}
+
 export const wikiliveApi = {
   async login(apiKey: string) {
     await request<void>('/api/v1/auth/login', {
@@ -617,25 +628,25 @@ export const wikiliveApi = {
     });
   },
   aiAutocomplete(payload: AiAutocompletePayload) {
-    return request<{ text: string }>('/api/v1/ai/autocomplete', {
+    return requestWithAuth<{ text: string }>('/api/v1/ai/autocomplete', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
   aiGenerate(payload: AiGeneratePayload) {
-    return request<AiGenerateResponse>('/api/v1/ai/generate', {
+    return requestWithAuth<AiGenerateResponse>('/api/v1/ai/generate', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
   aiTransform(payload: AiTransformPayload) {
-    return request<{ text: string }>('/api/v1/ai/transform', {
+    return requestWithAuth<{ text: string }>('/api/v1/ai/transform', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
   aiChat(payload: AiChatPayload) {
-    return request<AiChatResponse>('/api/v1/ai/chat', {
+    return requestWithAuth<AiChatResponse>('/api/v1/ai/chat', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
