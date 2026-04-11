@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { handleListAction } from '../model/list-actions';
 import { menuBarStateSelector } from '../model/menu-state';
+import { wikiliveApi } from '../../../shared/api/wikilive';
 
 import B from '../../../app/images/B.svg';
 import Tk from '../../../app/images/Tk.svg';
@@ -19,6 +20,7 @@ const redFilter = 'brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(
 type FloatingToolbarProps = {
   editor: Editor | null;
   onOpenLinkModal: () => void;
+  pageTitle?: string;
 };
 
 type ToolbarButtonProps = {
@@ -75,9 +77,10 @@ function ToolbarButton({
   );
 }
 
-export function FloatingToolbar({ editor, onOpenLinkModal }: FloatingToolbarProps) {
+export function FloatingToolbar({ editor, onOpenLinkModal, pageTitle }: FloatingToolbarProps) {
   const [visible, setVisible] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
+  const [isAiLoading, setIsAiLoading] = useState(false);
   const toolbarRef = useRef<HTMLDivElement>(null);
 
   const state = useEditorState({
@@ -134,6 +137,46 @@ export function FloatingToolbar({ editor, onOpenLinkModal }: FloatingToolbarProp
   if (!editor || !state || !visible) {
     return null;
   }
+
+  const getEditorMarkdown = () => {
+    const markdownStorage = (editor.storage as { markdown?: { getMarkdown?: () => string } }).markdown;
+
+    if (markdownStorage?.getMarkdown) {
+      return markdownStorage.getMarkdown();
+    }
+
+    return editor.getText();
+  };
+
+  const runAiTransform = async (transformation: 'professional' | 'shorten') => {
+    const { from, to, empty } = editor.state.selection;
+    if (empty) {
+      return;
+    }
+
+    const selectedText = editor.state.doc.textBetween(from, to, ' ').trim();
+    if (!selectedText) {
+      return;
+    }
+
+    try {
+      setIsAiLoading(true);
+      const response = await wikiliveApi.aiTransform({
+        text: selectedText,
+        transformation,
+        pageTitle,
+        pageSnapshot: {
+          markdown: getEditorMarkdown(),
+        },
+      });
+
+      editor.chain().focus().insertContentAt({ from, to }, response.text).run();
+    } catch {
+      // Keep toolbar silent on failure; request-level errors are already visible elsewhere.
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
 
   const style: React.CSSProperties = {
     position: 'fixed',
@@ -325,6 +368,25 @@ export function FloatingToolbar({ editor, onOpenLinkModal }: FloatingToolbarProp
       >
         @
       </button>
+
+      <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
+      <ToolbarButton
+        icon={<span className="px-1 text-[11px] font-semibold">Улучшить</span>}
+        onClick={() => void runAiTransform('professional')}
+        disabled={isAiLoading}
+        isFirst={true}
+        isLast={false}
+        aria-label="Улучшить стиль"
+      />
+      <ToolbarButton
+        icon={<span className="px-1 text-[11px] font-semibold">Сократить</span>}
+        onClick={() => void runAiTransform('shorten')}
+        disabled={isAiLoading}
+        isFirst={false}
+        isLast={true}
+        aria-label="Сократить текст"
+      />
     </div>
   );
 }

@@ -6,7 +6,6 @@ import { SlashMenu } from '../../slash-menu';
 import type { PresenceUser, WikiPage } from '../../../shared/api/wikilive';
 import { usePageEditorController } from '../model/use-page-editor-controller';
 import { FloatingToolbar } from './floating-toolbar';
-import { AIBubbleMenu } from './ai-bubble-menu';
 import { PageEditorHeader } from './page-editor-header';
 import { PageImageModal } from './page-image-modal';
 import { PageLinkModal } from './page-link-modal';
@@ -95,9 +94,9 @@ export function PageEditor({ spaceId, page, onRenamePage, onCheckpoint, onEditor
             <FloatingToolbar
               editor={controller.editor}
               onOpenLinkModal={() => controller.openLinkModal()}
+              pageTitle={controller.title}
             />
           )}
-          {controller.editor && <AIBubbleMenu editor={controller.editor} pageTitle={controller.title} />}
           <SlashMenu
             isOpen={controller.slashState.isOpen}
             items={controller.filteredItems}

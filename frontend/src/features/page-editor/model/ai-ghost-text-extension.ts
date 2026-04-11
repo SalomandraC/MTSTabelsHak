@@ -10,6 +10,7 @@ type AIGhostTextOptions = {
 
 type AIGhostTextStorage = {
   suggestion: string;
+  requestId: number;
 };
 
 const ghostTextPluginKey = new PluginKey<DecorationSet>('aiGhostTextPlugin');
@@ -26,6 +27,7 @@ function buildDecorations(editor: any, suggestion: string): DecorationSet {
     const span = document.createElement('span');
     span.className = 'ai-ghost-text-hint';
     span.textContent = suggestion;
+    span.title = 'Tab, чтобы принять';
     return span;
   });
 
@@ -46,11 +48,17 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
   addStorage() {
     return {
       suggestion: '',
+      requestId: 0,
     };
   },
 
   onCreate() {
     this.storage.suggestion = '';
+    this.storage.requestId = 0;
+  },
+
+  onDestroy() {
+    window.clearTimeout((this as unknown as { __aiGhostTimer?: number }).__aiGhostTimer);
   },
 
   addProseMirrorPlugins() {
@@ -59,7 +67,11 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
         key: ghostTextPluginKey,
         state: {
           init: () => DecorationSet.empty,
-          apply: (transaction, oldState, _oldEditorState, newEditorState) => {
+          apply: (transaction, oldState) => {
+            if (transaction.docChanged && this.storage.suggestion) {
+              this.storage.suggestion = '';
+            }
+
             if (transaction.docChanged || transaction.selectionSet || transaction.getMeta(ghostTextPluginKey)) {
               return buildDecorations(this.editor, this.storage.suggestion);
             }
@@ -69,6 +81,16 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
         },
         props: {
           decorations: (state) => ghostTextPluginKey.getState(state) ?? DecorationSet.empty,
+          handleTextInput: () => {
+            if (!this.storage.suggestion) {
+              return false;
+            }
+
+            this.storage.suggestion = '';
+            this.storage.requestId += 1;
+            this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
+            return false;
+          },
         },
       }),
     ];
@@ -88,8 +110,29 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
         }
 
         this.storage.suggestion = '';
+        this.storage.requestId += 1;
         this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
         return true;
+      },
+      Escape: () => {
+        if (!this.storage.suggestion) {
+          return false;
+        }
+
+        this.storage.suggestion = '';
+        this.storage.requestId += 1;
+        this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
+        return true;
+      },
+      Enter: () => {
+        if (!this.storage.suggestion) {
+          return false;
+        }
+
+        this.storage.suggestion = '';
+        this.storage.requestId += 1;
+        this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
+        return false;
       },
     };
   },
@@ -97,6 +140,7 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
   onSelectionUpdate() {
     if (!this.editor.state.selection.empty && this.storage.suggestion) {
       this.storage.suggestion = '';
+      this.storage.requestId += 1;
       this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
     }
   },
@@ -112,16 +156,23 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
     if (currentText.trim().length < this.options.minChars) {
       if (this.storage.suggestion) {
         this.storage.suggestion = '';
+        this.storage.requestId += 1;
         this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
       }
       return;
     }
 
     const expectedPos = selection.to;
+    const requestId = this.storage.requestId + 1;
+    this.storage.requestId = requestId;
 
     window.clearTimeout((this as unknown as { __aiGhostTimer?: number }).__aiGhostTimer);
     (this as unknown as { __aiGhostTimer?: number }).__aiGhostTimer = window.setTimeout(() => {
       void this.options.fetchCompletion(currentText).then((nextSuggestion) => {
+        if (this.storage.requestId !== requestId) {
+          return;
+        }
+
         const normalized = nextSuggestion.trim();
         if (!normalized) {
           if (this.storage.suggestion) {
@@ -138,6 +189,10 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
         this.storage.suggestion = normalized.startsWith(' ') ? normalized : ` ${normalized}`;
         this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'refresh'));
       }).catch(() => {
+        if (this.storage.requestId !== requestId) {
+          return;
+        }
+
         if (this.storage.suggestion) {
           this.storage.suggestion = '';
           this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));

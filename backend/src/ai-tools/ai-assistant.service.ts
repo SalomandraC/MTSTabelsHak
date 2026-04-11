@@ -13,6 +13,9 @@ const TRANSFORM_SYSTEM_PROMPTS: Record<TextTransformationType, string> = {
   fix_grammar: 'Fix grammar, punctuation, spelling, and style while preserving the original meaning and tone.',
 };
 
+const SAME_LANGUAGE_RULE =
+  'Always answer in the same language as the input text. If the input text is Russian, the output must be only in Russian.';
+
 @Injectable()
 export class AiAssistantService {
   constructor(private readonly aiProviderClientService: AiProviderClientService) {}
@@ -114,7 +117,7 @@ export class AiAssistantService {
     return [
       {
         role: 'system',
-        content: TRANSFORM_SYSTEM_PROMPTS[transformation],
+        content: `${TRANSFORM_SYSTEM_PROMPTS[transformation]} ${SAME_LANGUAGE_RULE}`,
       },
       {
         role: 'user',
