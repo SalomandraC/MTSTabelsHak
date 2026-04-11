@@ -178,11 +178,11 @@ export function PluginsModal({
           <div className="border-b border-[#ffd2d9] bg-[#fff1f3] px-4 py-3 text-sm text-[#b00025] sm:px-6">{errorMessage}</div>
         ) : null}
 
-        <div className="grid min-h-0 flex-1 gap-0 overflow-hidden lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="grid min-h-0 flex-1 overflow-hidden lg:grid-cols-[minmax(0,1fr)_18rem]">
           <div className="min-h-0 overflow-y-auto bg-[#f6f7f9] px-4 py-4 sm:px-6">
             {isLoading ? <p className="text-sm text-editor-text-tertiary">Загружаем каталог плагинов...</p> : null}
             {!isLoading && items.length === 0 ? <p className="text-sm text-editor-text-tertiary">Плагины пока не найдены.</p> : null}
-            <div className="space-y-3">
+            <div className="space-y-3 pb-4">
               {items.map((item) => {
                 const isPending = pendingPluginId === item.id;
                 const accent = getPluginAccent(item);
@@ -258,7 +258,7 @@ export function PluginsModal({
             </div>
           </div>
 
-          <aside className="border-t border-editor-border-subtle bg-white p-4 lg:border-l lg:border-t-0">
+          <aside className="min-h-0 overflow-y-auto border-t border-editor-border-subtle bg-white p-4 lg:border-l lg:border-t-0">
             <div className="rounded-[20px] border border-editor-border-subtle bg-[#f8fafc] p-4">
               <h3 className="text-sm font-semibold text-editor-text-primary">Как это работает</h3>
               <p className="mt-2 text-sm leading-6 text-editor-text-tertiary">

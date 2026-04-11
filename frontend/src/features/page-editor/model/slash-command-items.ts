@@ -139,4 +139,14 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
       editor.chain().focus().setHorizontalRule().run();
     },
   },
+  {
+    id: 'canvas-draw',
+    label: 'Холст для рисования',
+    hint: 'Вставить блок для рисования от руки',
+    keywords: ['canvas', 'draw', 'paint', 'рисование', 'холст', 'кисть', 'скетч'],
+    icon: '✏️',
+    run: (editor) => {
+      editor.chain().focus().insertCanvasBlock().run();
+    },
+  },
 ];

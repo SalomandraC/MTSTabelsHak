@@ -38,6 +38,7 @@ const emptyMenuBarState = {
   canClearFormatting: false,
   canUndo: false,
   canRedo: false,
+  isCanvasBlock: false,
 };
 
 export function menuBarStateSelector(ctx: EditorStateSnapshot<Editor | null>) {
@@ -102,6 +103,7 @@ export function menuBarStateSelector(ctx: EditorStateSnapshot<Editor | null>) {
     canClearFormatting: ctx.editor.can().chain().unsetAllMarks().clearNodes().setParagraph().run() ?? false,
     canUndo: ctx.editor.can().chain().undo().run() ?? false,
     canRedo: ctx.editor.can().chain().redo().run() ?? false,
+    isCanvasBlock: ctx.editor.isActive('canvasBlock') ?? false,
   };
 }
 

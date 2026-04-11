@@ -27,6 +27,7 @@ import {
   TextAlignEnd,
   TextAlignStart,
   TextAlignCenter,
+  Pencil,
 } from 'lucide-react';
 
 const redFilter = 'brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(2665%) hue-rotate(346deg) brightness(101%) contrast(97%)';
@@ -101,7 +102,8 @@ function areMenuStatesEqual(
     previous.isImageSelected === next.isImageSelected &&
     previous.canUndo === next.canUndo &&
     previous.canRedo === next.canRedo &&
-    previous.canClearFormatting === next.canClearFormatting
+    previous.canClearFormatting === next.canClearFormatting &&
+    previous.isCanvasBlock === next.isCanvasBlock
   );
 }
 
@@ -211,6 +213,7 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
       canUndo: false,
       canRedo: false,
       canClearFormatting: false,
+      isCanvasBlock: false,
     };
 
   if (!editor) {
@@ -519,8 +522,8 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
 
         <ToolbarButton
           icon={
-            <Image className="h-4 w-4" 
-              style={{ color: 'rgba(80, 87, 98, 1)' }} 
+            <Image className="h-4 w-4"
+              style={{ color: 'rgba(80, 87, 98, 1)' }}
             />
           }
           label="Img"
@@ -528,6 +531,22 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           isFirst={true}
           isLast={true}
           isInGroup={true}
+        />
+
+        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
+        <ToolbarButton
+          icon={
+            <Pencil className="h-4 w-4"
+              style={{ color: 'rgba(80, 87, 98, 1)' }}
+            />
+          }
+          label="Canvas"
+          onClick={() => editor.chain().focus().insertCanvasBlock().run()}
+          isFirst={true}
+          isLast={true}
+          isInGroup={true}
+          aria-label="Вставить блок для рисования"
         />
 
         {state.isLink && state.linkHref ? (

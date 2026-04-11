@@ -1,6 +1,6 @@
 import type { Editor } from '@tiptap/core';
 import { useEditorState } from '@tiptap/react';
-import { Code2, List, ListOrdered, ListChecks } from 'lucide-react';
+import { Code2, List, ListOrdered, ListChecks, Pencil } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { handleListAction } from '../model/list-actions';
@@ -368,6 +368,16 @@ export function FloatingToolbar({ editor, onOpenLinkModal, pageTitle }: Floating
       >
         @
       </button>
+
+      <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
+      <ToolbarButton
+        icon={<Pencil className="h-3.5 w-3.5" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
+        onClick={() => editor.chain().focus().insertCanvasBlock().run()}
+        isFirst={true}
+        isLast={true}
+        aria-label="Вставить блок для рисования"
+      />
 
       <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 

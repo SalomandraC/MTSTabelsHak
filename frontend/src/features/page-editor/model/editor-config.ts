@@ -41,6 +41,7 @@ import { MwsTableEmbed } from '../../wiki-tables';
 // AI ghost text extension is optional — provide a lightweight stub when the
 // dedicated implementation is not present (avoids merge-time missing-file errors).
 const AIGhostTextExtension = Extension.create({ name: 'aiGhostText' });
+import { CanvasBlock } from './canvas-block';
 import { CodeBlockComponent } from '../ui/code-block-component.tsx';
 import { ImageBlock } from './image-block';
 import { PageLink } from './page-link';
@@ -122,6 +123,7 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     ImageBlock,
     PageLink,
     MwsTableEmbed,
+    CanvasBlock,
     TaskList,
     TaskItem.configure({ nested: true }),
     Link.configure({

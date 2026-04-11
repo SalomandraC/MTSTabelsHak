@@ -116,4 +116,15 @@ export const pluginDefinitions: PluginDefinition[] = [
     requiredPlans: ['enterprise'],
     placement: ['Тулбар редактора', 'AI-панель'],
   },
+  {
+    id: 'canvas-draw',
+    title: 'Рисование на холсте',
+    description: 'Встраивание интерактивных блоков для рисования от руки прямо в текст страницы.',
+    category: 'core',
+    kind: 'optional',
+    defaultEnabled: false,
+    implemented: true,
+    requiredPlans: ['pro', 'enterprise'],
+    placement: ['Редактор', 'Тулбар редактора'],
+  },
 ];
