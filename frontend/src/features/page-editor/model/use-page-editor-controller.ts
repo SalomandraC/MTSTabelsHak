@@ -4,7 +4,13 @@ import { HocuspocusProvider } from '@hocuspocus/provider';
 import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
 
-import { type PageSummary, type PresenceUser, type WikiPage, wikiliveApi } from '../../../shared/api/wikilive';
+import {
+  getCurrentUser,
+  type PageSummary,
+  type PresenceUser,
+  type WikiPage,
+  wikiliveApi,
+} from '../../../shared/api/wikilive';
 import type { SlashMenuItem } from '../../slash-menu';
 import { createPageEditorExtensions, initialContent } from './editor-config';
 import { formatFileSize, readFileAsDataUrl, validateImageFile } from './image-utils';
@@ -98,7 +104,7 @@ export function usePageEditorController({ page, onRenamePage, onCheckpoint }: Us
   const slashStateRef = useRef(baseSlashState);
   const selectedIndexRef = useRef(0);
 
-  const userDisplayName = import.meta.env.VITE_DEMO_USER_NAME ?? 'Demo User';
+  const userDisplayName = getCurrentUser()?.displayName ?? 'WikiLive User';
 
   useEffect(() => {
     if (!page) {

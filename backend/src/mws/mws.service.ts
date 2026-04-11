@@ -253,7 +253,7 @@ export class MwsService {
     params?: Record<string, unknown>,
     extraHeaders?: Record<string, string>,
   ) {
-    const token = 'uskIRDS4OJAAa1kBVt9phPH';
+    const token = user.mwsToken ?? user.authToken;
     if (!token) {
       throw new BadRequestException({
         code: 'MWS_TOKEN_REQUIRED',

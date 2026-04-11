@@ -72,13 +72,20 @@ npm run start:dev
 - `COLLAB_PORT`
 - `JWT_SECRET`
 - `MWS_TABLES_BASE_URL`
-- `MWS_TABLES_API_TOKEN`
 - `AUTH_REQUIRED`
+- `VITE_API_BASE_URL`
+- `VITE_WIKILIVE_SPACE_ID`
 
-Для интеграции с MWS Tables вы можете либо:
-- передавать токен пользователя через `Authorization`
-- явно передавать вышестоящий токен через `x-mws-token`
-- или определить резервный `MWS_TABLES_API_TOKEN` в окружении для демо-режима
+Авторизация по API-ключу:
+- `POST /api/v1/auth/login` принимает `{ "apiKey": "sk-..." }`, валидирует ключ через MWS `/spaces` и выставляет `HttpOnly` cookie `refresh_token`
+- `POST /api/v1/auth/refresh` ротирует refresh token и возвращает короткоживущий access token (15 минут)
+- `POST /api/v1/auth/logout` очищает refresh cookie и инвалидирует серверную сессию
+- `GET /api/v1/me` возвращает текущего пользователя
+
+Особенности:
+- refresh token живет 8 часов и хранится только в `HttpOnly` cookie
+- frontend держит access token только в памяти и делает silent refresh каждые 10 минут
+- по умолчанию `AUTH_REQUIRED=true`; для демо-режима можно вручную выставить `AUTH_REQUIRED=false`
 
 ## API и документация
 
