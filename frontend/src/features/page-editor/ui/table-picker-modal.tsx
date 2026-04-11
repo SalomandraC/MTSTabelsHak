@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { type MwsField, type MwsNode, type MwsSpace, type MwsView, wikiliveApi } from '../../../shared/api/wikilive';
+import { ModalActionButton } from '../../../shared/ui';
 
 export type TablePickerSelection = {
   spaceId: string;
@@ -428,11 +429,10 @@ export function TablePickerModal({ isOpen, initialSpaceId, onSelect, onClose }: 
         </div>
 
         <div className="flex items-center justify-end gap-2">
-          <button type="button" onClick={onClose} className="modal-action-secondary h-10 rounded-lg px-3 text-sm font-semibold">
+          <ModalActionButton onClick={onClose} variant="secondary">
             Отмена
-          </button>
-          <button
-            type="button"
+          </ModalActionButton>
+          <ModalActionButton
             disabled={!canInsert}
             onClick={() => {
               if (!selectedNode) {
@@ -450,10 +450,10 @@ export function TablePickerModal({ isOpen, initialSpaceId, onSelect, onClose }: 
                 allowInlineEdit,
               });
             }}
-            className="h-10 rounded-lg bg-[#ff0037] px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-editor-border-control"
+            variant="primary"
           >
             Вставить live table
-          </button>
+          </ModalActionButton>
         </div>
       </div>
     </div>

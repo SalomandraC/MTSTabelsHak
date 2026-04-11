@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { type PageSummary, wikiliveApi } from '../../../shared/api/wikilive';
+import { ModalActionButton } from '../../../shared/ui';
 
 type PagePickerModalProps = {
   isOpen: boolean;
@@ -96,9 +97,9 @@ export function PagePickerModal({ isOpen, spaceId, currentPageId, onSelect, onCl
           ))}
         </div>
 
-        <button type="button" onClick={onClose} className="modal-action-secondary h-10 rounded-lg px-3 text-sm font-semibold">
+        <ModalActionButton onClick={onClose} variant="secondary">
           Отмена
-        </button>
+        </ModalActionButton>
       </div>
     </div>
   );

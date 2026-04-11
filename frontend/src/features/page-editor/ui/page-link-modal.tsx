@@ -1,3 +1,5 @@
+import { ModalActionButton } from '../../../shared/ui';
+
 type PageLinkModalProps = {
   isOpen: boolean;
   position: { top: number; left: number };
@@ -72,21 +74,23 @@ export function PageLinkModal({
       </label>
 
       <div className="mt-1 grid w-full grid-cols-2 gap-2">
-        <button
-          type="button"
+        <ModalActionButton
           onClick={onSubmit}
           disabled={!canSubmit}
-          className="modal-action-primary h-8 rounded-md px-2 py-1 text-sm font-semibold leading-5"
+          variant="primary"
+          size="sm"
+          className="w-full"
         >
           Сохранить
-        </button>
-        <button
-          type="button"
+        </ModalActionButton>
+        <ModalActionButton
           onClick={isExistingLink ? onDeleteLink : onClose}
-          className="modal-action-secondary h-8 rounded-md px-2 py-1 text-sm font-semibold leading-5"
+          variant="secondary"
+          size="sm"
+          className="w-full"
         >
           {isExistingLink ? 'Удалить ссылку' : 'Отмена'}
-        </button>
+        </ModalActionButton>
       </div>
     </div>
   );
