@@ -28,7 +28,10 @@ export class AuthController {
 
   @Public()
   @Post('/auth/refresh')
-  async refresh(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
+  async refresh(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ accessToken: string; expiresInSec: number }> {
     const refreshToken = this.authService.readRefreshTokenFromCookie(request.headers.cookie);
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh token is required');
