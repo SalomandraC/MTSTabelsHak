@@ -1,7 +1,12 @@
 import { WorkspacePage } from '../pages/workspace/index';
+import { AuthGate } from '../features/auth';
 
 export function App() {
-  return <WorkspacePage />;
+  return (
+    <AuthGate>
+      <WorkspacePage />
+    </AuthGate>
+  );
 }
 
 export default App;

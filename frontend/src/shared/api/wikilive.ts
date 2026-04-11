@@ -1,12 +1,27 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
 export const WIKILIVE_SPACE_ID = import.meta.env.VITE_WIKILIVE_SPACE_ID ?? 'demo-space';
 
-const DEMO_USER_ID = import.meta.env.VITE_DEMO_USER_ID ?? 'demo-user-1';
-const DEMO_USER_NAME = import.meta.env.VITE_DEMO_USER_NAME ?? 'Demo User';
-
 type RequestOptions = RequestInit & {
   query?: Record<string, string | number | boolean | null | undefined>;
+  skipAuthRetry?: boolean;
+  authMode?: 'required' | 'none';
 };
+
+type RefreshResponse = {
+  accessToken: string;
+  expiresInSec: number;
+};
+
+export type MeResponse = {
+  user: {
+    userId: string;
+    displayName: string;
+  };
+};
+
+let accessToken: string | null = null;
+let activeUser: MeResponse['user'] | null = null;
+let refreshInFlight: Promise<string | null> | null = null;
 
 export type PageSummary = {
   id: string;
@@ -185,30 +200,107 @@ function toQueryString(query: RequestOptions['query']) {
   return serialized ? `?${serialized}` : '';
 }
 
+function readErrorMessage(payload: unknown, fallback: string): string {
+  if (payload && typeof payload === 'object' && 'message' in payload) {
+    const value = (payload as { message?: unknown }).message;
+    if (typeof value === 'string') {
+      return value;
+    }
+  }
+
+  return fallback;
+}
+
+async function parseErrorMessage(response: Response): Promise<string> {
+  const fallback = `Request failed with status ${response.status}`;
+  try {
+    return readErrorMessage(await response.json(), fallback);
+  } catch {
+    return fallback;
+  }
+}
+
+export function getAccessToken() {
+  return accessToken;
+}
+
+export function getCurrentUser() {
+  return activeUser;
+}
+
+function setAccessToken(token: string | null): void {
+  accessToken = token;
+}
+
+function setActiveUser(user: MeResponse['user'] | null): void {
+  activeUser = user;
+}
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (refreshInFlight) {
+    return refreshInFlight;
+  }
+
+  refreshInFlight = (async () => {
+    const response = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      setAccessToken(null);
+      setActiveUser(null);
+      return null;
+    }
+
+    const payload = (await response.json()) as RefreshResponse;
+    setAccessToken(payload.accessToken);
+    return payload.accessToken;
+  })().finally(() => {
+    refreshInFlight = null;
+  });
+
+  return refreshInFlight;
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { query, headers, body, ...init } = options;
+  const { query, headers, body, skipAuthRetry, authMode = 'required', ...init } = options;
+
+  let requestHeaders: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...(headers ?? {}),
+  };
+
+  if (authMode === 'required' && accessToken) {
+    requestHeaders = {
+      ...requestHeaders,
+      Authorization: `Bearer ${accessToken}`,
+    };
+  }
+
   const response = await fetch(`${API_BASE_URL}${path}${toQueryString(query)}`, {
     ...init,
     body,
-    headers: {
-      'Content-Type': 'application/json',
-      'x-user-id': DEMO_USER_ID,
-      'x-user-name': DEMO_USER_NAME,
-      ...headers,
-    },
+    credentials: 'include',
+    headers: requestHeaders,
   });
 
-  if (!response.ok) {
-    let message = `Request failed with status ${response.status}`;
-
-    try {
-      const error = (await response.json()) as { message?: string };
-      message = error.message ?? message;
-    } catch {
-      // Keep fallback message when backend returns non-JSON error body.
+  const isAuthEndpoint = path.startsWith('/api/v1/auth/');
+  if (response.status === 401 && authMode === 'required' && !skipAuthRetry && !isAuthEndpoint) {
+    const token = await refreshAccessToken();
+    if (token) {
+      return request<T>(path, {
+        ...options,
+        skipAuthRetry: true,
+      });
     }
+  }
 
-    throw new Error(message);
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
   }
 
   if (response.status === 204) {
@@ -219,6 +311,38 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 }
 
 export const wikiliveApi = {
+  async login(apiKey: string) {
+    await request<void>('/api/v1/auth/login', {
+      method: 'POST',
+      authMode: 'none',
+      body: JSON.stringify({ apiKey }),
+    });
+  },
+  async refreshSession() {
+    return refreshAccessToken();
+  },
+  async logout() {
+    setAccessToken(null);
+    setActiveUser(null);
+    await request<void>('/api/v1/auth/logout', {
+      method: 'POST',
+      authMode: 'none',
+    });
+  },
+  async getMe() {
+    const response = await request<MeResponse>('/api/v1/me');
+    setActiveUser(response.user);
+    return response;
+  },
+  async restoreSession() {
+    const token = await refreshAccessToken();
+    if (!token) {
+      return null;
+    }
+
+    const me = await this.getMe();
+    return me.user;
+  },
   listPages(query = '') {
     return request<{ items: PageSummary[] }>('/api/v1/pages', {
       query: { spaceId: WIKILIVE_SPACE_ID, query, limit: 30 },

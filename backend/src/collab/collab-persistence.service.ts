@@ -100,7 +100,11 @@ export class CollabPersistenceService {
     });
   }
 
-  async storeDocument(pageId: string, document: Y.Doc) {
+  async storeDocument(
+    pageId: string,
+    document: Y.Doc,
+    options: { queueReindex?: boolean } = {},
+  ) {
     const serverDocument = await this.prisma.pageDocument.findUnique({
       where: { pageId },
       select: { serverVersion: true },
@@ -130,15 +134,17 @@ export class CollabPersistenceService {
       }),
     ]);
 
-    await this.queue.add(
-      REINDEX_PAGE_JOB,
-      { pageId, snapshot: encodeBytesToBase64(snapshot) },
-      {
-        jobId: `${REINDEX_PAGE_JOB}-${pageId}`,
-        removeOnComplete: true,
-        removeOnFail: 10,
-      },
-    );
+    if (options.queueReindex ?? true) {
+      await this.queue.add(
+        REINDEX_PAGE_JOB,
+        { pageId, snapshot: encodeBytesToBase64(snapshot) },
+        {
+          jobId: `${REINDEX_PAGE_JOB}-${pageId}`,
+          removeOnComplete: true,
+          removeOnFail: 10,
+        },
+      );
+    }
   }
 
   async createCheckpoint(pageId: string, value: string, user: UserContext, trigger: string) {
@@ -174,7 +180,8 @@ export class CollabPersistenceService {
       },
     });
 
-    await this.storeDocument(pageId, ydoc);
+    await this.storeDocument(pageId, ydoc, { queueReindex: false });
+    await this.reindexPage(pageId, value);
 
     return {
       checkpointId: checkpoint.id,
@@ -194,7 +201,7 @@ export class CollabPersistenceService {
     }
 
     Y.applyUpdate(ydoc, new Uint8Array(snapshot));
-    const pmDoc = yDocToProsemirrorJSON(ydoc) as Record<string, any>;
+    const pmDoc = yDocToProsemirrorJSON(ydoc, 'default') as Record<string, any>;
     const indexed = this.indexingService.extractFromProsemirrorJson(pmDoc);
     const existingTargetIds = new Set(
       (
