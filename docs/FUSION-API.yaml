@@ -1,0 +1,2541 @@
+openapi: 3.0.0
+info:
+  title: API по работе с данными в MWS Tables
+  version: 1.0.0
+paths:
+  /fusion/v1/spaces/{spaceId}/datasheets:
+    post:
+      summary: Создание таблицы
+      tags: [Datasheet - операции с таблицами]
+      description: Создать таблицу с полями по умолчанию или с выбранными полями
+      parameters:
+        - name: spaceId
+          in: path
+          description: Идентификатор пространства
+          required: true
+          schema:
+            type: string
+          example: spc***
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDatasheetRequest'
+      responses:
+        '201':
+          description: Таблица успешно создана с полями
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateDatasheetResponse'
+                
+  /fusion/v1/spaces/{spaceId}/datasheet/{dstId}:
+    delete:
+      summary: Удалить datasheet
+      tags: [Datasheet - операции с таблицами]
+      operationId: DeleteDatasheet
+      parameters:
+        - name: spaceId
+          in: path
+          description: ID пространства
+          required: true
+          schema:
+            type: string
+          example: spczJrh2i3tLW
+        - name: dstId
+          in: path
+          description: ID таблицы
+          required: true
+          schema:
+            type: string
+          example: dst***
+        - name: Authorization
+          in: header
+          description: Токен авторизации
+          required: true
+          schema:
+            type: string
+          example: Bearer usk***
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseDataDeleteNode'
+        '400':
+          description: Неверно заданы параметры
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidDeleteNodeResponse'
+        '401':
+          description: Не прошел авторизацию
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '403':
+          description: Forbidden. Может возникнуть при неудачной проверке прав
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '404':
+          description: NotFound. Запрашиваемая сущность (пространство|нода) не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /fusion/v1/datasheets/{dstId}/records:
+    get:
+      summary: Получение записей с полями
+      tags: [Records - записи]
+      parameters:
+        - name: dstId
+          in: path
+          description: ID даташита
+          required: true
+          schema:
+            type: string
+          example: dstFiaiw12AA
+        - name: viewId
+          in: query
+          description: Возвращает записи для конкретного view. Скрытые записи в представлении не будут в результате выдачи
+          required: false
+          schema:
+            type: string
+          example: viwG9l1VPD6nH
+        - name: pageSize
+          in: query
+          description: Максимальное кол-во записей. По умолчанию 100.
+          required: false
+          schema:
+            type: integer
+            default: 100
+          example: 100
+        - name: maxRecords
+          in: query
+          description: Как много записей вернется всего. Если передан pageSize, только maxRecords будут иметь эффект
+          required: false
+          schema:
+            type: integer
+          example: 1000
+        - name: pageNum
+          in: query
+          description: Определяет номер страницы, когда используется с pageSize параметром. По умолчанию 1.
+          required: false
+          schema:
+            type: integer
+            default: 1
+          example: 1
+        - name: sort
+          in: query
+          description: Сортирует записи про возрастанию или убыванию или названию поля. (asc or desc) или field.
+          required: false
+          schema:
+            type: array
+            items:
+              type: object
+              properties:
+                order:
+                  type: string
+                  enum: ['asc', 'desc']
+                field:
+                  type: string
+          style: deepObject
+          explode: true
+        - name: recordIds
+          in: query
+          description: Возвращает конкретные записи. Разом может прийти 1000 записей
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+        - name: fields
+          in: query
+          description: Ограничивает выдачу записей по конкретным полям (fields).
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+        - name: filterByFormula
+          in: query
+          description: использует формулы для выдачи определенных записей
+          required: false
+          schema:
+            type: string
+          example: '{Title}="tittle 1"'
+        - name: cellFormat
+          in: query
+          description: Тип value в ячейке. По умолчанию "json".
+          required: false
+          schema:
+            type: string
+            enum: ['string', 'json']
+          example: string
+        - name: fieldKey
+          in: query
+          description: Запрос по возврату полей. По умолчанию "name".
+          required: false
+          schema:
+            type: string
+            enum: ['name', 'id']
+          example: name
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetRecordsData'
+    post:
+      summary: Создание записей в таблице данных
+      tags: [Records - записи]
+      parameters:
+        - name: dstId
+          in: path
+          description: Идентификатор таблицы данных
+          required: true
+          schema:
+            type: string
+          example: dst0Yj5aNeoHldqvf6
+        - name: viewId
+          in: query
+          description: При неявном указании возвращает все непустые поля; при явном указании возвращает непрятыми и непустыми полями в указанном представлении.
+          required: false
+          schema:
+            type: string
+          example: viwG9l1VPD6nH
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRecordsRequest'
+      responses:
+        '201':
+          description: Записи успешно созданы
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateRecordsResponse'
+    patch:
+      summary: Обновление записей в таблице данных
+      tags: [Records - записи]
+      parameters:
+        - name: dstId
+          in: path
+          description: Идентификатор таблицы данных
+          required: true
+          schema:
+            type: string
+          example: dst0Yj5aNeoHldqvf6
+        - name: viewId
+          in: query
+          description: При неявном указании возвращает все непустые поля; при явном указании возвращает непрятыми и непустыми полями в указанном представлении.
+          required: false
+          schema:
+            type: string
+          example: viwG9l1VPD6nH
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRecordsRequest'
+      responses:
+        '200':
+          description: Записи успешно обновлены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateRecordsResponse'
+    delete:
+      summary: Удаление записей из таблицы данных
+      tags: [Records - записи]
+      parameters:
+        - name: dstId
+          in: path
+          description: Идентификатор таблицы данных AITable
+          required: true
+          schema:
+            type: string
+          example: dst0Yj5aNeoHldqvf6
+        - name: recordIds
+          in: query
+          description: Идентификаторы записей для удаления
+          required: true
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+          example: recwZ6yV3Srv3
+      responses:
+        '200':
+          description: Записи успешно удалены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteRecordsResponse'
+
+  /fusion/v1/timemachine/{dstId}:
+    get:
+      summary: Получить массив id удаленных записей
+      tags: [Timemachine - Машина времени]
+      description: Получить информацию о представлениях
+      parameters:
+        - name: dstId
+          in: path
+          description: Идентификатор таблицы данных (Datasheet)
+          required: true
+          schema:
+            type: string
+          example: dstNiC6R9MryevVaCQ
+      responses:
+        '200':
+          description: Информация получена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetTimeMachineResponse'
+
+  /fusion/v1/datasheets/{dstId}/fields:
+    get:
+      summary: Получение полей таблицы
+      tags: [Fields - поля записей]
+      parameters:
+        - name: dstId
+          in: path
+          description: ID даташита
+          required: true
+          schema:
+            type: string
+          example: dstFiaiw12AA
+        - name: viewId
+          in: query
+          description: ID представления. Если вы укажете представление, возвращаемые поля будут находиться в том же порядке, что и представление. Скрытые поля не будут возвращены.
+          required: false
+          schema:
+            type: string
+          example: viwG9l1VPD6nH
+      responses:
+        '200':
+          description: Записи получены успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetFieldsResponse'
+
+  /fusion/v1/spaces/{spaceId}/datasheets/{dstId}/fields:
+    post:
+      tags: [Fields - поля записей]
+      summary: Создание поля в таблице данных
+      parameters:
+        - name: spaceId
+          in: path
+          description: Идентификатор пространства (Space)
+          required: true
+          schema:
+            type: string
+          example: spcjXzqVrjaP3
+        - name: dstId
+          in: path
+          description: Идентификатор таблицы данных (Datasheet)
+          required: true
+          schema:
+            type: string
+          example: dstNiC6R9MryevVaCQ
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFieldRequest'
+      responses:
+        '200':
+          description: Поле успешно создано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateFieldResponse'
+
+  /fusion/v1/spaces/{spaceId}/datasheets/{dstId}/fields/{fieldId}:
+    delete:
+      summary: Удаление поля из таблицы данных
+      tags: [Fields - поля записей]
+      parameters:
+        - name: spaceId
+          in: path
+          description: Идентификатор пространства (Space)
+          required: true
+          schema:
+            type: string
+          example: spcjXzqVrjaP3
+        - name: dstId
+          in: path
+          description: Идентификатор таблицы данных (Datasheet)
+          required: true
+          schema:
+            type: string
+          example: dstNiC6R9MryevVaCQ
+        - name: fieldId
+          in: path
+          description: Идентификатор поля (Field)
+          required: true
+          schema:
+            type: string
+          example: fld7r18G7eSOu
+      responses:
+        '200':
+          description: Поле успешно удалено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteFieldResponse'
+
+  /fusion/v1/datasheets/{dstId}/views/{viewId}/fields/{fieldId}:
+    patch:
+      summary: Изменить индекс (порядок) поля
+      description: Изменить положение поля в таблице, но нельзя установить индекс==0
+      tags: [Fields - поля записей]
+      parameters:
+        - name: dstId
+          in: path
+          required: true
+          description: "ID таблицы"
+          schema:
+            type: string
+        - name: viewId
+          in: path
+          required: true
+          description: "ID представления таблицы"
+          schema:
+            type: string
+        - name: fieldId
+          in: path
+          required: true
+          description: "ID поля"
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                index:
+                  type: integer
+      responses:
+        '200':
+          description: Успешное выполнение операции
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BaseResponse"
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BaseResponse"
+        '401':
+          description: Неавторизованный запрос
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BaseResponse"
+        '404':
+          description: Поле не найдено
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BaseResponse"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BaseResponse"
+
+  /fusion/v1/datasheets/{dstId}/views:
+    get:
+      summary: Получить информацию о представлениях
+      tags: [Views]
+      description: Получить информацию о представлениях
+      parameters:
+        - name: dstId
+          in: path
+          description: Идентификатор таблицы данных (Datasheet)
+          required: true
+          schema:
+            type: string
+          example: dstNiC6R9MryevVaCQ
+      responses:
+        '200':
+          description: Информация получена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetViewsResponse'
+
+  /fusion/v1/spaces/{spaceId}/datasheets/{dstId}/views:
+    post:
+      summary: Создать view
+      tags: [Views]
+      operationId: CreateView
+      parameters:
+        - name: spaceId
+          in: path
+          description: ID пространства
+          required: true
+          schema:
+            type: string
+          example: spczJrh2i3tLW
+        - name: dstId
+          in: path
+          description: ID таблицы
+          required: true
+          schema:
+            type: string
+          example: dst***
+        - name: Authorization
+          in: header
+          description: Токен авторизации
+          required: true
+          schema:
+            type: string
+          example: Bearer usk***
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateViewRequestBody'
+      responses:
+        '201':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseDataCreateView'
+        '400':
+          description: Неверно заданы параметры
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidCreateViewResponse'
+        '401':
+          description: Не прошел авторизацию
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '403':
+          description: Forbidden. Может возникнуть при неудачной проверке прав
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /fusion/v1/spaces/{spaceId}/datasheets/{dstId}/views/{viewId}:
+    delete:
+      summary: Удалить view
+      tags: [Views]
+      operationId: DeleteView
+      parameters:
+        - name: spaceId
+          in: path
+          description: ID пространства
+          required: true
+          schema:
+            type: string
+          example: spczJrh2i3tLW
+        - name: dstId
+          in: path
+          description: ID таблицы
+          required: true
+          schema:
+            type: string
+          example: dst***
+        - name: Authorization
+          in: header
+          description: Токен авторизации
+          required: true
+          schema:
+            type: string
+          example: Bearer usk***
+        - name: viewId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: viw**
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseDataDeleteView'
+        '400':
+          description: Неверно заданы параметры
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidDeleteViewResponse'
+        '401':
+          description: Не прошел авторизацию
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '403':
+          description: Forbidden. Может возникнуть при неудачной проверке прав
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '404':
+          description: NotFound. Запрашиваемая сущность (пространство|нода|представление) не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+    put:
+      summary: Изменить название view
+      tags: [Views]
+      operationId: UpdateViewName
+      parameters:
+        - name: spaceId
+          in: path
+          description: ID пространства
+          required: true
+          schema:
+            type: string
+          example: spczJrh2i3tLW
+        - name: dstId
+          in: path
+          description: ID таблицы
+          required: true
+          schema:
+            type: string
+          example: dst***
+        - name: viewId
+          in: path
+          description: ID view
+          required: true
+          schema:
+            type: string
+          example: viw***
+        - name: Authorization
+          in: header
+          description: Токен авторизации
+          required: true
+          schema:
+            type: string
+          example: Bearer usk***
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateViewNameRequestBody'
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseDataUpdateViewName'
+        '400':
+          description: Неверно заданы параметры
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidUpdateViewNameResponse'
+        '401':
+          description: Не прошел авторизацию
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '403':
+          description: Forbidden. Может возникнуть при неудачной проверке прав
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '404':
+          description: NotFound. Запрашиваемая сущность (пространство|нода|представление) не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /fusion/v1/spaces/{spaceId}/datasheets/{dstId}/views/{viewId}/sort:
+    post:
+      summary: Настроить сортировку
+      tags: [Views]
+      description: Устанавливает правила сортировки для представления.
+      parameters:
+        - name: spaceId
+          in: path
+          description: ID пространства
+          required: true
+          schema:
+            type: string
+          example: spczJrh2i3tLW
+        - name: dstId
+          in: path
+          description: ID таблицы
+          required: true
+          schema:
+            type: string
+          example: dst***
+        - name: viewId
+          in: path
+          description: ID view
+          required: true
+          schema:
+            type: string
+          example: viw***
+        - name: Authorization
+          in: header
+          description: Токен авторизации
+          required: true
+          schema:
+            type: string
+          example: Bearer usk***
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SortInfoRequest'
+      responses:
+        '200':
+          description: Успешное выполнение операции
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SortInfoResponse'
+        '400':
+          description: Неверно заданы параметры
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidSortViewResponse'
+        '401':
+          description: Ошибка авторизации
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '404':
+          description: NotFound. Запрашиваемая сущность (пространство|нода|представление) не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /fusion/v1/spaces/{spaceId}/datasheets/{dstId}/views/{viewId}/group:
+    post:
+      summary: Настроить группировку
+      tags: [Views]
+      description: Устанавливает правила группировки для представления.
+      parameters:
+        - name: spaceId
+          in: path
+          description: ID пространства
+          required: true
+          schema:
+            type: string
+          example: spczJrh2i3tLW
+        - name: dstId
+          in: path
+          description: ID таблицы
+          required: true
+          schema:
+            type: string
+          example: dst***
+        - name: viewId
+          in: path
+          description: ID view
+          required: true
+          schema:
+            type: string
+          example: viw***
+        - name: Authorization
+          in: header
+          description: Токен авторизации
+          required: true
+          schema:
+            type: string
+          example: Bearer usk***
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupRequest'
+      responses:
+        '200':
+          description: Успешное выполнение операции
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupResponse'
+        '400':
+          description: Неверно заданы параметры
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidGroupViewResponse'
+        '401':
+          description: Ошибка авторизации
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '404':
+          description: NotFound. Запрашиваемая сущность (пространство|нода|представление) не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /fusion/v1/spaces/{spaceId}/datasheets/{dstId}/views/{viewId}/hidden:
+    post:
+      summary: Скрытые поля
+      tags: [Views]
+      description: Настройка скрытых полей для представления.
+      parameters:
+        - name: spaceId
+          in: path
+          description: ID пространства
+          required: true
+          schema:
+            type: string
+          example: spczJrh2i3tLW
+        - name: dstId
+          in: path
+          description: ID таблицы
+          required: true
+          schema:
+            type: string
+          example: dst***
+        - name: viewId
+          in: path
+          description: ID view
+          required: true
+          schema:
+            type: string
+          example: viw***
+        - name: Authorization
+          in: header
+          description: Токен авторизации
+          required: true
+          schema:
+            type: string
+          example: Bearer usk***
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HideFieldsRequest'
+      responses:
+        '200':
+          description: Успешное выполнение операции
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HideFieldsResponse'
+        '400':
+          description: Неверно заданы параметры
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidHideFieldsResponse'
+        '401':
+          description: Ошибка авторизации
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '404':
+          description: NotFound. Запрашиваемая сущность (пространство|нода|представление) не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /fusion/v1/spaces/{spaceId}/datasheets/{dstId}/views/{viewId}/move:
+    post:
+      summary: Поменять индекс (переместить)
+      tags: [Views]
+      description: Изменяет индекс представления.
+      parameters:
+        - name: spaceId
+          in: path
+          description: ID пространства
+          required: true
+          schema:
+            type: string
+          example: spczJrh2i3tLW
+        - name: dstId
+          in: path
+          description: ID таблицы
+          required: true
+          schema:
+            type: string
+          example: dst***
+        - name: viewId
+          in: path
+          description: ID view
+          required: true
+          schema:
+            type: string
+          example: viw***
+        - name: Authorization
+          in: header
+          description: Токен авторизации
+          required: true
+          schema:
+            type: string
+          example: Bearer usk***
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveViewRequest'
+      responses:
+        '200':
+          description: Успешное выполнение операции
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MoveViewResponse'
+        '400':
+          description: Неверно заданы параметры
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidMoveViewResponse'
+        '401':
+          description: Ошибка авторизации
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '403':
+          description: Доступ запрещен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '404':
+          description: NotFound. Запрашиваемая сущность (пространство|нода|представление) не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /fusion/v1/datasheets/{dstId}/attachments:
+    get:
+      summary: Скачивание файла по токену вложения
+      tags: [Attach-Upload - работа с вложениями]
+      description: Скачать файл
+      parameters:
+        - name: dstId
+          in: path
+          description: Идентификатор таблицы данных (Datasheet)
+          required: true
+          schema:
+            type: string
+          example: dstNiC6R9MryevVaCQ
+        - name: token
+          in: query
+          description: токен вложения из Tables
+          required: true
+          schema:
+            type: string
+          example: space/2024/06/14/b7a35d898a6c4895acb536b5f4a1df8a
+      responses:
+        '200':
+          description: Файл загружен
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+                description: "тип вложения PDF указан ДЛЯ ПРИМЕРА - допустимые типы см. https://confluence.mts.ru/pages/viewpage.action?pageId=948844239"
+
+        '400':
+          description: "Ошибка на стороне пользователя. 1) Путь до файла не верный; 2) Формат dstId"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '401':
+          description: "Не авторизован. Не передан токен/владелец не является участником пространства/владелец не имеет доступ на чтение в указанной таблице"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'        
+        '404':
+          description: "Не найдено. Указанные данные переданы в правильном формате, но не найдены: Файл по указанному URL"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '503':
+          description: "Ошибка на стороне сервера"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'     
+    post:
+      summary: Добавление файла в пространство или в конкретную ячейку таблицы
+      tags: [Attach-Upload - работа с вложениями]
+      description: Загрузка одного файла. Если нужно загрузить несколько файлов - запрос повторяется. Если указать recordId и fieldId, то файл загрузится в нужную ячейку
+      parameters:
+        - name: dstId
+          in: path
+          description: Идентификатор таблицы данных (Datasheet)
+          required: true
+          schema:
+            type: string
+          example: dstNiC6R9MryevVaCQ
+        - name: recordId
+          in: query
+          description: Id записи, куда добавить Файл
+          required: false
+          schema:
+            type: string
+        - name: fieldId
+          in: query
+          description: Id поля, куда добавить файл в указанной записи. Если id записи не передан, то получаем ошибку
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadAttachmentRequestBody'
+
+      responses:
+        '201':
+          description: Файл загружен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadAttachmentSuccessResponse'
+        '400':
+          description: "Ошибка на стороне пользователя. 1) Файл не верный/тип файла не верный; 2) Формат dstId, recordId и fieldId не соответствует ожидаемому; 3) Передан recordId без указания fieldId и наоборот 4) Целевая ячейка имеет тип не предназначена для загрузки вложений"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '401':
+          description: "Не авторизован. Не передан токен/владелец не является участником пространства/владелец не имеет доступ на создание/изменение в указанной таблице"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'        
+        '404':
+          description: "Не найдено. Указанные данные переданы в правильном формате, но не найдены: Таблица, Запись, Поле"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '503':
+          description: "Ошибка на стороне сервера"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'  
+
+  /fusion/v1/spaces:
+    get:
+      summary: Получить информацию обо всех своих пространствах
+      tags: [Spaces - Операции с пространством]
+      operationId: getSpaces
+      parameters:
+        - name: Authorization
+          in: header
+          description: Токен авторизации
+          required: true
+          schema:
+            type: string
+          example: Bearer usk***
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseGetSpaces'
+        '400':
+          description: Переданные параметры невалидны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '401':
+          description: Не прошел авторизацию
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /fusion/v1/spaces/{spaceId}/nodes:
+    get:
+      summary: Получить элементы пространства из корневой папки или элементы определенного типа
+      tags: [Nodes - Операции с элементами пространства]
+      operationId: getNodes
+      parameters:
+        - name: spaceId
+          in: path
+          description: ID пространства
+          required: true
+          schema:
+            type: string
+          example: spczJrh2i3tLW
+        - name: Authorization
+          in: header
+          description: Токен авторизации
+          required: true
+          schema:
+            type: string
+          example: Bearer usk***
+        - name: type
+          in: query
+          schema:
+            type: integer
+          description: тип запрашиваемой ноды. Если передан, то поиск будет по всему пространству. Типы node см. https://confluence.mts.ru/pages/viewpage.action?pageId=961991790
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseGetNodes'
+        '400':
+          description: Переданные параметры невалидны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidResponseGetNodes'
+        '401':
+          description: Не прошел авторизацию
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '403':
+          description: Forbidden. Может возникнуть при неудачной проверке прав
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '404':
+          description: NotFound. Запрашиваемая сущность (пространство) не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+  /fusion/v1/nodes/{nodeId}:
+    get:
+      summary: Получить детальную информацию об элменте
+      tags: [Nodes - Операции с элементами пространства]
+      operationId: getNodeDetails
+      parameters:
+        - name: nodeId
+          in: path
+          description: ID элемента
+          required: true
+          schema:
+            type: string
+          example: dst123
+        - name: Authorization
+          in: header
+          description: Токен авторизации
+          required: true
+          schema:
+            type: string
+          example: Bearer usk***
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseGetNodeDetails'
+        '400':
+          description: Переданные параметры невалидны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '401':
+          description: Не прошел авторизацию
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '403':
+          description: Forbidden. Может возникнуть при неудачной проверке прав
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '404':
+          description: NotFound. Запрашиваемая сущность (пространство) не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+  /fusion/v1/spaces/{spaceId}/node/{nodeId}:
+    delete:
+      summary: Удалить ноду насовсем или поместить в корзину
+      tags: [Nodes - Операции с элементами пространства]
+      operationId: DeleteNode
+      parameters:
+        - name: spaceId
+          in: path
+          description: ID пространства
+          required: true
+          schema:
+            type: string
+          example: spczJrh2i3tLW
+        - name: nodeId
+          in: path
+          description: ID таблицы
+          required: true
+          schema:
+            type: string
+          example: dst***
+        - name: Authorization
+          in: header
+          description: Токен авторизации
+          required: true
+          schema:
+            type: string
+          example: Bearer usk***
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseDataDeleteNode'
+        '400':
+          description: Переданные параметры невалидны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidDeleteNodeResponse'
+        '401':
+          description: Не прошел авторизацию
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '403':
+          description: Forbidden. Может возникнуть при неудачной проверке прав
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '404':
+          description: NotFound. Запрашиваемая сущность (пространство|нода) не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+
+components:
+  schemas:
+    BaseResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        code:
+          type: integer
+          format: int32
+        message:
+          type: string
+        data:
+          type: object
+
+    BackendResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: SUCCESS
+
+    GetRecordsData:
+      allOf:
+        - $ref: '#/components/schemas/BackendResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                pageNum:
+                  type: integer
+                records:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Record'
+                pageSize:
+                  type: integer
+                total:
+                  type: integer
+
+    Record:
+      type: object
+      properties:
+        recordId:
+          type: string
+        fields:
+          type: object
+        createdAt:
+          type: integer
+        updatedAt:
+          type: integer
+
+    CreateRecordsRequest:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            type: object
+            properties:
+              fields:
+                type: object
+          description: "Массив полей"
+        fieldKey:
+          type: string
+          description: "Ключ поля (fieldKey)"
+          example: "name"
+      required:
+        - records
+        - fieldKey
+
+    CreateRecordsResponse:
+      allOf:
+        - $ref: '#/components/schemas/BackendResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/RecordsData'
+
+    UpdateRecordsRequest:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            type: object
+            properties:
+              recordId:
+                type: string
+                description: "Идентификатор записи"
+              fields:
+                $ref: '#/components/schemas/ExampleFieldToUpdate'
+          description: "Массив записей"
+        fieldKey:
+          type: string
+          description: "Ключ поля (fieldKey)"
+          example: "name"
+      required:
+        - records
+        - fieldKey
+
+    ExampleFieldToUpdate:
+      type: object
+      properties:
+        currency:
+          type: number
+          description: "Сумма в валюте"
+        singleChoice:
+          type: string
+          description: "Одиночный выбор"
+
+    UpdateRecordsResponse:
+      allOf:
+        - $ref: '#/components/schemas/BackendResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/RecordsData'
+
+    DeleteRecordsResponse:
+      allOf:
+        - $ref: '#/components/schemas/BackendResponse'
+        - type: object
+          properties:
+            data:
+              type: boolean
+
+    RecordsData:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/Record'
+
+    GetFieldsResponse:
+      allOf:
+        - $ref: '#/components/schemas/BackendResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Fields'
+
+    FieldsObject:
+      type: object
+      properties:
+        fields:
+          type: object
+        fieldKey:
+          type: string
+          enum: ['name', 'id']
+          default: 'name'
+
+    Fields:
+      type: object
+      properties:
+        fields:
+          $ref: '#/components/schemas/FieldsArray'
+
+    FieldsArray:
+      type: array
+      items:
+        $ref: '#/components/schemas/Field'
+
+    Field:
+      type: object
+      properties:
+        id:
+          type: string
+          example: fidV3ElniQavTNyJG
+        name:
+          type: string
+          example: Title
+        type:
+          $ref: '#/components/schemas/FieldTypeEnum'
+          example: SingleText
+        desc:
+          type: string
+          example: desc
+        property:
+          type: object
+
+    FieldProperty:
+      type: object
+      properties:
+        defaultValue:
+          type: string
+          description: Пример возможных пропов https://developers.aitable.ai/api/reference/#tag/Field
+
+    CreateFieldRequest:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/FieldTypeEnum'
+          example: SingleText
+        name:
+          type: string
+          description: Имя поля (не более 100 символов)
+        property:
+          $ref: '#/components/schemas/FieldCreateProperty'
+
+    CreateFieldResponse:
+      allOf:
+        - $ref: '#/components/schemas/BackendResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+
+    DeleteFieldResponse:
+      allOf:
+        - $ref: '#/components/schemas/BackendResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+
+    UploadAttachmentResponse:
+      allOf:
+        - $ref: '#/components/schemas/BackendResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: "Токен файла"
+                name:
+                  type: string
+                  description: "Имя файла"
+                size:
+                  type: integer
+                  description: "Размер файла в байтах"
+                width:
+                  type: integer
+                  description: "Ширина изображения (если применимо)"
+                height:
+                  type: integer
+                  description: "Высота изображения (если применимо)"
+                mimeType:
+                  type: string
+                  description: "Тип файла"
+                preview:
+                  type: string
+                  description: "Превью файла (если применимо)"
+                url:
+                  type: string
+                  description: "URL файла"
+              required:
+                - token
+                - height
+                - width
+                - name
+                - size
+                - mimeType
+
+    FieldTypeEnum:
+      type: string
+      enum:
+        - SingleText
+        - Text
+        - SingleSelect
+        - MultiSelect
+        - Number
+        - Currency
+        - Percent
+        - DateTime
+        - Attachment
+        - Member
+        - Checkbox
+        - Rating
+        - URL
+        - Phone
+        - Email
+        - WorkDoc
+        - OneWayLink
+        - TwoWayLink
+        - MagicLookUp
+        - Formula
+        - AutoNumber
+        - CreatedTime
+        - LastModifiedTime
+        - CreatedBy
+        - LastModifiedBy
+
+    FieldCreateProperty:
+      type: object
+      description: "Параметры для конкретного типа поля, зависят от выбранного типа. Дополнительно: https://developers.aitable.ai/api/reference/#tag/Field"
+      oneOf:
+        - $ref: "#/components/schemas/SingleTextProperty"
+        - $ref: "#/components/schemas/TextProperty"
+        - $ref: "#/components/schemas/SingleSelectProperty"
+        - $ref: "#/components/schemas/MultiSelectProperty"
+        - $ref: "#/components/schemas/NumberProperty"
+        - $ref: "#/components/schemas/CurrencyProperty"
+        - $ref: "#/components/schemas/PercentProperty"
+        - $ref: "#/components/schemas/DateTimeProperty"
+        - $ref: "#/components/schemas/AttachmentProperty"
+        - $ref: "#/components/schemas/MemberProperty"
+        - $ref: "#/components/schemas/CheckboxProperty"
+        - $ref: "#/components/schemas/RatingProperty"
+        - $ref: "#/components/schemas/OneWayLinkProperty"
+        - $ref: "#/components/schemas/MagicLinkProperty"
+        - $ref: "#/components/schemas/MagicLookUpProperty"
+        - $ref: "#/components/schemas/FormulaProperty"
+        - $ref: "#/components/schemas/CreatedTimeProperty"
+        - $ref: "#/components/schemas/LastModifiedTimeProperty"
+        - $ref: "#/components/schemas/LastModifiedByProperty"
+        - $ref: "#/components/schemas/ButtonProperty"
+
+    SingleTextProperty:
+      type: object
+      properties:
+        defaultValue:
+          type: string
+          description: "Текст по умолчанию"
+        mask:
+          $ref: "#/components/schemas/MaskProperty"
+
+    TextProperty:
+      type: object
+      description: "Пустой объект для Text"
+      properties:
+        mask:
+          $ref: "#/components/schemas/MaskProperty"
+
+    SingleSelectProperty:
+      type: object
+      properties:
+        options:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: "Название"
+              color:
+                type: string
+                description: "Цвет"
+          description: "Список опций"
+        defaultValue:
+          type: string
+          description: "Значение по умолчанию"
+
+    MultiSelectProperty:
+      type: object
+      properties:
+        options:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: "Название"
+              color:
+                type: string
+                description: "Цвет"
+          description: "Список опций"
+        defaultValue:
+          type: string
+          description: "Значение по умолчанию"
+
+    NumberProperty:
+      type: object
+      properties:
+        defaultValue:
+          type: string
+          description: "Значение по умолчанию"
+        symbol:
+          type: string
+          description: "Символ"
+        precision:
+          type: integer
+          description: "Точность (обязательное поле)"
+
+    CurrencyProperty:
+      type: object
+      properties:
+        defaultValue:
+          type: string
+        symbol:
+          type: string
+        precision:
+          type: integer
+        symbolAlign:
+          type: string
+
+    PercentProperty:
+      type: object
+      properties:
+        defaultValue:
+          type: string
+        precision:
+          type: integer
+          description: "Точность (обязательное поле)"
+
+    DateTimeProperty:
+      type: object
+      properties:
+        dateFormat:
+          type: string
+          description: "Формат даты (обязательное поле)"
+          enum: ["YYYY/MM/DD", "YYYY-MM-DD", "DD/MM/YYYY", "YYYY-MM", "MM-DD", "YYYY", "MM", "DD"]
+        timeFormat:
+          type: string
+          enum: ["HH:mm", "hh:mm"]
+        autoFill:
+          type: boolean
+        includeTime:
+          type: boolean
+
+    AttachmentProperty:
+      type: object
+      description: "Пустой объект для Attachment"
+
+    MemberProperty:
+      type: object
+      properties:
+        isMulti:
+          type: boolean
+        shouldSendMsg:
+          type: boolean
+
+    CheckboxProperty:
+      type: object
+      properties:
+        icon:
+          type: string
+          description: "Иконка (обязательное поле)"
+
+    RatingProperty:
+      type: object
+      properties:
+        icon:
+          type: string
+        max:
+          type: integer
+          description: "Максимальная оценка (1-10, обязательное поле)"
+
+    OneWayLinkProperty:
+      type: object
+      properties:
+        foreignDatasheetId:
+          type: string
+        limitToViewId:
+          type: string
+        limitSingleRecord:
+          type: boolean
+
+    MagicLinkProperty:
+      type: object
+      properties:
+        foreignDatasheetId:
+          type: string
+        limitToViewId:
+          type: string
+        limitSingleRecord:
+          type: boolean
+
+    MagicLookUpProperty:
+      type: object
+      properties:
+        relatedLinkFieldId:
+          type: string
+        targetFieldId:
+          type: string
+
+    FormulaProperty:
+      type: object
+      properties:
+        expression:
+          type: string
+
+    CreatedTimeProperty:
+      type: object
+      properties:
+        dateFormat:
+          type: string
+          enum: ["YYYY/MM/DD", "YYYY-MM-DD", "DD/MM/YYYY", "YYYY-MM", "MM-DD", "YYYY", "MM", "DD"]
+        timeFormat:
+          type: string
+          enum: ["HH:mm", "hh:mm"]
+        autoFill:
+          type: boolean
+        includeTime:
+          type: boolean
+
+    LastModifiedTimeProperty:
+      type: object
+      properties:
+        collectType:
+          type: integer
+          enum: [0, 1]
+        fieldIdCollection:
+          type: array
+          items:
+            type: string
+
+    LastModifiedByProperty:
+      type: object
+      properties:
+        collectType:
+          type: integer
+          enum: [0, 1]
+        fieldIdCollection:
+          type: array
+          items:
+            type: string
+
+    ButtonProperty:
+      type: object
+      properties:
+        text:
+          type: string
+        style:
+          type: object
+          properties:
+            type:
+              type: string
+              enum: ["Background", "OnlyText"]
+            color:
+              type: object
+              properties:
+                value:
+                  type: string
+        action:
+          type: object
+          properties:
+            type:
+              type: string
+              enum: ["Link", "RecordOperation", "SendEmail", "AddRecord"]
+            config:
+              type: object
+
+    CreateDatasheetRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        folderId:
+          type: string
+          description: "id корневой папки. Можно не передавать"
+        preNodeId:
+          type: string
+          description: "id предыдущей по порядку ноды. Можно не передавать"
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreateFieldRequest'
+
+    MaskProperty:
+      type: object
+      properties:
+        condition:
+          type: object
+          properties:
+            operator:
+              type: string
+              description: тип оператора, например Регулярное выражение. Можно добавить и фильтр, но в сваггере я это описывать не собираюсь
+              example: REGEX
+            value:
+              type: string
+              description: Само регулярное выражение
+
+    GetViewsResponse:
+      allOf:
+        - $ref: '#/components/schemas/BackendResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                views:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/View'
+
+    View:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+
+    CreateDatasheetResponse:
+      allOf:
+        - $ref: '#/components/schemas/BackendResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                id:
+                  type: string
+                createdAt:
+                  type: integer
+                  description: "timestamp"
+                fields:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+
+    GetTimeMachineResponse:
+      allOf:
+        - $ref: '#/components/schemas/BackendResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: string
+
+    ResponseGetNodes:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                nodes:
+                  $ref: "#/components/schemas/Nodes"
+
+    ResponseGetSpaces:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                spaces:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      isAdmin:
+                        type: boolean
+                        description: Являетесь ли вы создателем этого пространства. Данное свойство может отсутствовать
+
+    ResponseGetNodeDetails:
+      allOf:
+          - $ref: "#/components/schemas/BaseResponse"
+          - type: object
+            properties:
+              data:
+                $ref: "#/components/schemas/Node"            
+
+    Nodes:
+      type: array
+      description: "Массив элементов"
+      items:
+        $ref: "#/components/schemas/Node"
+
+    Node:
+      type: object
+      properties:
+        id:
+          type: string
+          description: "Уникальный идентификатор элемента"
+          example: "fodNxiAXl1vjg"
+        name:
+          type: string
+          description: "Название элемента"
+          example: "Кейс с конвертацией текста в ML"
+        type:
+          type: string
+          description: "Тип элемента (например, папка или таблица)"
+          example: "Folder"
+        icon:
+          type: string
+          description: "Иконка элемента, если применимо"
+          example: ""
+        isFav:
+          type: boolean
+          description: "Флаг избранного элемента"
+          example: false
+        permission:
+          type: integer
+          description: "Уровень прав доступа к элементу"
+          example: 0
+        children:
+          type: array
+          description: "Все вложенные ноды в этом элементе. Данное свойство может отсутствовать или являться пустым массивом"
+          items:
+            $ref: "#/components/schemas/Node"
+
+    MessageIncorrectType:
+      type: string
+      example: Тип указан неверно|Incorrect Type
+      description: Тип указан неверно - не соблюден формат строка/число|Запрашиваемого типа не существует
+
+    MessageIncorrectParameter:
+      type: string
+      example: Указан некорректный параметр|Incorrect Parameter
+      description: Переданный атрибут не соответствует схеме|Значение атрибута не является корректным|Не все обязательные атрибуты переданы
+
+    InvalidResponseGetNodes:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          properties:
+            message:
+              oneOf:
+                - $ref: "#/components/schemas/MessageIncorrectType"
+                - $ref: "#/components/schemas/MessageIncorrectParameter"
+
+    ResponseDataDeleteNode:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                nodeId:
+                  type: string
+
+    InvalidDeleteNodeResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          properties:
+            message:
+              oneOf:
+                - $ref: "#/components/schemas/MessageIncorrectType"
+                - $ref: "#/components/schemas/MessageIncorrectParameter"
+
+    CreateViewRequestBody:
+      type: object
+      required:
+        - name
+        - properties
+      properties:
+        name:
+          type: string
+        properties:
+          type: object
+          description: "Конфигурация представления"
+          oneOf:
+            - type: object
+              required:
+                - type
+                - settings
+              description: "Конфигурация представления канбан"
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - "Kanban"
+                settings:
+                  type: object
+                  required:
+                    - groupFieldId
+                  properties:
+                    groupFieldId:
+                      type: string
+                      description: "ID поля для группировки. Поддерживаются только поля типа 'мембер' или 'селект'."
+            - type: object
+              required:
+                - type
+              description: "Конфигурация представления сетка"
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - "Grid"
+            - type: object
+              required:
+                - type
+                - settings
+              description: "Конфигурация представления гант"
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - "Gantt"
+                settings:
+                  type: object
+                  required:
+                    - startFieldId
+                  properties:
+                    startFieldId:
+                      type: string
+                      description: "ID поля, представляющего начало периода."
+                    endFieldId:
+                      type: string
+                      description: "ID поля, представляющего конец периода."
+                    linkFieldId:
+                      type: string
+                      description: "ID поля для связки с другим элементом диаграммы."
+            - type: object
+              required:
+                - type
+                - settings
+              description: "Конфигурация представления архитектура"
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - "Architecture"
+                settings:
+                  type: object
+                  required:
+                    - linkFieldId
+                  properties:
+                    linkFieldId:
+                      type: string
+                      description: "ID поля для связки с элементом архитектуры."
+            - type: object
+              required:
+                - type
+              description: "Конфигурация представления галерея"
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - "Gallery"
+            - type: object
+              required:
+                - type
+                - settings
+              description: "Конфигурация представления календарь"
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - "Calendar"
+                settings:
+                  type: object
+                  required:
+                    - startFieldId
+                  properties:
+                    startFieldId:
+                      type: string
+                      description: "ID поля, представляющего начало периода."
+                    endFieldId:
+                      type: string
+                      description: "ID поля, представляющего конец периода."
+
+    ViewDetails:
+      type: object
+      properties:
+        id:
+          type: string
+          description: "Идентификатор представления"
+          example: "viw3IcPvGpDjk"
+        name:
+          type: string
+          description: "Название представления"
+          example: "Сетка"
+        type:
+          type: integer
+          description: "Тип представления"
+          example: 1
+        rowHeightLevel:
+          type: integer
+          description: "Уровень высоты строки"
+          example: 1
+        columns:
+          type: array
+          description: "Список колонок в представлении"
+          items:
+            type: object
+            properties:
+              fieldId:
+                type: string
+                description: "Идентификатор поля"
+                example: "fldEtuGEJi8dG"
+              statType:
+                type: integer
+                description: "Тип статистики для колонки (опционально)"
+                example: 1
+        rows:
+          type: array
+          description: "Список строк в представлении"
+          items:
+            type: object
+            properties:
+              recordId:
+                type: string
+                description: "Идентификатор запии"
+                example: "recUq8l8ezV3W"
+        frozenColumnCount:
+          type: integer
+          description: "Количество закрепленных колонок"
+          example: 1
+        displayHiddenColumnWithinMirror:
+          type: boolean
+          description: "Отображать ли скрытые колонки в зеркале"
+          example: false
+
+    ResponseDataCreateView:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ViewDetails"
+
+    InvalidCreateViewResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          properties:
+            message:
+              oneOf:
+                - $ref: "#/components/schemas/MessageIncorrectType"
+                - $ref: "#/components/schemas/MessageIncorrectParameter"
+
+    ResponseDataDeleteView:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                viewId:
+                  type: string
+
+    InvalidDeleteViewResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          properties:
+            message:
+              oneOf:
+                - $ref: "#/components/schemas/MessageIncorrectType"
+                - $ref: "#/components/schemas/MessageIncorrectParameter"
+
+    InvalidUpdateViewNameResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          properties:
+            message:
+              oneOf:
+                - $ref: "#/components/schemas/MessageIncorrectType"
+                - $ref: "#/components/schemas/MessageIncorrectParameter"
+
+    InvalidSortViewResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          properties:
+            message:
+              oneOf:
+                - $ref: "#/components/schemas/MessageIncorrectType"
+                - $ref: "#/components/schemas/MessageIncorrectParameter"
+
+    InvalidGroupViewResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          properties:
+            message:
+              oneOf:
+                - $ref: "#/components/schemas/MessageIncorrectType"
+                - $ref: "#/components/schemas/MessageIncorrectParameter"
+
+    InvalidHideFieldsResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          properties:
+            message:
+              oneOf:
+                - $ref: "#/components/schemas/MessageIncorrectType"
+                - $ref: "#/components/schemas/MessageIncorrectParameter"
+
+    InvalidMoveViewResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          properties:
+            message:
+              oneOf:
+                - $ref: "#/components/schemas/MessageIncorrectType"
+                - $ref: "#/components/schemas/MessageIncorrectParameter"
+
+    UpdateViewNameRequestBody:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          description: "По интерфейсу сервиса допустимо передавать описание, но в самом приложении такого не предусмотрено"
+
+    ResponseDataUpdateViewName:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ViewShortInfo"
+
+    SortInfoRequest:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - rules
+          properties:
+            keepSort:
+              type: boolean
+            rules:
+              type: array
+              items:
+                type: object
+                required:
+                  - fieldId
+                properties:
+                  fieldId:
+                    type: string
+                  desc:
+                    type: boolean
+        applySort:
+          type: boolean
+
+    GroupRequest:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            required:
+              - fieldId
+            properties:
+              fieldId:
+                type: string
+              desc:
+                type: boolean
+
+    ViewShortInfo:
+      type: object
+      properties:
+        viewId:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+
+    SortInfoResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ViewShortInfo"
+
+    GroupResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ViewShortInfo"
+
+    HideFieldsResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ViewShortInfo"
+
+    MoveViewResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ViewShortInfo"
+
+    HideFieldsRequest:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            required:
+              - fieldId
+            properties:
+              fieldId:
+                type: string
+              hidden:
+                type: boolean
+
+    MoveViewRequest:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - newIndex
+          properties:
+            newIndex:
+              type: integer
+
+    UploadAttachmentRequestBody:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+          description: Путь к файлу на устройстве
+
+    UploadAttachmentSuccessResponse:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - $ref: '#/components/schemas/AttachmentData'
+
+    AttachmentData:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            token:
+              type: string
+              description: Токен вложения
+            mimeType:
+              type: string
+              description: "тип вложения - допустимые типы см. https://confluence.mts.ru/pages/viewpage.action?pageId=948844239"
+            size:
+              type: number
+            name:
+              type: string
+            bucket:
+              type: string
+            url:
+              type: string
+              description: Адрес вложения относительно бакета 

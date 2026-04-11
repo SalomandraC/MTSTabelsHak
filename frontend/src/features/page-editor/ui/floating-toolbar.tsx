@@ -1,6 +1,6 @@
 import type { Editor } from '@tiptap/core';
 import { useEditorState } from '@tiptap/react';
-import { Code2, List, ListOrdered, ListChecks } from 'lucide-react';
+import { Code2, List, ListOrdered, ListChecks, MessageSquare } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { handleListAction } from '../model/list-actions';
@@ -20,7 +20,9 @@ const redFilter = 'brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(
 type FloatingToolbarProps = {
   editor: Editor | null;
   onOpenLinkModal: () => void;
+  onCreateComment?: (editor: Editor) => void;
   pageTitle?: string;
+  isAiTransformEnabled?: boolean;
 };
 
 type ToolbarButtonProps = {
@@ -77,7 +79,13 @@ function ToolbarButton({
   );
 }
 
-export function FloatingToolbar({ editor, onOpenLinkModal, pageTitle }: FloatingToolbarProps) {
+export function FloatingToolbar({
+  editor,
+  onOpenLinkModal,
+  onCreateComment,
+  pageTitle,
+  isAiTransformEnabled = true,
+}: FloatingToolbarProps) {
   const [visible, setVisible] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -369,24 +377,38 @@ export function FloatingToolbar({ editor, onOpenLinkModal, pageTitle }: Floating
         @
       </button>
 
-      <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+      {onCreateComment ? (
+        <ToolbarButton
+          icon={<MessageSquare className="h-3.5 w-3.5" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
+          onClick={() => onCreateComment(editor)}
+          isFirst={false}
+          isLast={false}
+          aria-label="Комментировать выделение"
+        />
+      ) : null}
 
-      <ToolbarButton
-        icon={<span className="px-1 text-[11px] font-semibold">Улучшить</span>}
-        onClick={() => void runAiTransform('professional')}
-        disabled={isAiLoading}
-        isFirst={true}
-        isLast={false}
-        aria-label="Улучшить стиль"
-      />
-      <ToolbarButton
-        icon={<span className="px-1 text-[11px] font-semibold">Сократить</span>}
-        onClick={() => void runAiTransform('shorten')}
-        disabled={isAiLoading}
-        isFirst={false}
-        isLast={true}
-        aria-label="Сократить текст"
-      />
+      {isAiTransformEnabled ? (
+        <>
+          <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
+          <ToolbarButton
+            icon={<span className="px-1 text-[11px] font-semibold">Улучшить</span>}
+            onClick={() => void runAiTransform('professional')}
+            disabled={isAiLoading}
+            isFirst={true}
+            isLast={false}
+            aria-label="Улучшить стиль"
+          />
+          <ToolbarButton
+            icon={<span className="px-1 text-[11px] font-semibold">Сократить</span>}
+            onClick={() => void runAiTransform('shorten')}
+            disabled={isAiLoading}
+            isFirst={false}
+            isLast={true}
+            aria-label="Сократить текст"
+          />
+        </>
+      ) : null}
     </div>
   );
 }

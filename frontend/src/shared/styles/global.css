@@ -272,6 +272,21 @@
     outline-offset: 2px;
   }
 
+  .tiptap .comment-anchor {
+    border-radius: 0.2rem;
+    background: color-mix(in srgb, #907ff0 13%, transparent);
+    box-shadow: inset 0 -2px 0 #d8d2fc;
+    cursor: pointer;
+    transition:
+      background-color 120ms ease,
+      box-shadow 120ms ease;
+  }
+
+  .tiptap .comment-anchor:hover {
+    background: color-mix(in srgb, #907ff0 22%, transparent);
+    box-shadow: inset 0 -2px 0 #907ff0;
+  }
+
   .tiptap img {
     display: block;
     max-width: min(100%, 42rem);

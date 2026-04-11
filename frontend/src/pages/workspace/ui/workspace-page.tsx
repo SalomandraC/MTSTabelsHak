@@ -9,11 +9,15 @@ import {
   FileUp,
   FileText,
   Folder,
+  History,
   LogOut,
+<<<<<<< HEAD
   MoreHorizontal,
+=======
+  MessageSquare,
+>>>>>>> 166ab1d5c83824332ea20e9c772d5157a8d2a1b9
   Plus,
   Search,
-  Send,
   Sparkles,
   Table2,
   Trash2,
@@ -23,6 +27,11 @@ import {
 
 import { useAuthSessionContext } from '../../../features/auth';
 import { PageEditor } from '../../../features/page-editor';
+import { usePageComments, type CommentThreadView } from '../../../features/page-editor/model/use-page-comments';
+import { usePageHistory } from '../../../features/page-editor/model/use-page-history';
+import { CommentsPanel } from '../../../features/page-editor/ui/comments-panel';
+import { TimeMachinePanel } from '../../../features/page-editor/ui/time-machine-panel';
+import { AiChatSidebar } from '../../../features/plugins/ai-assistant';
 import { PluginsModal, usePlugins } from '../../../features/plugins';
 import { ScrollArea } from '../../../shared/ui';
 import {
@@ -168,131 +177,7 @@ function getWorkspaceNodeIcon(node: WorkspaceTreeNode) {
   return <FileText size={17} strokeWidth={1.8} />;
 }
 
-type ChatMessage = {
-  id: string;
-  role: 'user' | 'assistant';
-  text: string;
-};
-
-function getEditorMarkdown(editor: Editor | null): string {
-  if (!editor) {
-    return '';
-  }
-
-  const markdownStorage = (editor.storage as { markdown?: { getMarkdown?: () => string } }).markdown;
-
-  if (markdownStorage?.getMarkdown) {
-    return markdownStorage.getMarkdown();
-  }
-
-  return editor.getText();
-}
-
-function AIChatSidebar({
-  pageId,
-  pageTitle,
-  editor,
-}: {
-  pageId: string | null;
-  pageTitle?: string;
-  editor: Editor | null;
-}) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [question, setQuestion] = useState('');
-  const [isSending, setIsSending] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-
-  const handleSend = async () => {
-    const trimmed = question.trim();
-    if (!trimmed || isSending) {
-      return;
-    }
-
-    const markdown = getEditorMarkdown(editor);
-    const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      text: trimmed,
-    };
-
-    setMessages((current) => [...current, userMessage]);
-    setQuestion('');
-    setErrorMessage('');
-    setIsSending(true);
-
-    try {
-      const response = await wikiliveApi.aiChat({
-        question: trimmed,
-        pageId: pageId ?? undefined,
-        pageTitle,
-        pageSnapshot: {
-          markdown,
-        },
-      });
-
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          text: response.answer,
-        },
-      ]);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Не удалось получить ответ AI');
-    } finally {
-      setIsSending(false);
-    }
-  };
-
-  return (
-    <section>
-      <h3 className="text-sm font-semibold">AI Chat</h3>
-      <div className="mt-2 space-y-2">
-        <div className="max-h-52 space-y-2 overflow-y-auto rounded-lg border border-editor-border-subtle bg-[#fafbfd] p-2">
-          {messages.length === 0 ? <p className="text-xs text-editor-text-tertiary">Задайте вопрос по текущей странице</p> : null}
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={[
-                'rounded-md px-2 py-1.5 text-xs',
-                message.role === 'user' ? 'bg-[#eef3ff] text-[#1f2f55]' : 'bg-white text-[#2f3136] border border-[#e8ebf2]',
-              ].join(' ')}
-            >
-              <p className="mb-1 font-semibold">{message.role === 'user' ? 'Вы' : 'AI'}</p>
-              <p className="whitespace-pre-wrap">{message.text}</p>
-            </div>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          <input
-            value={question}
-            onChange={(event) => setQuestion(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                void handleSend();
-              }
-            }}
-            placeholder="Спросить AI про страницу"
-            className="h-9 w-full rounded-md border border-editor-border-subtle bg-white px-3 text-sm outline-none focus:border-[#5586ff]"
-            disabled={isSending}
-          />
-          <button
-            type="button"
-            onClick={() => void handleSend()}
-            disabled={isSending || !question.trim()}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-editor-border-subtle bg-white text-editor-text-primary hover:bg-editor-bg-control disabled:cursor-not-allowed disabled:opacity-50"
-            title="Отправить вопрос"
-          >
-            <Send size={14} />
-          </button>
-        </div>
-        {errorMessage ? <p className="text-xs text-[#b00025]">{errorMessage}</p> : null}
-      </div>
-    </section>
-  );
-}
+type RightPanelMode = 'links' | 'comments' | 'timeMachine';
 
 function WorkspaceTreeItem({
   node,
@@ -642,6 +527,7 @@ export function WorkspacePage() {
     errorMessage: pluginsErrorMessage,
     pendingPluginId,
     togglePlugin,
+    isPluginEnabled,
     isWorkspaceSidebarEnabled,
   } = usePlugins();
   const initialRoute = useMemo(() => readWorkspaceRoute(), []);
@@ -656,6 +542,7 @@ export function WorkspacePage() {
   const [activePageId, setActivePageId] = useState<string | null>(null);
   const [selectedTableNode, setSelectedTableNode] = useState<WorkspaceTreeNode | null>(null);
   const [activePage, setActivePage] = useState<WikiPage | null>(null);
+  const [isPageLoading, setIsPageLoading] = useState(false);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [outgoingLinks, setOutgoingLinks] = useState<OutgoingLink[]>([]);
   const [graphEdges, setGraphEdges] = useState<DocumentGraphEdge[]>([]);
@@ -668,6 +555,8 @@ export function WorkspacePage() {
   const [shareStatus, setShareStatus] = useState('');
   const [isPluginsModalOpen, setIsPluginsModalOpen] = useState(false);
   const [activeEditor, setActiveEditor] = useState<Editor | null>(null);
+  const [documentStateEncoder, setDocumentStateEncoder] = useState<(() => string | null) | null>(null);
+  const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>('links');
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [templates, setTemplates] = useState<PageTemplateSummary[]>([]);
@@ -717,6 +606,26 @@ export function WorkspacePage() {
   const visibleTree = useMemo(() => filterWorkspaceTree(tree, searchQuery), [searchQuery, tree]);
   const hasSearch = searchQuery.trim().length > 0;
   const isDocumentGraphEnabled = isWorkspaceSidebarEnabled('document-graph');
+  const isCommentsEnabled = isPluginEnabled('comments');
+  const isTimeMachineEnabled = isPluginEnabled('time-machine');
+  const isAiSidebarEnabled = isWorkspaceSidebarEnabled('sidebar');
+  const comments = usePageComments({
+    pageId: activePageId,
+    editor: activeEditor,
+    enabled: isCommentsEnabled && Boolean(activePage),
+  });
+  const {
+    startThreadFromSelection,
+    openThread,
+    closePanel: closeCommentsPanel,
+  } = comments;
+  const editorCommentThreads = useMemo<CommentThreadView[]>(() => {
+    if (!comments.activeThread?.isDraft) {
+      return comments.openThreads;
+    }
+
+    return [comments.activeThread, ...comments.openThreads.filter((thread) => thread.id !== comments.activeThread?.id)];
+  }, [comments.activeThread, comments.openThreads]);
   const effectiveExpandedFolderIds = useMemo(
     () => (hasSearch ? new Set(collectWorkspaceFolderIds(visibleTree)) : expandedFolderIds),
     [expandedFolderIds, hasSearch, visibleTree],
@@ -781,6 +690,18 @@ export function WorkspacePage() {
     setActivePage(response.page);
     await refreshLinks(pageId);
   };
+
+  const history = usePageHistory({
+    pageId: activePageId,
+    editor: activeEditor,
+    enabled: isTimeMachineEnabled && Boolean(activePage) && rightPanelMode === 'timeMachine',
+    getDocumentStateValue: documentStateEncoder,
+    onRestored: async () => {
+      if (activePageId) {
+        await Promise.all([refreshActivePage(activePageId), refreshTree(selectedSpaceId, activePageId)]);
+      }
+    },
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -877,6 +798,7 @@ export function WorkspacePage() {
 
     localStorage.setItem(SELECTED_SPACE_STORAGE_KEY, selectedSpaceId);
     setActivePage(null);
+    setIsPageLoading(false);
     setActivePageId(null);
     setSelectedTableNode(null);
     setBacklinks([]);
@@ -955,10 +877,15 @@ export function WorkspacePage() {
 
   useEffect(() => {
     if (!activePageId) {
+      setActivePage(null);
+      setIsPageLoading(false);
+      setRightPanelMode('links');
       return;
     }
 
     let cancelled = false;
+    setActivePage(null);
+    setIsPageLoading(true);
     setStatusMessage('Открываем страницу');
 
     void (async () => {
@@ -978,6 +905,7 @@ export function WorkspacePage() {
         }
       } finally {
         if (!cancelled) {
+          setIsPageLoading(false);
           setStatusMessage('');
         }
       }
@@ -990,6 +918,7 @@ export function WorkspacePage() {
 
   const handleSelectPage = (pageId: string) => {
     setSelectedTableNode(null);
+    setActivePage(null);
     setActivePageId(pageId);
     writeWorkspaceRoute(selectedSpaceId, pageId, 'push');
   };
@@ -1293,6 +1222,29 @@ export function WorkspacePage() {
     await Promise.all([refreshActivePage(activePageId), refreshTree(selectedSpaceId, activePageId)]);
   };
 
+  const handleCreateComment = useCallback((editor: Editor) => {
+    startThreadFromSelection(editor);
+    setRightPanelMode('comments');
+  }, [startThreadFromSelection]);
+
+  const handleOpenCommentThread = useCallback((threadId: string) => {
+    openThread(threadId);
+    setRightPanelMode('comments');
+  }, [openThread]);
+
+  const handleCloseComments = useCallback(() => {
+    closeCommentsPanel();
+    setRightPanelMode('links');
+  }, [closeCommentsPanel]);
+
+  const handleOpenTimeMachine = useCallback(() => {
+    setRightPanelMode('timeMachine');
+  }, []);
+
+  const handleDocumentStateEncoderChange = useCallback((encoder: (() => string | null) | null) => {
+    setDocumentStateEncoder(() => encoder);
+  }, []);
+
   const handleConfirmLogout = async () => {
     setIsLoggingOut(true);
 
@@ -1526,20 +1478,31 @@ export function WorkspacePage() {
         {statusMessage ? (
           <div className="border-b border-editor-border-subtle bg-white px-4 py-2 text-sm text-editor-text-tertiary">{statusMessage}</div>
         ) : null}
+        {isCommentsEnabled && comments.errorMessage && !comments.isPanelOpen ? (
+          <div className="border-b border-[#efe9ff] bg-[#f7f4ff] px-4 py-2 text-sm text-[#6d5dd3]">{comments.errorMessage}</div>
+        ) : null}
         <ScrollArea className="min-h-0 flex-1 overflow-y-auto bg-editor-bg-page">
           <PageEditor
             spaceId={selectedSpaceId}
-            page={activePage}
+            page={isPageLoading ? null : activePage}
+            isLoading={isPageLoading}
             onRenamePage={handleRenamePage}
             onCheckpoint={handleCheckpoint}
             onEditorChange={setActiveEditor}
+            onDocumentStateEncoderChange={handleDocumentStateEncoderChange}
+            onCreateComment={isCommentsEnabled ? handleCreateComment : undefined}
+            onOpenCommentThread={isCommentsEnabled ? handleOpenCommentThread : undefined}
+            onOpenTimeMachine={isTimeMachineEnabled ? handleOpenTimeMachine : undefined}
+            commentThreads={editorCommentThreads}
+            activeCommentThreadId={comments.activeThreadId}
+            commentCount={comments.commentCount}
           />
         </ScrollArea>
       </section>
 
       {!rightSidebar.isCollapsed ? (
         <aside
-          className="relative hidden h-full shrink-0 flex-col border-l border-editor-border-subtle bg-white/95 xl:flex"
+          className="relative hidden h-full shrink-0 flex flex-col border-l border-editor-border-subtle bg-white/95 xl:flex"
           style={{ width: `${rightSidebar.width}px` }}
         >
           <div
@@ -1550,12 +1513,97 @@ export function WorkspacePage() {
             }}
             aria-hidden="true"
           />
-          <div className="border-b border-editor-border-subtle p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
+          <button
+            type="button"
+            onClick={rightSidebar.collapse}
+            className="absolute -left-4 top-24 z-20 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
+            aria-label="Скрыть правое меню"
+            title="Скрыть правое меню"
+          >
+            <ChevronRight size={16} strokeWidth={2.2} />
+          </button>
+
+          {isCommentsEnabled && rightPanelMode === 'comments' ? (
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+              <CommentsPanel
+                activeThread={comments.activeThread}
+                activeThreadId={comments.activeThreadId}
+                isLoading={comments.isLoading}
+                errorMessage={comments.errorMessage}
+                onRetry={() => void comments.refreshComments()}
+                onClose={handleCloseComments}
+                onSubmitMessage={comments.submitMessage}
+                onEditMessage={comments.editMessage}
+                onDeleteMessage={comments.deleteMessage}
+                onResolveThread={comments.resolveThread}
+              />
+            </div>
+          ) : isTimeMachineEnabled && rightPanelMode === 'timeMachine' ? (
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+              <TimeMachinePanel
+                items={history.items}
+                selectedCheckpoint={history.selectedCheckpoint}
+                selectedCheckpointId={history.selectedCheckpointId}
+                isLoading={history.isLoading}
+                isLoadingCheckpoint={history.isLoadingCheckpoint}
+                isRestoring={history.isRestoring}
+                errorMessage={history.errorMessage}
+                onOpenCheckpoint={(checkpointId) => void history.openCheckpoint(checkpointId)}
+                onRestoreCheckpoint={history.restoreCheckpoint}
+                onRetry={() => void history.refreshHistory()}
+                onClose={() => setRightPanelMode('links')}
+              />
+            </div>
+          ) : (
+            <>
+              <div className="border-b border-editor-border-subtle p-4">
+                <div className="mb-4 flex rounded-md bg-[#f1f2f4] p-0.5">
+                  {isCommentsEnabled ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRightPanelMode('comments');
+                        void comments.refreshComments();
+                      }}
+                      className="flex h-8 flex-1 items-center justify-center gap-1 rounded-[5px] text-xs font-semibold text-[#505762] hover:bg-white"
+                    >
+                      <MessageSquare size={14} />
+                      Комментарии{comments.commentCount > 0 ? ` ${comments.commentCount}` : ''}
+                    </button>
+                  ) : null}
+                  {isTimeMachineEnabled ? (
+                    <button
+                      type="button"
+                      onClick={handleOpenTimeMachine}
+                      className="flex h-8 flex-1 items-center justify-center gap-1 rounded-[5px] text-xs font-semibold text-[#505762] hover:bg-white"
+                    >
+                      <History size={14} />
+                      Машина времени
+                    </button>
+                  ) : null}
+                </div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">Связи</p>
                 <h2 className="mt-1 font-wide text-base font-semibold">{activePage?.title ?? 'Страница не выбрана'}</h2>
+                <button
+                  type="button"
+                  onClick={() => void handleCopyShareLink()}
+                  disabled={!activePageId}
+                  className="mt-3 w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm font-semibold text-editor-text-secondary transition-colors hover:bg-editor-bg-control disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {shareStatus || 'Скопировать ссылку'}
+                </button>
+                {activePageId ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleDeletePage(activePageId, activePage?.title ?? 'Без названия')}
+                    disabled={isDeletingPage}
+                    className="mt-2 w-full rounded-lg border border-[#ffd2d9] bg-[#fff7f8] px-3 py-2 text-sm font-semibold text-[#b00025] transition-colors hover:border-[#d70032] hover:bg-[#fff1f3] disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {isDeletingPage ? 'Удаляем страницу...' : 'Удалить страницу'}
+                  </button>
+                ) : null}
               </div>
+<<<<<<< HEAD
               <button
                 type="button"
                 onClick={rightSidebar.collapse}
@@ -1600,6 +1648,9 @@ export function WorkspacePage() {
             ) : null}
           </div>
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
+=======
+              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
+>>>>>>> 166ab1d5c83824332ea20e9c772d5157a8d2a1b9
             <section>
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-sm font-semibold">Граф страниц</h3>
@@ -1629,7 +1680,12 @@ export function WorkspacePage() {
               </div>
             </section>
 
-            <AIChatSidebar pageId={activePageId} pageTitle={activePage?.title} editor={activeEditor} />
+            <AiChatSidebar
+              pageId={activePageId}
+              pageTitle={activePage?.title}
+              editor={activeEditor}
+              enabled={isAiSidebarEnabled}
+            />
 
             <section>
               <h3 className="text-sm font-semibold">Backlinks ({backlinks.length})</h3>
@@ -1668,7 +1724,9 @@ export function WorkspacePage() {
                 ))}
               </div>
             </section>
-          </div>
+              </div>
+            </>
+          )}
         </aside>
       ) : null}
 
