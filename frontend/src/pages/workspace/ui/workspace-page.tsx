@@ -9,7 +9,7 @@ import {
   WIKILIVE_SPACE_ID,
   wikiliveApi,
 } from '../../../shared/api/wikilive';
-import { DocumentLinkGraph } from './document-link-graph';
+import { DocumentLinkGraph, type DocumentGraphEdge } from './document-link-graph';
 
 function flattenPages(nodes: WikiTreeNode[]): WikiTreeNode[] {
   return nodes.flatMap((node) => [
@@ -61,9 +61,27 @@ export function WorkspacePage() {
   const [activePage, setActivePage] = useState<WikiPage | null>(null);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [outgoingLinks, setOutgoingLinks] = useState<OutgoingLink[]>([]);
+  const [graphEdges, setGraphEdges] = useState<DocumentGraphEdge[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState('Загружаем wiki workspace');
   const [errorMessage, setErrorMessage] = useState('');
+
+  const refreshGraphLinks = async (nodes: WikiTreeNode[]) => {
+    const pages = flattenPages(nodes);
+    const responses = await Promise.all(
+      pages.map(async (page) => {
+        const response = await wikiliveApi.getOutgoingLinks(page.id);
+
+        return response.items.map((link) => ({
+          sourcePageId: page.id,
+          targetPageId: link.targetPageId,
+          mentionCount: link.mentionCount,
+        }));
+      }),
+    );
+
+    setGraphEdges(responses.flat());
+  };
 
   const refreshTree = async (preferredPageId?: string | null) => {
     const response = await wikiliveApi.getWikiTree();
@@ -83,6 +101,7 @@ export function WorkspacePage() {
     }
 
     setTree(nextTree);
+    await refreshGraphLinks(nextTree).catch(() => setGraphEdges([]));
   };
 
   const refreshLinks = async (pageId: string) => {
@@ -220,6 +239,9 @@ export function WorkspacePage() {
             ))}
           </ul>
         </div>
+        <div className="border-t border-editor-border-subtle p-3">
+          <DocumentLinkGraph pages={flattenPages(tree)} activePageId={activePageId} edges={graphEdges} onSelectPage={setActivePageId} />
+        </div>
       </aside>
 
       <section className="min-w-0 flex-1">
@@ -275,8 +297,6 @@ export function WorkspacePage() {
           </section>
         </div>
       </aside>
-
-      <DocumentLinkGraph activePage={activePage} backlinks={backlinks} outgoingLinks={outgoingLinks} onSelectPage={setActivePageId} />
     </main>
   );
 }

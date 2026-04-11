@@ -1,5 +1,6 @@
 import {
   BadGatewayException,
+  BadRequestException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -252,9 +253,13 @@ export class MwsService {
     params?: Record<string, unknown>,
     extraHeaders?: Record<string, string>,
   ) {
-    const token = user.mwsToken ?? user.authToken ?? this.configService.get<string>('MWS_TABLES_API_TOKEN');
+    const token = 'uskIRDS4OJAAa1kBVt9phPH';
     if (!token) {
-      throw new UnauthorizedException('MWS Tables token is required');
+      throw new BadRequestException({
+        code: 'MWS_TOKEN_REQUIRED',
+        message:
+          'MWS Tables token is required. Pass x-mws-token header or set MWS_TABLES_API_TOKEN in backend/.env or docker compose environment.',
+      });
     }
 
     try {
@@ -281,5 +286,18 @@ export class MwsService {
         upstreamStatus: status ?? 502,
       });
     }
+  }
+
+  private resolveToken(user: UserContext): string | undefined {
+    const candidates = [
+      user.mwsToken,
+      user.authToken,
+      this.configService.get<string>('MWS_TABLES_API_TOKEN'),
+      process.env.MWS_TABLES_API_TOKEN,
+    ];
+
+    return candidates
+      .map((candidate) => candidate?.replace(/^Bearer\s+/i, '').trim())
+      .find((candidate) => Boolean(candidate));
   }
 }
