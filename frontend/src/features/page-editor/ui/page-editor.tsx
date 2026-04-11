@@ -77,7 +77,7 @@ export function PageEditor({ spaceId, page, onRenamePage, onCheckpoint }: PageEd
           onOpenImageModal={controller.openImageModal}
         />
 
-        <div className="relative mx-auto w-full max-w-4xl flex-1 px-4 pb-8 pt-3 sm:px-6 sm:pb-10 sm:pt-5">
+        <div className="relative mx-auto w-full max-w-4xl flex-1 px-2 pb-4 pt-1 sm:px-6 sm:pb-10 sm:pt-5">
           <EditorContent editor={controller.editor} />
           {controller.editor && (
             <FloatingToolbar

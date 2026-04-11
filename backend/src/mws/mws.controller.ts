@@ -9,8 +9,10 @@ import {
   Query,
   UploadedFile,
   UseInterceptors,
+  Res,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { UserContext } from 'src/auth/user-context';
 import {
@@ -182,5 +184,18 @@ export class MwsController {
     @CurrentUser() user: UserContext,
   ) {
     return this.mwsService.uploadAttachment(datasheetId, recordId, fieldId, file, user);
+  }
+
+  @Get('datasheets/:datasheetId/attachments')
+  async downloadAttachment(
+    @Param('datasheetId') datasheetId: string,
+    @Query('token') token: string,
+    @CurrentUser() user: UserContext,
+    @Res() response: Response,
+  ) {
+    const file = await this.mwsService.downloadAttachment(datasheetId, token, user);
+    response.setHeader('Content-Type', file.contentType || 'application/octet-stream');
+    response.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(file.fileName)}`);
+    response.send(file.buffer);
   }
 }

@@ -18,6 +18,9 @@ const EDITABLE_FIELD_TYPES = new Set([
   'Phone',
 ]);
 
+const POLL_MIN_MS = 5000;
+const POLL_MAX_MS = 10000;
+
 export const HEADER_HEIGHT = 40;
 export const ROW_HEIGHT = 38;
 export const INDEX_WIDTH = 56;
@@ -43,6 +46,12 @@ export type SelectOption = {
   color: string;
 };
 
+export type AttachmentItem = {
+  name: string;
+  token: string | null;
+  url: string | null;
+};
+
 export type EditingSelectCell = CanvasSelection & {
   left: number;
   top: number;
@@ -57,7 +66,67 @@ type BeginEditOptions = {
   fromSingleClick?: boolean;
 };
 
-export function renderCell(value: unknown): string {
+function readAttachmentName(value: unknown): string {
+  if (typeof value === 'string' && value.trim()) {
+    return value;
+  }
+
+  if (value && typeof value === 'object') {
+    const candidate = (value as { name?: unknown; fileName?: unknown; filename?: unknown; title?: unknown });
+    const raw = candidate.name ?? candidate.fileName ?? candidate.filename ?? candidate.title;
+    if (typeof raw === 'string' && raw.trim()) {
+      return raw;
+    }
+  }
+
+  return 'Файл';
+}
+
+function readAttachmentToken(value: unknown): string | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const raw = (value as { token?: unknown; fileToken?: unknown; attachmentToken?: unknown }).token
+    ?? (value as { token?: unknown; fileToken?: unknown; attachmentToken?: unknown }).fileToken
+    ?? (value as { token?: unknown; fileToken?: unknown; attachmentToken?: unknown }).attachmentToken;
+  return typeof raw === 'string' && raw.trim().length > 0 ? raw : null;
+}
+
+function readAttachmentUrl(value: unknown): string | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const raw = (value as { url?: unknown; href?: unknown; preview?: unknown }).url
+    ?? (value as { url?: unknown; href?: unknown; preview?: unknown }).href
+    ?? (value as { url?: unknown; href?: unknown; preview?: unknown }).preview;
+  return typeof raw === 'string' && raw.trim().length > 0 ? raw : null;
+}
+
+export function readAttachments(value: unknown): AttachmentItem[] {
+  if (value === null || value === undefined || value === '') {
+    return [];
+  }
+
+  const items = Array.isArray(value) ? value : [value];
+  return items.map((item) => ({
+    name: readAttachmentName(item),
+    token: readAttachmentToken(item),
+    url: readAttachmentUrl(item),
+  }));
+}
+
+export function renderCell(value: unknown, field?: MwsField): string {
+  if (field?.type === 'Attachment') {
+    const attachments = readAttachments(value);
+    if (attachments.length === 0) {
+      return '';
+    }
+
+    return attachments.map((item) => item.name).join(', ');
+  }
+
   if (value === null || value === undefined || value === '') {
     return '';
   }
@@ -234,22 +303,33 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
   const [selection, setSelection] = useState<CanvasSelection | null>(null);
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
   const [editingSelectCell, setEditingSelectCell] = useState<EditingSelectCell | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
+  const [nextRefreshAt, setNextRefreshAt] = useState<number | null>(null);
+  const [nowTs, setNowTs] = useState(() => Date.now());
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const hasLoadedDataRef = useRef(false);
   const pageSize = attrs.pageSize ?? 50;
 
-  const loadEmbed = useCallback(async () => {
+  const nextPollDelay = () => Math.floor(Math.random() * (POLL_MAX_MS - POLL_MIN_MS + 1)) + POLL_MIN_MS;
+
+  const loadEmbed = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = Boolean(options?.silent);
+
     if (!attrs.spaceId || !attrs.nodeId || !attrs.datasheetId) {
       setErrorMessage('В embed не хватает идентификаторов MWS Tables');
-      setIsLoading(false);
+      if (!silent) {
+        setIsLoading(false);
+      }
       return;
     }
 
     try {
-      setIsLoading(true);
-      setErrorMessage('');
+      if (!silent) {
+        setIsLoading(true);
+        setErrorMessage('');
+      }
       const response = await wikiliveApi.resolveTableEmbed({
         spaceId: attrs.spaceId,
         nodeId: attrs.nodeId,
@@ -266,9 +346,12 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
       setRecords(response.embed.preview.items);
       setPageNum(response.embed.preview.pageNum);
       setTotal(response.embed.total ?? response.embed.preview.total);
-      setSelection(null);
-      setEditingCell(null);
-      setEditingSelectCell(null);
+      if (!silent) {
+        setSelection(null);
+        setEditingCell(null);
+        setEditingSelectCell(null);
+      }
+      setLastSyncedAt(Date.now());
       setStaleMessage('');
       hasLoadedDataRef.current = true;
     } catch (error) {
@@ -279,7 +362,9 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
         setErrorMessage(message);
       }
     } finally {
-      setIsLoading(false);
+      if (!silent) {
+        setIsLoading(false);
+      }
     }
   }, [attrs.allowInlineEdit, attrs.datasheetId, attrs.displayMode, attrs.filterByFormula, attrs.nodeId, attrs.selectedFieldIds, attrs.spaceId, attrs.viewId, pageSize]);
 
@@ -287,12 +372,60 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     void loadEmbed();
   }, [loadEmbed]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowTs(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    let timeoutId: number | null = null;
+    let cancelled = false;
+
+    const schedule = () => {
+      if (cancelled) {
+        return;
+      }
+
+      const delay = nextPollDelay();
+      setNextRefreshAt(Date.now() + delay);
+      timeoutId = window.setTimeout(async () => {
+        if (cancelled) {
+          return;
+        }
+
+        if (editingCell || editingSelectCell) {
+          schedule();
+          return;
+        }
+
+        await loadEmbed({ silent: true });
+        schedule();
+      }, delay);
+    };
+
+    schedule();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [editingCell, editingSelectCell, loadEmbed]);
+
   const embed = data?.embed;
   const fields = useMemo(() => embed?.fields ?? [], [embed?.fields]);
   const capabilities = embed?.capabilities ?? {};
   const canInlineEdit = Boolean(attrs.allowInlineEdit && capabilities.canInlineEdit);
   const hasMore = records.length < total;
   const gridWidth = INDEX_WIDTH + fields.length * COLUMN_WIDTH;
+  const updatedAgoSec = lastSyncedAt ? Math.max(0, Math.floor((nowTs - lastSyncedAt) / 1000)) : null;
+  const nextRefreshInSec = nextRefreshAt ? Math.max(0, Math.ceil((nextRefreshAt - nowTs) / 1000)) : null;
 
   const visibleRecords = useMemo(() => {
     const normalized = searchQuery.trim().toLowerCase();
@@ -301,13 +434,20 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     }
 
     return records.filter((record) =>
-      fields.some((field) => renderCell(getFieldValue(record, field)).toLowerCase().includes(normalized)),
+      fields.some((field) => renderCell(getFieldValue(record, field), field).toLowerCase().includes(normalized)),
     );
   }, [fields, records, searchQuery]);
 
   const gridHeight = HEADER_HEIGHT + Math.max(visibleRecords.length, 1) * ROW_HEIGHT;
   const selectedRecord = selection ? visibleRecords[selection.rowIndex] : null;
   const selectedField = selection ? fields[selection.fieldIndex] ?? null : null;
+  const selectedAttachments = useMemo(() => {
+    if (!selectedRecord || !selectedField || selectedField.type !== 'Attachment') {
+      return [] as AttachmentItem[];
+    }
+
+    return readAttachments(getFieldValue(selectedRecord, selectedField));
+  }, [selectedField, selectedRecord]);
 
   useEffect(() => {
     const element = scrollRef.current;
@@ -355,7 +495,7 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     }
   }, [attrs.datasheetId, attrs.filterByFormula, attrs.selectedFieldIds, attrs.viewId, hasMore, isLoading, isMutating, pageNum, pageSize]);
 
-  const updateCell = async (record: MwsRecord, field: MwsField, value: unknown) => {
+  const updateCell = (record: MwsRecord, field: MwsField, value: unknown) => {
     if (!attrs.datasheetId || !EDITABLE_FIELD_TYPES.has(field.type)) {
       return;
     }
@@ -366,25 +506,34 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
       return;
     }
 
-    try {
-      setIsMutating(true);
-      await wikiliveApi.updateMwsRecords(attrs.datasheetId, {
+    // Optimistic update: reflect cell edit immediately in UI.
+    setRecords((current) =>
+      current.map((item) =>
+        item.recordId === record.recordId
+          ? { ...item, fields: { ...item.fields, [field.id]: parsedValue } }
+          : item,
+      ),
+    );
+
+    void wikiliveApi
+      .updateMwsRecords(attrs.datasheetId, {
         fieldKey: 'id',
         records: [{ recordId: record.recordId, fields: { [field.id]: parsedValue } }],
+      })
+      .then(() => {
+        setStaleMessage('');
+      })
+      .catch((error) => {
+        // Roll back only this cell when backend sync fails.
+        setRecords((current) =>
+          current.map((item) =>
+            item.recordId === record.recordId
+              ? { ...item, fields: { ...item.fields, [field.id]: currentValue } }
+              : item,
+          ),
+        );
+        setStaleMessage(error instanceof Error ? error.message : 'Не удалось обновить ячейку');
       });
-      setRecords((current) =>
-        current.map((item) =>
-          item.recordId === record.recordId
-            ? { ...item, fields: { ...item.fields, [field.id]: parsedValue } }
-            : item,
-        ),
-      );
-      setStaleMessage('');
-    } catch (error) {
-      setStaleMessage(error instanceof Error ? error.message : 'Не удалось обновить ячейку');
-    } finally {
-      setIsMutating(false);
-    }
   };
 
   const createRow = async () => {
@@ -479,6 +628,36 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     } finally {
       setIsMutating(false);
     }
+  };
+
+  const downloadAttachment = async (attachment: AttachmentItem) => {
+    if (!attrs.datasheetId) {
+      return;
+    }
+
+    if (attachment.token) {
+      try {
+        setIsMutating(true);
+        await wikiliveApi.downloadMwsAttachment(attrs.datasheetId, {
+          token: attachment.token,
+          fileName: attachment.name,
+        });
+        setStaleMessage('');
+      } catch (error) {
+        setStaleMessage(error instanceof Error ? error.message : 'Не удалось скачать вложение');
+      } finally {
+        setIsMutating(false);
+      }
+
+      return;
+    }
+
+    if (attachment.url) {
+      window.open(attachment.url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    setStaleMessage('Для этого вложения нет токена или URL скачивания');
   };
 
   const hitTest = (event: React.PointerEvent<HTMLCanvasElement> | React.MouseEvent<HTMLCanvasElement>): CanvasSelection | null => {
@@ -652,18 +831,22 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     canvasRef,
     canInlineEdit,
     capabilities,
+    updatedAgoSec,
+    nextRefreshInSec,
     hasMore,
     gridWidth,
     gridHeight,
     visibleRecords,
     selectedRecord,
     selectedField,
+    selectedAttachments,
     loadEmbed,
     loadNextPage,
     createRow,
     createField,
     deleteRow,
     uploadAttachment,
+    downloadAttachment,
     hitTest,
     beginEdit,
     commitEdit,

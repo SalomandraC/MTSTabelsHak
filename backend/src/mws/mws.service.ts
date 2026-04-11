@@ -322,6 +322,50 @@ export class MwsService {
     return { attachment: this.unwrapPayload(data) };
   }
 
+  async downloadAttachment(datasheetId: string, token: string, user: UserContext) {
+    const authToken = this.resolveToken(user);
+    if (!authToken) {
+      throw new BadRequestException({
+        code: 'MWS_TOKEN_REQUIRED',
+        message:
+          'MWS Tables token is required. Pass x-mws-token header or set MWS_TABLES_API_TOKEN in backend/.env or docker compose environment.',
+      });
+    }
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.request<ArrayBuffer>({
+          method: 'GET',
+          url: `${this.baseUrl}/datasheets/${datasheetId}/attachments`,
+          params: { token },
+          responseType: 'arraybuffer',
+          headers: {
+            Authorization: authToken.startsWith('Bearer ') ? authToken : `Bearer ${authToken}`,
+          },
+        }),
+      );
+
+      const contentType = String(response.headers['content-type'] ?? 'application/octet-stream');
+      const disposition = String(response.headers['content-disposition'] ?? '');
+      const fileName = this.extractFileNameFromContentDisposition(disposition) ?? `attachment-${Date.now()}`;
+
+      return {
+        buffer: Buffer.from(response.data),
+        contentType,
+        fileName,
+      };
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const message = error?.response?.data?.message ?? 'MWS Tables attachment download failed';
+      throw new BadGatewayException({
+        code: 'MWS_UPSTREAM_ERROR',
+        message,
+        upstream: 'MWS_TABLES',
+        upstreamStatus: status ?? 502,
+      });
+    }
+  }
+
   private async withCache<T>(key: string, ttlSec: number, factory: () => Promise<T>): Promise<T> {
     const cached = await this.redisService.getJson<T>(key);
     if (cached) {
@@ -644,5 +688,23 @@ export class MwsService {
     return candidates
       .map((candidate) => candidate?.replace(/^Bearer\s+/i, '').trim())
       .find((candidate) => Boolean(candidate));
+  }
+
+  private extractFileNameFromContentDisposition(value: string): string | null {
+    if (!value) {
+      return null;
+    }
+
+    const utfMatch = value.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utfMatch?.[1]) {
+      try {
+        return decodeURIComponent(utfMatch[1]);
+      } catch {
+        return utfMatch[1];
+      }
+    }
+
+    const asciiMatch = value.match(/filename="?([^";]+)"?/i);
+    return asciiMatch?.[1] ?? null;
   }
 }

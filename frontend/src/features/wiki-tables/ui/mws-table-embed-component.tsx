@@ -5,6 +5,7 @@ import {
   Paperclip,
   Columns3,
   ChevronsUpDown,
+  Download,
   ExternalLink,
   EyeOff,
   Filter,
@@ -51,10 +52,10 @@ function ToolbarButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-sm text-[#3f3f46] transition-colors hover:bg-[#edf0f5] disabled:cursor-not-allowed disabled:opacity-40"
+      className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-sm text-[#3f3f46] transition-colors hover:bg-[#edf0f5] disabled:cursor-not-allowed disabled:opacity-40 [&>svg]:h-4 [&>svg]:w-4"
     >
       {icon}
-      <span>{label}</span>
+      <span className="whitespace-nowrap">{label}</span>
     </button>
   );
 }
@@ -192,7 +193,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
           ctx.lineWidth = 1;
         }
 
-        const value = renderCell(getFieldValue(record, field));
+        const value = renderCell(getFieldValue(record, field), field);
         ctx.fillStyle = value ? '#1f2937' : '#a1a7b3';
         ctx.fillText(clampText(ctx, value || '-', COLUMN_WIDTH - 24), x + 12, y + ROW_HEIGHT / 2);
       });
@@ -252,6 +253,13 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
   }, [controller.canvasRef, controller.editingSelectCell, controller.setEditingSelectCell]);
 
   const canUploadToCell = controller.selectedRecord && controller.selectedField?.type === 'Attachment';
+  const canDownloadFromCell = controller.selectedField?.type === 'Attachment' && controller.selectedAttachments.length > 0;
+  const downloadAllAttachments = async () => {
+    for (const attachment of controller.selectedAttachments) {
+      // Sequential downloads avoid browser popup throttling and preserve filename handling.
+      await controller.downloadAttachment(attachment);
+    }
+  };
 
   return (
     <NodeViewWrapper
@@ -274,13 +282,17 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         }
       }}
     >
-      <div className="flex items-start justify-between gap-3 border-b border-editor-border-subtle bg-[#f8fafc] px-4 py-3">
+      <div className="flex items-start justify-between gap-1 border-b border-editor-border-subtle bg-[#f8fafc] px-4 py-3">
         <div className="min-w-0">
-          <h3 className="truncate font-wide text-base font-semibold text-editor-text-primary">
+          <p className="text-[11px] text-editor-text-tertiary">
+            {controller.updatedAgoSec === null ? 'Синхронизация...' : `Обновлено ${controller.updatedAgoSec} сек назад`}
+            {controller.nextRefreshInSec !== null ? ` · Следующее обновление через ${controller.nextRefreshInSec} сек` : ''}
+          </p>
+          <h2 className="truncate font-wide text-base font-semibold text-editor-text-primary leading-none">
             {controller.embed?.node.name ?? controller.attrs.title ?? controller.attrs.datasheetId ?? 'Таблица'}
-          </h3>
-          <p className="mt-1 text-xs text-editor-text-tertiary">
-            {controller.embed?.view?.name ? `view: ${controller.embed.view.name}` : 'default view'} · {controller.records.length}/{controller.total} строк
+          </h2>
+          <p className="text-xs text-editor-text-tertiary">
+            {controller.embed?.view?.name ? `${controller.embed.view.name}` : 'default view'} · {controller.records.length}/{controller.total} строк
           </p>
         </div>
         {controller.embed?.openInMwsUrl ? (
@@ -296,20 +308,31 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         ) : null}
       </div>
 
-      <div className="flex h-11 items-center gap-1 overflow-x-auto border-b border-editor-border-subtle bg-[#f5f6f8] px-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-editor-border-subtle bg-[#f5f6f8] px-2 py-2">
         <ToolbarButton label="" icon={<RotateCcw className="h-4 w-4" />} disabled />
         <ToolbarButton label="" icon={<RotateCw className="h-4 w-4" />} disabled />
         <div className="mx-1 h-6 w-px bg-[#dfe3ea]" />
         <ToolbarButton label="Вставить запись" icon={<PlusCircle className="h-4 w-4" />} onClick={() => void controller.createRow()} disabled={!controller.capabilities.canCreateRecords || controller.isMutating || controller.fields.length === 0} />
         <ToolbarButton label="Столбец" icon={<Columns3 className="h-4 w-4" />} onClick={() => setIsCreateFieldModalOpen(true)} disabled={controller.isMutating} />
         <ToolbarButton label="Файл" icon={<Paperclip className="h-4 w-4" />} onClick={() => fileInputRef.current?.click()} disabled={!canUploadToCell || controller.isMutating} />
+        <ToolbarButton
+          label="Скачать файл"
+          icon={<Download className="h-4 w-4" />}
+          onClick={() => {
+            const first = controller.selectedAttachments[0];
+            if (first) {
+              void controller.downloadAttachment(first);
+            }
+          }}
+          disabled={!canDownloadFromCell || controller.isMutating}
+        />
         <ToolbarButton label="Скрыть поля" icon={<EyeOff className="h-4 w-4" />} disabled />
         <ToolbarButton label="Фильтр" icon={<Filter className="h-4 w-4" />} disabled />
         <ToolbarButton label="Группа" icon={<Group className="h-4 w-4" />} disabled />
         <ToolbarButton label="Сортировка" icon={<SortAsc className="h-4 w-4" />} disabled />
         <ToolbarButton label="Удалить строку" icon={<Trash2 className="h-4 w-4" />} onClick={() => void controller.deleteRow(controller.selectedRecord)} disabled={!controller.selectedRecord || !controller.capabilities.canDeleteRecords || controller.isMutating} />
         <ToolbarButton label="Обновить" icon={<RefreshCw className="h-4 w-4" />} onClick={() => void controller.loadEmbed()} disabled={controller.isLoading} />
-        <div className="ml-auto flex h-8 shrink-0 items-center gap-1 rounded-md border border-[#dfe3ea] bg-white px-2">
+        <div className="flex h-8 shrink-0 items-center gap-1 rounded-md border border-[#dfe3ea] bg-white px-2">
           <Search className="h-4 w-4 text-[#626a75]" />
           <input
             value={controller.searchQuery}
@@ -340,6 +363,42 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       </div>
 
       <div className="p-4">
+        {controller.selectedField?.type === 'Attachment' ? (
+          <div className="mb-3 rounded-lg border border-editor-border-subtle bg-[#f8fafc] p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.1em] text-editor-text-tertiary">Вложения ячейки</p>
+              <button
+                type="button"
+                onClick={() => void downloadAllAttachments()}
+                disabled={!canDownloadFromCell || controller.isMutating}
+                className="inline-flex items-center gap-1 rounded-md border border-editor-border-control px-2 py-1 text-xs font-semibold text-editor-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Скачать все
+              </button>
+            </div>
+            {controller.selectedAttachments.length > 0 ? (
+              <div className="mt-2 grid gap-2">
+                {controller.selectedAttachments.map((item, index) => (
+                  <div key={`${item.name}-${index}`} className="flex items-center gap-2 rounded-md border border-editor-border-subtle bg-white px-2 py-1.5">
+                    <Paperclip className="h-4 w-4 text-[#667085]" />
+                    <span className="min-w-0 flex-1 truncate text-sm text-editor-text-primary">{item.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => void controller.downloadAttachment(item)}
+                      className="inline-flex items-center gap-1 rounded-md border border-editor-border-control px-2 py-1 text-xs font-semibold text-editor-text-primary"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Скачать
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-editor-text-tertiary">В этой ячейке нет вложений</p>
+            )}
+          </div>
+        ) : null}
         {controller.isLoading && controller.records.length === 0 ? <div className="rounded-lg bg-[#f3f6fb] p-4 text-sm text-editor-text-tertiary">Загружаем живую таблицу...</div> : null}
         {!controller.isLoading && controller.errorMessage ? (
           <div className="rounded-lg border border-[#ffd2d9] bg-[#fff1f3] p-4 text-sm text-[#b00025]">{controller.errorMessage}</div>

@@ -221,6 +221,11 @@ export type UploadMwsAttachmentPayload = {
   fieldId?: string | null;
 };
 
+export type DownloadMwsAttachmentPayload = {
+  token: string;
+  fileName?: string | null;
+};
+
 export type MwsView = {
   id: string;
   name: string;
@@ -721,6 +726,47 @@ export const wikiliveApi = {
         url?: string;
       };
     }>;
+  },
+  async downloadMwsAttachment(datasheetId: string, payload: DownloadMwsAttachmentPayload): Promise<void> {
+    const demoUser = getDemoUserFromUrl();
+    const headers = new Headers();
+
+    if (accessToken) {
+      headers.set('Authorization', `Bearer ${accessToken}`);
+    } else if (demoUser) {
+      headers.set('x-user-id', demoUser.userId);
+      headers.set('x-user-name', demoUser.displayName);
+    }
+
+    const response = await fetch(
+      `${API_BASE_URL}/api/v1/mws/datasheets/${datasheetId}/attachments${toQueryString({ token: payload.token })}`,
+      {
+        method: 'GET',
+        credentials: 'include',
+        headers,
+      },
+    );
+
+    if (response.status === 401) {
+      const token = await refreshAccessToken();
+      if (token) {
+        return this.downloadMwsAttachment(datasheetId, payload);
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(await parseErrorMessage(response));
+    }
+
+    const blob = await response.blob();
+    const objectUrl = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = payload.fileName?.trim() || `attachment-${Date.now()}`;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.URL.revokeObjectURL(objectUrl);
   },
   resolveTableEmbed(payload: ResolveTableEmbedRequest) {
     return request<ResolveTableEmbedResponse>('/api/v1/mws/table-embeds/resolve', {
