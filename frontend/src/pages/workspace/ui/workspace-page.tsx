@@ -11,11 +11,8 @@ import {
   Folder,
   History,
   LogOut,
-<<<<<<< HEAD
   MoreHorizontal,
-=======
   MessageSquare,
->>>>>>> 166ab1d5c83824332ea20e9c772d5157a8d2a1b9
   Plus,
   Search,
   Sparkles,
@@ -1592,6 +1589,20 @@ export function WorkspacePage() {
                 >
                   {shareStatus || 'Скопировать ссылку'}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingTemplate(null);
+                    setIsCreateTemplateModalOpen(true);
+                  }}
+                  disabled={!activeEditor}
+                  className="mt-2 w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm font-semibold text-editor-text-secondary transition-colors hover:bg-editor-bg-control disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <FileUp size={15} strokeWidth={2.2} />
+                    Сохранить как шаблон
+                  </span>
+                </button>
                 {activePageId ? (
                   <button
                     type="button"
@@ -1603,54 +1614,7 @@ export function WorkspacePage() {
                   </button>
                 ) : null}
               </div>
-<<<<<<< HEAD
-              <button
-                type="button"
-                onClick={rightSidebar.collapse}
-                className="absolute -left-4 top-24 z-20 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
-                aria-label="Скрыть правое меню"
-                title="Скрыть правое меню"
-              >
-                <ChevronRight size={16} strokeWidth={2.2} />
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => void handleCopyShareLink()}
-              disabled={!activePageId}
-              className="mt-3 w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm font-semibold text-editor-text-secondary transition-colors hover:bg-editor-bg-control disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {shareStatus || 'Скопировать ссылку'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setEditingTemplate(null);
-                setIsCreateTemplateModalOpen(true);
-              }}
-              disabled={!activeEditor}
-              className="mt-2 w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm font-semibold text-editor-text-secondary transition-colors hover:bg-editor-bg-control disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span className="inline-flex items-center gap-2">
-                <FileUp size={15} strokeWidth={2.2} />
-                Сохранить как шаблон
-              </span>
-            </button>
-            {activePageId ? (
-              <button
-                type="button"
-                onClick={() => void handleDeletePage(activePageId, activePage?.title ?? 'Без названия')}
-                disabled={isDeletingPage}
-                className="mt-2 w-full rounded-lg border border-[#ffd2d9] bg-[#fff7f8] px-3 py-2 text-sm font-semibold text-[#b00025] transition-colors hover:border-[#d70032] hover:bg-[#fff1f3] disabled:cursor-wait disabled:opacity-60"
-              >
-                {isDeletingPage ? 'Удаляем страницу...' : 'Удалить страницу'}
-              </button>
-            ) : null}
-          </div>
-          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
-=======
               <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
->>>>>>> 166ab1d5c83824332ea20e9c772d5157a8d2a1b9
             <section>
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-sm font-semibold">Граф страниц</h3>

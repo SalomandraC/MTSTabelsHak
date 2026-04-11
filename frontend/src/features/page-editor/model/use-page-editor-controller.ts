@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { HocuspocusProvider } from '@hocuspocus/provider';
-<<<<<<< HEAD
-import type { JSONContent } from '@tiptap/core';
-=======
 import type { Content } from '@tiptap/core';
->>>>>>> 166ab1d5c83824332ea20e9c772d5157a8d2a1b9
 import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
 
@@ -136,7 +132,6 @@ function getEditorMarkdown(editor: NonNullable<ReturnType<typeof useEditor>>): s
   return editor.getText();
 }
 
-<<<<<<< HEAD
 function normalizeTemplateKey(label: string): string {
   return label
     .trim()
@@ -146,8 +141,6 @@ function normalizeTemplateKey(label: string): string {
     .slice(0, 40) || `template_${Math.random().toString(16).slice(2, 8)}`;
 }
 
-export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpoint }: UsePageEditorControllerOptions) {
-=======
 export function usePageEditorController({
   spaceId,
   page,
@@ -157,7 +150,6 @@ export function usePageEditorController({
   isAiSlashEnabled,
   isAiEditorExtensionEnabled,
 }: UsePageEditorControllerOptions) {
->>>>>>> 166ab1d5c83824332ea20e9c772d5157a8d2a1b9
   const [slashState, setSlashState] = useState<SlashState>(baseSlashState);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [saveStatus, setSaveStatus] = useState('Ожидаем страницу');
@@ -787,19 +779,11 @@ export function usePageEditorController({
         const generatedContent = response.document?.content;
 
         if (Array.isArray(generatedContent) && generatedContent.length > 0) {
-<<<<<<< HEAD
-          editor.chain().focus().insertContent(generatedContent as JSONContent[]).run();
-          return;
-        }
-
-        editor.chain().focus().insertContent(response.document as JSONContent).run();
-=======
           editor.chain().focus().insertContent(generatedContent as Content).run();
           return;
         }
 
         editor.chain().focus().insertContent(response.document as Content).run();
->>>>>>> 166ab1d5c83824332ea20e9c772d5157a8d2a1b9
       }).catch((error) => {
         setSaveStatus(error instanceof Error ? `AI generate error: ${error.message}` : 'AI generate error');
       });
@@ -1007,7 +991,6 @@ export function usePageEditorController({
       onFileSelect: handleSelectImageFile,
       onConfirm: handleConfirmImageInsert,
     },
-<<<<<<< HEAD
     templateVariableModal: {
       isOpen: isTemplateVariableModalOpen,
       label: templateVariableLabel,
@@ -1018,8 +1001,6 @@ export function usePageEditorController({
       onSubmit: handleInsertTemplateVariable,
       onClose: closeTemplateVariableModal,
     },
-=======
     getCurrentDocumentStateValue,
->>>>>>> 166ab1d5c83824332ea20e9c772d5157a8d2a1b9
   };
 }

@@ -29,7 +29,6 @@ enum PluginScopeType {
   user
 }
 
-<<<<<<< HEAD
 enum TemplateAccessLevel {
   private
   space
@@ -44,11 +43,11 @@ model TemplateCategory {
   templates  PageTemplate[]
 
   @@map("template_categories")
-=======
+}
+
 enum CommentThreadStatus {
   open
   resolved
->>>>>>> 166ab1d5c83824332ea20e9c772d5157a8d2a1b9
 }
 
 model WikiNode {
