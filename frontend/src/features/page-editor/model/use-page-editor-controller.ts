@@ -47,6 +47,8 @@ type UsePageEditorControllerOptions = {
   page: WikiPage | null;
   onRenamePage: (title: string) => Promise<void>;
   onCheckpoint: () => Promise<void>;
+  isAiSlashEnabled: boolean;
+  isAiEditorExtensionEnabled: boolean;
 };
 
 const baseSlashState: SlashState = {
@@ -128,7 +130,14 @@ function getEditorMarkdown(editor: NonNullable<ReturnType<typeof useEditor>>): s
   return editor.getText();
 }
 
-export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpoint }: UsePageEditorControllerOptions) {
+export function usePageEditorController({
+  spaceId,
+  page,
+  onRenamePage,
+  onCheckpoint,
+  isAiSlashEnabled,
+  isAiEditorExtensionEnabled,
+}: UsePageEditorControllerOptions) {
   const [slashState, setSlashState] = useState<SlashState>(baseSlashState);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [saveStatus, setSaveStatus] = useState('Ожидаем страницу');
@@ -274,7 +283,12 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
       createPageEditorExtensions({
         ydoc: collabState?.ydoc,
         provider: collabState?.provider,
+        enableGhostText: isAiEditorExtensionEnabled,
         requestAutocomplete: async (currentText: string) => {
+          if (!isAiEditorExtensionEnabled) {
+            return '';
+          }
+
           const response = await wikiliveApi.aiAutocomplete({
             currentText,
             pageTitle: page?.title,
@@ -291,7 +305,7 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
           color: userColor,
         },
       }),
-    [collabState?.provider, collabState?.ydoc, page?.title, userColor, userDisplayName, userId],
+    [collabState?.provider, collabState?.ydoc, isAiEditorExtensionEnabled, page?.title, userColor, userDisplayName, userId],
   );
 
   const resetImageModalState = () => {
@@ -487,19 +501,23 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
   };
 
   const filteredItems = useMemo(() => {
+    const availableItems = isAiSlashEnabled
+      ? slashCommandItems
+      : slashCommandItems.filter((item) => item.id !== 'ai-generate');
+
     if (!slashState.query) {
-      return slashCommandItems;
+      return availableItems;
     }
 
     const normalized = slashState.query.toLowerCase().trim();
 
-    return slashCommandItems.filter((item) => {
+    return availableItems.filter((item) => {
       return (
         item.label.toLowerCase().includes(normalized) ||
         item.keywords.some((keyword) => keyword.toLowerCase().includes(normalized))
       );
     });
-  }, [slashState.query]);
+  }, [isAiSlashEnabled, slashState.query]);
 
   const filteredItemsRef = useRef(filteredItems);
 
@@ -677,6 +695,11 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
     }
 
     if (item.id === 'ai-generate') {
+      if (!isAiSlashEnabled) {
+        setSlashState(baseSlashState);
+        return;
+      }
+
       setSlashState(baseSlashState);
 
       const prompt = window.prompt('Введите запрос для AI генерации', 'Сформулируй краткий план текущей секции')?.trim();

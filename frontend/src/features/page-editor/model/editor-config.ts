@@ -36,11 +36,7 @@ import type { HocuspocusProvider } from '@hocuspocus/provider';
 import type * as Y from 'yjs';
 import { Markdown } from 'tiptap-markdown';
 
-import { MwsTableEmbed } from '../../wiki-tables';
-
-// AI ghost text extension is optional — provide a lightweight stub when the
-// dedicated implementation is not present (avoids merge-time missing-file errors).
-const AIGhostTextExtension = Extension.create({ name: 'aiGhostText' });
+import { AIGhostTextExtension } from '../../plugins/ai-assistant';
 import { CodeBlockComponent } from '../ui/code-block-component.tsx';
 import { ImageBlock } from './image-block';
 import { PageLink } from './page-link';
@@ -98,6 +94,7 @@ export const initialContent = `
 type PageEditorExtensionOptions = {
   ydoc?: Y.Doc | null;
   provider?: HocuspocusProvider | null;
+  enableGhostText?: boolean;
   requestAutocomplete?: (currentText: string) => Promise<string>;
   user?: {
     id?: string;
@@ -148,9 +145,13 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
       emptyEditorClass: 'is-editor-empty',
       placeholder: 'Начните вводить содержимое или нажмите / чтобы использовать команды',
     }),
-    AIGhostTextExtension.configure({
-      fetchCompletion: options.requestAutocomplete ?? (async () => ''),
-    }),
+    ...(options.enableGhostText
+      ? [
+          AIGhostTextExtension.configure({
+            fetchCompletion: options.requestAutocomplete ?? (async () => ''),
+          }),
+        ]
+      : []),
     ...(options.ydoc
       ? [
           Collaboration.configure({
