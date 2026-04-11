@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within
+} from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ResolveTableEmbedResponse } from '../../../shared/api/wikilive';
@@ -6,7 +12,9 @@ import { wikiliveApi } from '../../../shared/api/wikilive';
 import { MwsTableEmbedComponent } from './mws-table-embed-component';
 
 vi.mock('../../../shared/api/wikilive', async () => {
-  const actual = await vi.importActual<typeof import('../../../shared/api/wikilive')>('../../../shared/api/wikilive');
+  const actual = await vi.importActual<
+    typeof import('../../../shared/api/wikilive')
+  >('../../../shared/api/wikilive');
   return {
     ...actual,
     wikiliveApi: {
@@ -15,8 +23,8 @@ vi.mock('../../../shared/api/wikilive', async () => {
       listMwsRecords: vi.fn(),
       updateMwsRecords: vi.fn(),
       createMwsRecords: vi.fn(),
-      deleteMwsRecords: vi.fn(),
-    },
+      deleteMwsRecords: vi.fn()
+    }
   };
 });
 
@@ -27,12 +35,12 @@ const RESOLVE_TABLE_EMBED_MOCK: ResolveTableEmbedResponse = {
       id: 'node-2',
       name: 'Таблица 2',
       type: 'Datasheet',
-      datasheetId: 'dst-2',
+      datasheetId: 'dst-2'
     },
     view: {
       id: 'view-1',
       name: 'Все записи',
-      type: 'grid',
+      type: 'grid'
     },
     fields: [{ id: 'fld-title', name: 'Название', type: 'SingleText' }],
     preview: {
@@ -40,22 +48,22 @@ const RESOLVE_TABLE_EMBED_MOCK: ResolveTableEmbedResponse = {
         {
           recordId: 'rec-1',
           fields: {
-            'fld-title': 'Запуск MVP',
-          },
-        },
+            'fld-title': 'Запуск MVP'
+          }
+        }
       ],
       pageNum: 1,
       pageSize: 20,
-      total: 1,
+      total: 1
     },
     total: 1,
     capabilities: {
       canInlineEdit: true,
       canCreateRecords: true,
-      canDeleteRecords: true,
+      canDeleteRecords: true
     },
-    openInMwsUrl: 'https://tables.mws.ru/fusion/v1/mock',
-  },
+    openInMwsUrl: 'https://tables.mws.ru/fusion/v1/mock'
+  }
 };
 
 const RESOLVE_SELECT_TABLE_EMBED_MOCK: ResolveTableEmbedResponse = {
@@ -65,12 +73,12 @@ const RESOLVE_SELECT_TABLE_EMBED_MOCK: ResolveTableEmbedResponse = {
       id: 'node-select',
       name: 'Таблица статусов',
       type: 'Datasheet',
-      datasheetId: 'dst-select',
+      datasheetId: 'dst-select'
     },
     view: {
       id: 'view-main',
       name: 'Все',
-      type: 'grid',
+      type: 'grid'
     },
     fields: [
       {
@@ -81,57 +89,61 @@ const RESOLVE_SELECT_TABLE_EMBED_MOCK: ResolveTableEmbedResponse = {
           options: [
             { name: 'Новая', color: 'blue' },
             { name: 'В работе', color: 'orange' },
-            { name: 'Готово', color: 'green' },
-          ],
-        },
-      },
+            { name: 'Готово', color: 'green' }
+          ]
+        }
+      }
     ],
     preview: {
       items: [
         {
           recordId: 'rec-status-1',
           fields: {
-            'fld-status': 'Новая',
-          },
-        },
+            'fld-status': 'Новая'
+          }
+        }
       ],
       pageNum: 1,
       pageSize: 20,
-      total: 1,
+      total: 1
     },
     total: 1,
     capabilities: {
       canInlineEdit: true,
       canCreateRecords: true,
-      canDeleteRecords: true,
+      canDeleteRecords: true
     },
-    openInMwsUrl: 'https://tables.mws.ru/fusion/v1/mock',
-  },
+    openInMwsUrl: 'https://tables.mws.ru/fusion/v1/mock'
+  }
 };
 
 describe('MwsTableEmbedComponent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(wikiliveApi.resolveTableEmbed).mockResolvedValue(RESOLVE_TABLE_EMBED_MOCK);
+    vi.mocked(wikiliveApi.resolveTableEmbed).mockResolvedValue(
+      RESOLVE_TABLE_EMBED_MOCK
+    );
   });
 
   it('renders a populated live table instead of an empty state when preview data arrives', async () => {
     render(
       <MwsTableEmbedComponent
-        node={{
-          attrs: {
-            blockId: 'block-1',
-            title: 'Таблица 2',
-            spaceId: 'space-1',
-            nodeId: 'node-2',
-            datasheetId: 'dst-2',
-            viewId: 'view-1',
-            selectedFieldIds: ['fld-title'],
-            pageSize: 20,
-            allowInlineEdit: true,
-            displayMode: 'table',
-          },
-        } as never}
+        node={
+          {
+            attrs: {
+              blockId: 'block-1',
+              title: 'Таблица 2',
+              spaceId: 'space-1',
+              nodeId: 'node-2',
+              datasheetId: 'dst-2',
+              viewId: 'view-1',
+              selectedFieldIds: ['fld-title'],
+              pageSize: 20,
+              allowInlineEdit: true,
+              displayMode: 'table'
+            }
+          } as never
+        }
         selected={false}
         editor={null as never}
         getPos={null as never}
@@ -142,7 +154,7 @@ describe('MwsTableEmbedComponent', () => {
         HTMLAttributes={{}}
         innerDecorations={null as never}
         view={null as never}
-      />,
+      />
     );
 
     await waitFor(() => {
@@ -150,31 +162,35 @@ describe('MwsTableEmbedComponent', () => {
       expect(screen.getByText(/1\/1 строк/)).toBeInTheDocument();
     });
 
-    expect(screen.queryByText('В выбранном view пока нет строк')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('В выбранном view пока нет строк')
+    ).not.toBeInTheDocument();
     expect(screen.getByTestId('mws_canvas_grid')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Открыть в MWS' })).toHaveAttribute(
       'href',
-      'https://tables.mws.ru/fusion/v1/mock',
+      'https://tables.mws.ru/fusion/v1/mock'
     );
   });
 
   it('starts inline editing on the first typed key after a cell is selected', async () => {
     render(
       <MwsTableEmbedComponent
-        node={{
-          attrs: {
-            blockId: 'block-1',
-            title: 'Таблица 2',
-            spaceId: 'space-1',
-            nodeId: 'node-2',
-            datasheetId: 'dst-2',
-            viewId: 'view-1',
-            selectedFieldIds: ['fld-title'],
-            pageSize: 20,
-            allowInlineEdit: true,
-            displayMode: 'table',
-          },
-        } as never}
+        node={
+          {
+            attrs: {
+              blockId: 'block-1',
+              title: 'Таблица 2',
+              spaceId: 'space-1',
+              nodeId: 'node-2',
+              datasheetId: 'dst-2',
+              viewId: 'view-1',
+              selectedFieldIds: ['fld-title'],
+              pageSize: 20,
+              allowInlineEdit: true,
+              displayMode: 'table'
+            }
+          } as never
+        }
         selected={false}
         editor={null as never}
         getPos={null as never}
@@ -185,7 +201,7 @@ describe('MwsTableEmbedComponent', () => {
         HTMLAttributes={{}}
         innerDecorations={null as never}
         view={null as never}
-      />,
+      />
     );
 
     const canvas = await screen.findByTestId('mws_canvas_grid');
@@ -198,7 +214,7 @@ describe('MwsTableEmbedComponent', () => {
       left: 0,
       right: 720,
       bottom: 320,
-      toJSON: () => ({}),
+      toJSON: () => ({})
     });
 
     fireEvent.pointerDown(canvas, { clientX: 80, clientY: 60 });
@@ -209,25 +225,29 @@ describe('MwsTableEmbedComponent', () => {
   });
 
   it('opens select dropdown on cell click and updates record when option is chosen', async () => {
-    vi.mocked(wikiliveApi.resolveTableEmbed).mockResolvedValueOnce(RESOLVE_SELECT_TABLE_EMBED_MOCK);
+    vi.mocked(wikiliveApi.resolveTableEmbed).mockResolvedValueOnce(
+      RESOLVE_SELECT_TABLE_EMBED_MOCK
+    );
     vi.mocked(wikiliveApi.updateMwsRecords).mockResolvedValue({ items: [] });
 
     render(
       <MwsTableEmbedComponent
-        node={{
-          attrs: {
-            blockId: 'block-select-1',
-            title: 'Таблица статусов',
-            spaceId: 'space-1',
-            nodeId: 'node-select',
-            datasheetId: 'dst-select',
-            viewId: 'view-main',
-            selectedFieldIds: ['fld-status'],
-            pageSize: 20,
-            allowInlineEdit: true,
-            displayMode: 'table',
-          },
-        } as never}
+        node={
+          {
+            attrs: {
+              blockId: 'block-select-1',
+              title: 'Таблица статусов',
+              spaceId: 'space-1',
+              nodeId: 'node-select',
+              datasheetId: 'dst-select',
+              viewId: 'view-main',
+              selectedFieldIds: ['fld-status'],
+              pageSize: 20,
+              allowInlineEdit: true,
+              displayMode: 'table'
+            }
+          } as never
+        }
         selected={false}
         editor={null as never}
         getPos={null as never}
@@ -238,7 +258,7 @@ describe('MwsTableEmbedComponent', () => {
         HTMLAttributes={{}}
         innerDecorations={null as never}
         view={null as never}
-      />,
+      />
     );
 
     const canvas = await screen.findByTestId('mws_canvas_grid');
@@ -251,7 +271,7 @@ describe('MwsTableEmbedComponent', () => {
       left: 0,
       right: 720,
       bottom: 320,
-      toJSON: () => ({}),
+      toJSON: () => ({})
     });
 
     fireEvent.pointerDown(canvas, { clientX: 80, clientY: 60 });
@@ -263,7 +283,9 @@ describe('MwsTableEmbedComponent', () => {
     await waitFor(() => {
       expect(wikiliveApi.updateMwsRecords).toHaveBeenCalledWith('dst-select', {
         fieldKey: 'id',
-        records: [{ recordId: 'rec-status-1', fields: { 'fld-status': 'В работе' } }],
+        records: [
+          { recordId: 'rec-status-1', fields: { 'fld-status': 'В работе' } }
+        ]
       });
     });
   });
@@ -271,20 +293,22 @@ describe('MwsTableEmbedComponent', () => {
   it('opens the sort modal from the toolbar', async () => {
     render(
       <MwsTableEmbedComponent
-        node={{
-          attrs: {
-            blockId: 'block-1',
-            title: 'Таблица 2',
-            spaceId: 'space-1',
-            nodeId: 'node-2',
-            datasheetId: 'dst-2',
-            viewId: 'view-1',
-            selectedFieldIds: ['fld-title'],
-            pageSize: 20,
-            allowInlineEdit: true,
-            displayMode: 'table',
-          },
-        } as never}
+        node={
+          {
+            attrs: {
+              blockId: 'block-1',
+              title: 'Таблица 2',
+              spaceId: 'space-1',
+              nodeId: 'node-2',
+              datasheetId: 'dst-2',
+              viewId: 'view-1',
+              selectedFieldIds: ['fld-title'],
+              pageSize: 20,
+              allowInlineEdit: true,
+              displayMode: 'table'
+            }
+          } as never
+        }
         selected={false}
         editor={null as never}
         getPos={null as never}
@@ -295,30 +319,34 @@ describe('MwsTableEmbedComponent', () => {
         HTMLAttributes={{}}
         innerDecorations={null as never}
         view={null as never}
-      />,
+      />
     );
 
     fireEvent.click(await screen.findByRole('button', { name: 'Сортировка' }));
-    expect(await screen.findByRole('dialog', { name: 'Сортировка' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('dialog', { name: 'Сортировка' })
+    ).toBeInTheDocument();
   });
 
   it('opens the filter modal from the toolbar', async () => {
     render(
       <MwsTableEmbedComponent
-        node={{
-          attrs: {
-            blockId: 'block-1',
-            title: 'Таблица 2',
-            spaceId: 'space-1',
-            nodeId: 'node-2',
-            datasheetId: 'dst-2',
-            viewId: 'view-1',
-            selectedFieldIds: ['fld-title'],
-            pageSize: 20,
-            allowInlineEdit: true,
-            displayMode: 'table',
-          },
-        } as never}
+        node={
+          {
+            attrs: {
+              blockId: 'block-1',
+              title: 'Таблица 2',
+              spaceId: 'space-1',
+              nodeId: 'node-2',
+              datasheetId: 'dst-2',
+              viewId: 'view-1',
+              selectedFieldIds: ['fld-title'],
+              pageSize: 20,
+              allowInlineEdit: true,
+              displayMode: 'table'
+            }
+          } as never
+        }
         selected={false}
         editor={null as never}
         getPos={null as never}
@@ -329,30 +357,34 @@ describe('MwsTableEmbedComponent', () => {
         HTMLAttributes={{}}
         innerDecorations={null as never}
         view={null as never}
-      />,
+      />
     );
 
     fireEvent.click(await screen.findByRole('button', { name: 'Фильтр' }));
-    expect(await screen.findByRole('dialog', { name: /Фильтры по данным/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('dialog', { name: /Фильтры по данным/i })
+    ).toBeInTheDocument();
   });
 
   it('opens the group modal from the toolbar', async () => {
     render(
       <MwsTableEmbedComponent
-        node={{
-          attrs: {
-            blockId: 'block-1',
-            title: 'Таблица 2',
-            spaceId: 'space-1',
-            nodeId: 'node-2',
-            datasheetId: 'dst-2',
-            viewId: 'view-1',
-            selectedFieldIds: ['fld-title'],
-            pageSize: 20,
-            allowInlineEdit: true,
-            displayMode: 'table',
-          },
-        } as never}
+        node={
+          {
+            attrs: {
+              blockId: 'block-1',
+              title: 'Таблица 2',
+              spaceId: 'space-1',
+              nodeId: 'node-2',
+              datasheetId: 'dst-2',
+              viewId: 'view-1',
+              selectedFieldIds: ['fld-title'],
+              pageSize: 20,
+              allowInlineEdit: true,
+              displayMode: 'table'
+            }
+          } as never
+        }
         selected={false}
         editor={null as never}
         getPos={null as never}
@@ -363,10 +395,64 @@ describe('MwsTableEmbedComponent', () => {
         HTMLAttributes={{}}
         innerDecorations={null as never}
         view={null as never}
-      />,
+      />
     );
 
     fireEvent.click(await screen.findByRole('button', { name: 'Группа' }));
-    expect(await screen.findByRole('dialog', { name: /Группировка по полю/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('dialog', { name: /Группировка по полю/i })
+    ).toBeInTheDocument();
+  });
+
+  it('reuses the action bar in expanded mode and renders the fullscreen grid', async () => {
+    render(
+      <MwsTableEmbedComponent
+        node={
+          {
+            attrs: {
+              blockId: 'block-1',
+              title: 'Таблица 2',
+              spaceId: 'space-1',
+              nodeId: 'node-2',
+              datasheetId: 'dst-2',
+              viewId: 'view-1',
+              selectedFieldIds: ['fld-title'],
+              pageSize: 20,
+              allowInlineEdit: true,
+              displayMode: 'table'
+            }
+          } as never
+        }
+        selected={false}
+        editor={null as never}
+        getPos={null as never}
+        updateAttributes={vi.fn()}
+        deleteNode={vi.fn()}
+        decorations={[]}
+        extension={null as never}
+        HTMLAttributes={{}}
+        innerDecorations={null as never}
+        view={null as never}
+      />
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Раскрыть' }));
+
+    expect(
+      await screen.findByText('Полноэкранный просмотр')
+    ).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', {
+      name: /Полноэкранная таблица Таблица 2/i
+    });
+    expect(
+      within(dialog).getByTestId('mws_canvas_grid_expanded')
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('mws_canvas_grid')).not.toBeInTheDocument();
+    expect(
+      within(dialog).getAllByRole('button', { name: 'Скрыть поля' })
+    ).toHaveLength(1);
+    expect(
+      within(dialog).getByRole('button', { name: 'Закрыть' })
+    ).toBeInTheDocument();
   });
 });

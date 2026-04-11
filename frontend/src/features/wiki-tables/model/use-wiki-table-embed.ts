@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { type CreateMwsFieldPayload, type MwsField, type MwsRecord, type ResolveTableEmbedResponse, wikiliveApi } from '../../../shared/api/wikilive';
+import {
+  type CreateMwsFieldPayload,
+  type MwsField,
+  type MwsRecord,
+  type ResolveTableEmbedResponse,
+  wikiliveApi
+} from '../../../shared/api/wikilive';
 import { WikiTableEmbed, type WikiTableEmbedAttrs } from './wiki-table-embed';
 
 const EDITABLE_FIELD_TYPES = new Set([
@@ -15,7 +21,7 @@ const EDITABLE_FIELD_TYPES = new Set([
   'DateTime',
   'URL',
   'Email',
-  'Phone',
+  'Phone'
 ]);
 
 const POLL_MIN_MS = 5000;
@@ -67,7 +73,14 @@ export type SortRulePayload = {
   desc: boolean;
 };
 
-export type FilterOperator = 'equals' | 'notEquals' | 'contains' | 'notContains' | 'empty' | 'notEmpty' | 'duplicates';
+export type FilterOperator =
+  | 'equals'
+  | 'notEquals'
+  | 'contains'
+  | 'notContains'
+  | 'empty'
+  | 'notEmpty'
+  | 'duplicates';
 
 export type FilterRule = {
   id: string;
@@ -121,8 +134,17 @@ function readAttachmentName(value: unknown): string {
   }
 
   if (value && typeof value === 'object') {
-    const candidate = (value as { name?: unknown; fileName?: unknown; filename?: unknown; title?: unknown });
-    const raw = candidate.name ?? candidate.fileName ?? candidate.filename ?? candidate.title;
+    const candidate = value as {
+      name?: unknown;
+      fileName?: unknown;
+      filename?: unknown;
+      title?: unknown;
+    };
+    const raw =
+      candidate.name ??
+      candidate.fileName ??
+      candidate.filename ??
+      candidate.title;
     if (typeof raw === 'string' && raw.trim()) {
       return raw;
     }
@@ -136,9 +158,28 @@ function readAttachmentToken(value: unknown): string | null {
     return null;
   }
 
-  const raw = (value as { token?: unknown; fileToken?: unknown; attachmentToken?: unknown }).token
-    ?? (value as { token?: unknown; fileToken?: unknown; attachmentToken?: unknown }).fileToken
-    ?? (value as { token?: unknown; fileToken?: unknown; attachmentToken?: unknown }).attachmentToken;
+  const raw =
+    (
+      value as {
+        token?: unknown;
+        fileToken?: unknown;
+        attachmentToken?: unknown;
+      }
+    ).token ??
+    (
+      value as {
+        token?: unknown;
+        fileToken?: unknown;
+        attachmentToken?: unknown;
+      }
+    ).fileToken ??
+    (
+      value as {
+        token?: unknown;
+        fileToken?: unknown;
+        attachmentToken?: unknown;
+      }
+    ).attachmentToken;
   return typeof raw === 'string' && raw.trim().length > 0 ? raw : null;
 }
 
@@ -147,19 +188,30 @@ function readAttachmentUrl(value: unknown): string | null {
     return null;
   }
 
-  const raw = (value as { url?: unknown; href?: unknown; preview?: unknown }).url
-    ?? (value as { url?: unknown; href?: unknown; preview?: unknown }).href
-    ?? (value as { url?: unknown; href?: unknown; preview?: unknown }).preview;
+  const raw =
+    (value as { url?: unknown; href?: unknown; preview?: unknown }).url ??
+    (value as { url?: unknown; href?: unknown; preview?: unknown }).href ??
+    (value as { url?: unknown; href?: unknown; preview?: unknown }).preview;
   return typeof raw === 'string' && raw.trim().length > 0 ? raw : null;
 }
 
-function normalizeSortValue(rawValue: unknown, field: MwsField): string | number | null {
+function normalizeSortValue(
+  rawValue: unknown,
+  field: MwsField
+): string | number | null {
   if (rawValue === null || rawValue === undefined || rawValue === '') {
     return null;
   }
 
-  if (field.type === 'Number' || field.type === 'Currency' || field.type === 'Percent') {
-    const numeric = typeof rawValue === 'number' ? rawValue : Number(renderCell(rawValue, field));
+  if (
+    field.type === 'Number' ||
+    field.type === 'Currency' ||
+    field.type === 'Percent'
+  ) {
+    const numeric =
+      typeof rawValue === 'number'
+        ? rawValue
+        : Number(renderCell(rawValue, field));
     return Number.isFinite(numeric) ? numeric : renderCell(rawValue, field);
   }
 
@@ -171,7 +223,10 @@ function normalizeSortValue(rawValue: unknown, field: MwsField): string | number
   return renderCell(rawValue, field).toLowerCase();
 }
 
-function compareSortValues(left: string | number | null, right: string | number | null) {
+function compareSortValues(
+  left: string | number | null,
+  right: string | number | null
+) {
   if (left === right) {
     return 0;
   }
@@ -188,10 +243,17 @@ function compareSortValues(left: string | number | null, right: string | number 
     return left - right;
   }
 
-  return String(left).localeCompare(String(right), 'ru', { numeric: true, sensitivity: 'base' });
+  return String(left).localeCompare(String(right), 'ru', {
+    numeric: true,
+    sensitivity: 'base'
+  });
 }
 
-function sortRecords(records: MwsRecord[], fields: MwsField[], sortRules: SortRule[]) {
+function sortRecords(
+  records: MwsRecord[],
+  fields: MwsField[],
+  sortRules: SortRule[]
+) {
   if (sortRules.length === 0 || fields.length === 0) {
     return records;
   }
@@ -220,7 +282,12 @@ function normalizeFilterValue(rawValue: unknown, field: MwsField): string {
   return renderCell(rawValue, field).trim().toLowerCase();
 }
 
-function matchesFilterRule(record: MwsRecord, field: MwsField, rule: FilterRule, duplicateValues: Set<string>) {
+function matchesFilterRule(
+  record: MwsRecord,
+  field: MwsField,
+  rule: FilterRule,
+  duplicateValues: Set<string>
+) {
   const value = renderCell(getFieldValue(record, field), field).trim();
   const normalized = value.toLowerCase();
   const comparison = rule.value.trim().toLowerCase();
@@ -245,7 +312,11 @@ function matchesFilterRule(record: MwsRecord, field: MwsField, rule: FilterRule,
   }
 }
 
-function filterRecords(records: MwsRecord[], fields: MwsField[], filterRules: FilterRule[]) {
+function filterRecords(
+  records: MwsRecord[],
+  fields: MwsField[],
+  filterRules: FilterRule[]
+) {
   if (filterRules.length === 0 || fields.length === 0) {
     return records;
   }
@@ -264,12 +335,18 @@ function filterRecords(records: MwsRecord[], fields: MwsField[], filterRules: Fi
     }
 
     records.forEach((record) => {
-      const normalized = normalizeFilterValue(getFieldValue(record, field), field);
+      const normalized = normalizeFilterValue(
+        getFieldValue(record, field),
+        field
+      );
       if (!normalized) {
         return;
       }
 
-      duplicateKeys.set(`${field.id}:${normalized}`, (duplicateKeys.get(`${field.id}:${normalized}`) ?? 0) + 1);
+      duplicateKeys.set(
+        `${field.id}:${normalized}`,
+        (duplicateKeys.get(`${field.id}:${normalized}`) ?? 0) + 1
+      );
     });
   }
 
@@ -283,11 +360,11 @@ function filterRecords(records: MwsRecord[], fields: MwsField[], filterRules: Fi
       const duplicateValues = new Set(
         [...duplicateKeys.entries()]
           .filter(([key, count]) => key.startsWith(`${field.id}:`) && count > 1)
-          .map(([key]) => key.slice(field.id.length + 1)),
+          .map(([key]) => key.slice(field.id.length + 1))
       );
 
       return matchesFilterRule(record, field, rule, duplicateValues);
-    }),
+    })
   );
 }
 
@@ -306,12 +383,13 @@ function buildGroupedRows(records: MwsRecord[], field: MwsField) {
       kind: 'group',
       key: currentGroupKey,
       label: currentGroupLabel || 'Без значения',
-      count: currentGroupCount,
+      count: currentGroupCount
     });
   };
 
   for (const record of records) {
-    const groupLabel = renderCell(getFieldValue(record, field), field).trim() || 'Без значения';
+    const groupLabel =
+      renderCell(getFieldValue(record, field), field).trim() || 'Без значения';
     const groupKey = groupLabel.toLowerCase();
 
     if (currentGroupKey !== groupKey) {
@@ -338,7 +416,7 @@ export function readAttachments(value: unknown): AttachmentItem[] {
   return items.map((item) => ({
     name: readAttachmentName(item),
     token: readAttachmentToken(item),
-    url: readAttachmentUrl(item),
+    url: readAttachmentUrl(item)
   }));
 }
 
@@ -356,7 +434,11 @@ export function renderCell(value: unknown, field?: MwsField): string {
     return '';
   }
 
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
     return String(value);
   }
 
@@ -429,7 +511,10 @@ function readSelectOptions(field: MwsField): SelectOption[] {
         if (name) {
           return {
             name,
-            color: typeof color === 'string' && color.trim().length > 0 ? color : 'blue',
+            color:
+              typeof color === 'string' && color.trim().length > 0
+                ? color
+                : 'blue'
           };
         }
       }
@@ -441,15 +526,22 @@ function readSelectOptions(field: MwsField): SelectOption[] {
 
 function readSelectedOptionNames(value: unknown): string[] {
   if (Array.isArray(value)) {
-    return value.map(readOptionName).filter((item): item is string => Boolean(item));
+    return value
+      .map(readOptionName)
+      .filter((item): item is string => Boolean(item));
   }
 
   const single = readOptionName(value);
   return single ? [single] : [];
 }
 
-function toSelectPatchValue(field: MwsField, currentValue: unknown, selectedNames: string[]) {
-  const hasObjectShape = (value: unknown) => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+function toSelectPatchValue(
+  field: MwsField,
+  currentValue: unknown,
+  selectedNames: string[]
+) {
+  const hasObjectShape = (value: unknown) =>
+    Boolean(value && typeof value === 'object' && !Array.isArray(value));
   const isMultiple = field.type === 'MultiSelect';
 
   if (isMultiple) {
@@ -499,7 +591,11 @@ export function fieldInputType(field: MwsField) {
   return 'text';
 }
 
-export function clampText(ctx: CanvasRenderingContext2D, value: string, maxWidth: number) {
+export function clampText(
+  ctx: CanvasRenderingContext2D,
+  value: string,
+  maxWidth: number
+) {
   if (ctx.measureText(value).width <= maxWidth) {
     return value;
   }
@@ -514,8 +610,13 @@ export function clampText(ctx: CanvasRenderingContext2D, value: string, maxWidth
 
 export type MwsTableEmbedController = ReturnType<typeof useWikiTableEmbed>;
 
-export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null | undefined) {
-  const attrs = useMemo(() => WikiTableEmbed.fromNodeAttrs(rawAttrs).toJSON(), [rawAttrs]);
+export function useWikiTableEmbed(
+  rawAttrs: Partial<WikiTableEmbedAttrs> | null | undefined
+) {
+  const attrs = useMemo(
+    () => WikiTableEmbed.fromNodeAttrs(rawAttrs).toJSON(),
+    [rawAttrs]
+  );
   const [data, setData] = useState<ResolveTableEmbedResponse | null>(null);
   const [records, setRecords] = useState<MwsRecord[]>([]);
   const [pageNum, setPageNum] = useState(1);
@@ -525,11 +626,15 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
   const [errorMessage, setErrorMessage] = useState('');
   const [staleMessage, setStaleMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [viewport, setViewport] = useState({ width: 720, height: MIN_GRID_HEIGHT });
+  const [viewport, setViewport] = useState({
+    width: 720,
+    height: MIN_GRID_HEIGHT
+  });
   const [scrollOffset, setScrollOffset] = useState({ left: 0, top: 0 });
   const [selection, setSelection] = useState<CanvasSelection | null>(null);
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
-  const [editingSelectCell, setEditingSelectCell] = useState<EditingSelectCell | null>(null);
+  const [editingSelectCell, setEditingSelectCell] =
+    useState<EditingSelectCell | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [nextRefreshAt, setNextRefreshAt] = useState<number | null>(null);
   const [nowTs, setNowTs] = useState(() => Date.now());
@@ -537,86 +642,123 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
   const [sortRules, setSortRules] = useState<SortRule[]>([]);
   const [filterRules, setFilterRules] = useState<FilterRule[]>([]);
   const [groupRule, setGroupRule] = useState<GroupRule | null>(null);
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(
+    null
+  );
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const hasLoadedDataRef = useRef(false);
   const pageSize = attrs.pageSize ?? 50;
 
-  const nextPollDelay = () => Math.floor(Math.random() * (POLL_MAX_MS - POLL_MIN_MS + 1)) + POLL_MIN_MS;
+  const registerScrollElement = useCallback(
+    (element: HTMLDivElement | null) => {
+      scrollRef.current = element;
+      setScrollElement(element);
+    },
+    []
+  );
 
-  const loadEmbed = useCallback(async (options?: { silent?: boolean }) => {
-    const silent = Boolean(options?.silent);
+  const nextPollDelay = () =>
+    Math.floor(Math.random() * (POLL_MAX_MS - POLL_MIN_MS + 1)) + POLL_MIN_MS;
 
-    if (!attrs.spaceId || !attrs.nodeId || !attrs.datasheetId) {
-      setErrorMessage('В embed не хватает идентификаторов MWS Tables');
-      if (!silent) {
-        setIsLoading(false);
-      }
-      return;
-    }
+  const loadEmbed = useCallback(
+    async (options?: { silent?: boolean }) => {
+      const silent = Boolean(options?.silent);
 
-    try {
-      if (!silent) {
-        setIsLoading(true);
-        setErrorMessage('');
-      }
-      const response = await wikiliveApi.resolveTableEmbed({
-        spaceId: attrs.spaceId,
-        nodeId: attrs.nodeId,
-        datasheetId: attrs.datasheetId,
-        viewId: attrs.viewId,
-        displayMode: attrs.displayMode,
-        selectedFieldIds: attrs.selectedFieldIds,
-        filterByFormula: attrs.filterByFormula,
-        pageSize,
-        allowInlineEdit: attrs.allowInlineEdit,
-        sort: sortRules.map(({ fieldId, desc }) => ({ fieldId, desc })),
-      });
-
-      setData(response);
-      setRecords(response.embed.preview.items);
-      setPageNum(response.embed.preview.pageNum);
-      setTotal(response.embed.total ?? response.embed.preview.total);
-      setHiddenFieldIds((current) => {
-        const nextIds = response.embed.fields.map((field) => field.id);
-        if (current.length === 0) {
-          return [];
+      if (!attrs.spaceId || !attrs.nodeId || !attrs.datasheetId) {
+        setErrorMessage('В embed не хватает идентификаторов MWS Tables');
+        if (!silent) {
+          setIsLoading(false);
         }
+        return;
+      }
 
-        const nextSet = new Set(nextIds);
-        return current.filter((fieldId) => nextSet.has(fieldId));
-      });
-      setSortRules((current) => {
-        const next = current.filter((rule) => response.embed.fields.some((field) => field.id === rule.fieldId));
-        const isSame = next.length === current.length && next.every((rule, index) => {
-          const currentRule = current[index];
-          return currentRule?.id === rule.id && currentRule.fieldId === rule.fieldId && currentRule.desc === rule.desc;
+      try {
+        if (!silent) {
+          setIsLoading(true);
+          setErrorMessage('');
+        }
+        const response = await wikiliveApi.resolveTableEmbed({
+          spaceId: attrs.spaceId,
+          nodeId: attrs.nodeId,
+          datasheetId: attrs.datasheetId,
+          viewId: attrs.viewId,
+          displayMode: attrs.displayMode,
+          selectedFieldIds: attrs.selectedFieldIds,
+          filterByFormula: attrs.filterByFormula,
+          pageSize,
+          allowInlineEdit: attrs.allowInlineEdit,
+          sort: sortRules.map(({ fieldId, desc }) => ({ fieldId, desc }))
         });
 
-        return isSame ? current : next;
-      });
-      if (!silent) {
-        setSelection(null);
-        setEditingCell(null);
-        setEditingSelectCell(null);
+        setData(response);
+        setRecords(response.embed.preview.items);
+        setPageNum(response.embed.preview.pageNum);
+        setTotal(response.embed.total ?? response.embed.preview.total);
+        setHiddenFieldIds((current) => {
+          const nextIds = response.embed.fields.map((field) => field.id);
+          if (current.length === 0) {
+            return [];
+          }
+
+          const nextSet = new Set(nextIds);
+          return current.filter((fieldId) => nextSet.has(fieldId));
+        });
+        setSortRules((current) => {
+          const next = current.filter((rule) =>
+            response.embed.fields.some((field) => field.id === rule.fieldId)
+          );
+          const isSame =
+            next.length === current.length &&
+            next.every((rule, index) => {
+              const currentRule = current[index];
+              return (
+                currentRule?.id === rule.id &&
+                currentRule.fieldId === rule.fieldId &&
+                currentRule.desc === rule.desc
+              );
+            });
+
+          return isSame ? current : next;
+        });
+        if (!silent) {
+          setSelection(null);
+          setEditingCell(null);
+          setEditingSelectCell(null);
+        }
+        setLastSyncedAt(Date.now());
+        setStaleMessage('');
+        hasLoadedDataRef.current = true;
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Не удалось загрузить MWS Tables embed';
+        if (hasLoadedDataRef.current) {
+          setStaleMessage(message);
+        } else {
+          setErrorMessage(message);
+        }
+      } finally {
+        if (!silent) {
+          setIsLoading(false);
+        }
       }
-      setLastSyncedAt(Date.now());
-      setStaleMessage('');
-      hasLoadedDataRef.current = true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Не удалось загрузить MWS Tables embed';
-      if (hasLoadedDataRef.current) {
-        setStaleMessage(message);
-      } else {
-        setErrorMessage(message);
-      }
-    } finally {
-      if (!silent) {
-        setIsLoading(false);
-      }
-    }
-  }, [attrs.allowInlineEdit, attrs.datasheetId, attrs.displayMode, attrs.filterByFormula, attrs.nodeId, attrs.selectedFieldIds, attrs.spaceId, attrs.viewId, pageSize, sortRules]);
+    },
+    [
+      attrs.allowInlineEdit,
+      attrs.datasheetId,
+      attrs.displayMode,
+      attrs.filterByFormula,
+      attrs.nodeId,
+      attrs.selectedFieldIds,
+      attrs.spaceId,
+      attrs.viewId,
+      pageSize,
+      sortRules
+    ]
+  );
 
   useEffect(() => {
     void loadEmbed();
@@ -679,11 +821,20 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     return fields.filter((field) => !hiddenSet.has(field.id));
   }, [fields, hiddenFieldIds]);
   const capabilities = embed?.capabilities ?? {};
-  const canInlineEdit = Boolean(attrs.allowInlineEdit && capabilities.canInlineEdit);
+  const canInlineEdit = Boolean(
+    attrs.allowInlineEdit && capabilities.canInlineEdit
+  );
   const gridWidth = INDEX_WIDTH + visibleFields.length * COLUMN_WIDTH;
-  const updatedAgoSec = lastSyncedAt ? Math.max(0, Math.floor((nowTs - lastSyncedAt) / 1000)) : null;
-  const nextRefreshInSec = nextRefreshAt ? Math.max(0, Math.ceil((nextRefreshAt - nowTs) / 1000)) : null;
-  const sortedRecords = useMemo(() => sortRecords(records, fields, sortRules), [fields, records, sortRules]);
+  const updatedAgoSec = lastSyncedAt
+    ? Math.max(0, Math.floor((nowTs - lastSyncedAt) / 1000))
+    : null;
+  const nextRefreshInSec = nextRefreshAt
+    ? Math.max(0, Math.ceil((nextRefreshAt - nowTs) / 1000))
+    : null;
+  const sortedRecords = useMemo(
+    () => sortRecords(records, fields, sortRules),
+    [fields, records, sortRules]
+  );
 
   const filteredRecords = useMemo(() => {
     const baseRecords = filterRecords(sortedRecords, fields, filterRules);
@@ -694,7 +845,11 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     }
 
     return baseRecords.filter((record) =>
-      visibleFields.some((field) => renderCell(getFieldValue(record, field), field).toLowerCase().includes(normalized)),
+      visibleFields.some((field) =>
+        renderCell(getFieldValue(record, field), field)
+          .toLowerCase()
+          .includes(normalized)
+      )
     );
   }, [fields, filterRules, searchQuery, sortedRecords, visibleFields]);
 
@@ -709,8 +864,14 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     }
 
     const groupedRecords = [...filteredRecords].sort((left, right) => {
-      const leftValue = normalizeSortValue(getFieldValue(left, groupField), groupField);
-      const rightValue = normalizeSortValue(getFieldValue(right, groupField), groupField);
+      const leftValue = normalizeSortValue(
+        getFieldValue(left, groupField),
+        groupField
+      );
+      const rightValue = normalizeSortValue(
+        getFieldValue(right, groupField),
+        groupField
+      );
       const result = compareSortValues(leftValue, rightValue);
       return groupRule.desc ? -result : result;
     });
@@ -718,12 +879,22 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     return buildGroupedRows(groupedRecords, groupField);
   }, [fields, filteredRecords, groupRule]);
 
-  const gridHeight = HEADER_HEIGHT + Math.max(visibleRows.length, 1) * ROW_HEIGHT;
-  const selectedRow = selection ? visibleRows[selection.rowIndex] ?? null : null;
-  const selectedRecord = selectedRow && selectedRow.kind === 'record' ? selectedRow.record : null;
-  const selectedField = selection ? visibleFields[selection.fieldIndex] ?? null : null;
+  const gridHeight =
+    HEADER_HEIGHT + Math.max(visibleRows.length, 1) * ROW_HEIGHT;
+  const selectedRow = selection
+    ? (visibleRows[selection.rowIndex] ?? null)
+    : null;
+  const selectedRecord =
+    selectedRow && selectedRow.kind === 'record' ? selectedRow.record : null;
+  const selectedField = selection
+    ? (visibleFields[selection.fieldIndex] ?? null)
+    : null;
   const selectedAttachments = useMemo(() => {
-    if (!selectedRecord || !selectedField || selectedField.type !== 'Attachment') {
+    if (
+      !selectedRecord ||
+      !selectedField ||
+      selectedField.type !== 'Attachment'
+    ) {
       return [] as AttachmentItem[];
     }
 
@@ -731,7 +902,7 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
   }, [selectedField, selectedRecord]);
 
   useEffect(() => {
-    const element = scrollRef.current;
+    const element = scrollElement;
     if (!element) {
       return undefined;
     }
@@ -739,7 +910,7 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     const updateViewport = () => {
       setViewport({
         width: Math.max(1, element.clientWidth),
-        height: Math.max(1, element.clientHeight),
+        height: Math.max(1, element.clientHeight)
       });
     };
 
@@ -748,7 +919,7 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     observer.observe(element);
 
     return () => observer.disconnect();
-  }, []);
+  }, [scrollElement]);
 
   const hasMore = records.length < total;
 
@@ -766,18 +937,33 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
         pageNum: pageNum + 1,
         fields: attrs.selectedFieldIds,
         filterByFormula: attrs.filterByFormula,
-        sort: sortRules.map(({ fieldId, desc }) => ({ fieldId, desc })),
+        sort: sortRules.map(({ fieldId, desc }) => ({ fieldId, desc }))
       });
       setRecords((current) => [...current, ...response.items]);
       setPageNum(response.pageNum);
       setTotal(response.total);
       setStaleMessage('');
     } catch (error) {
-      setStaleMessage(error instanceof Error ? error.message : 'Не удалось загрузить следующую страницу');
+      setStaleMessage(
+        error instanceof Error
+          ? error.message
+          : 'Не удалось загрузить следующую страницу'
+      );
     } finally {
       setIsMutating(false);
     }
-  }, [attrs.datasheetId, attrs.filterByFormula, attrs.selectedFieldIds, attrs.viewId, hasMore, isLoading, isMutating, pageNum, pageSize, sortRules]);
+  }, [
+    attrs.datasheetId,
+    attrs.filterByFormula,
+    attrs.selectedFieldIds,
+    attrs.viewId,
+    hasMore,
+    isLoading,
+    isMutating,
+    pageNum,
+    pageSize,
+    sortRules
+  ]);
 
   const updateCell = (record: MwsRecord, field: MwsField, value: unknown) => {
     if (!attrs.datasheetId || !EDITABLE_FIELD_TYPES.has(field.type)) {
@@ -786,7 +972,10 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
 
     const parsedValue = parseEditedValue(field, value);
     const currentValue = getFieldValue(record, field);
-    if (JSON.stringify(currentValue ?? null) === JSON.stringify(parsedValue ?? null)) {
+    if (
+      JSON.stringify(currentValue ?? null) ===
+      JSON.stringify(parsedValue ?? null)
+    ) {
       return;
     }
 
@@ -795,14 +984,16 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
       current.map((item) =>
         item.recordId === record.recordId
           ? { ...item, fields: { ...item.fields, [field.id]: parsedValue } }
-          : item,
-      ),
+          : item
+      )
     );
 
     void wikiliveApi
       .updateMwsRecords(attrs.datasheetId, {
         fieldKey: 'id',
-        records: [{ recordId: record.recordId, fields: { [field.id]: parsedValue } }],
+        records: [
+          { recordId: record.recordId, fields: { [field.id]: parsedValue } }
+        ]
       })
       .then(() => {
         setStaleMessage('');
@@ -812,11 +1003,16 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
         setRecords((current) =>
           current.map((item) =>
             item.recordId === record.recordId
-              ? { ...item, fields: { ...item.fields, [field.id]: currentValue } }
-              : item,
-          ),
+              ? {
+                  ...item,
+                  fields: { ...item.fields, [field.id]: currentValue }
+                }
+              : item
+          )
         );
-        setStaleMessage(error instanceof Error ? error.message : 'Не удалось обновить ячейку');
+        setStaleMessage(
+          error instanceof Error ? error.message : 'Не удалось обновить ячейку'
+        );
       });
   };
 
@@ -825,7 +1021,9 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
       return;
     }
 
-    const editableFields = fields.filter((field) => EDITABLE_FIELD_TYPES.has(field.type));
+    const editableFields = fields.filter((field) =>
+      EDITABLE_FIELD_TYPES.has(field.type)
+    );
     const initialFields = Object.fromEntries(
       editableFields.map((field) => {
         if (field.type === 'Checkbox') {
@@ -837,24 +1035,28 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
         }
 
         return [field.id, ''];
-      }),
+      })
     );
 
     try {
       setIsMutating(true);
       await wikiliveApi.createMwsRecords(attrs.datasheetId, {
         fieldKey: 'id',
-        records: [{ fields: initialFields }],
+        records: [{ fields: initialFields }]
       });
       await loadEmbed();
     } catch (error) {
-      setStaleMessage(error instanceof Error ? error.message : 'Не удалось добавить строку');
+      setStaleMessage(
+        error instanceof Error ? error.message : 'Не удалось добавить строку'
+      );
     } finally {
       setIsMutating(false);
     }
   };
 
-  const createField = async (payload: Omit<CreateMwsFieldPayload, 'spaceId'>) => {
+  const createField = async (
+    payload: Omit<CreateMwsFieldPayload, 'spaceId'>
+  ) => {
     if (!attrs.datasheetId || !attrs.spaceId) {
       return;
     }
@@ -863,11 +1065,13 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
       setIsMutating(true);
       await wikiliveApi.createMwsField(attrs.datasheetId, {
         spaceId: attrs.spaceId,
-        ...payload,
+        ...payload
       });
       await loadEmbed();
     } catch (error) {
-      setStaleMessage(error instanceof Error ? error.message : 'Не удалось создать столбец');
+      setStaleMessage(
+        error instanceof Error ? error.message : 'Не удалось создать столбец'
+      );
     } finally {
       setIsMutating(false);
     }
@@ -881,21 +1085,34 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     try {
       setIsMutating(true);
       await wikiliveApi.deleteMwsRecords(attrs.datasheetId, [record.recordId]);
-      setRecords((current) => current.filter((item) => item.recordId !== record.recordId));
+      setRecords((current) =>
+        current.filter((item) => item.recordId !== record.recordId)
+      );
       setTotal((current) => Math.max(0, current - 1));
       setSelection(null);
       setEditingCell(null);
       setEditingSelectCell(null);
       setStaleMessage('');
     } catch (error) {
-      setStaleMessage(error instanceof Error ? error.message : 'Не удалось удалить строку');
+      setStaleMessage(
+        error instanceof Error ? error.message : 'Не удалось удалить строку'
+      );
     } finally {
       setIsMutating(false);
     }
   };
 
-  const uploadAttachment = async (record: MwsRecord | null, field: MwsField | null, file: File) => {
-    if (!attrs.datasheetId || !record || !field || field.type !== 'Attachment') {
+  const uploadAttachment = async (
+    record: MwsRecord | null,
+    field: MwsField | null,
+    file: File
+  ) => {
+    if (
+      !attrs.datasheetId ||
+      !record ||
+      !field ||
+      field.type !== 'Attachment'
+    ) {
       return;
     }
 
@@ -904,11 +1121,15 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
       await wikiliveApi.uploadMwsAttachment(attrs.datasheetId, {
         file,
         recordId: record.recordId,
-        fieldId: field.id,
+        fieldId: field.id
       });
       await loadEmbed();
     } catch (error) {
-      setStaleMessage(error instanceof Error ? error.message : 'Не удалось загрузить файл в ячейку');
+      setStaleMessage(
+        error instanceof Error
+          ? error.message
+          : 'Не удалось загрузить файл в ячейку'
+      );
     } finally {
       setIsMutating(false);
     }
@@ -924,11 +1145,13 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
         setIsMutating(true);
         await wikiliveApi.downloadMwsAttachment(attrs.datasheetId, {
           token: attachment.token,
-          fileName: attachment.name,
+          fileName: attachment.name
         });
         setStaleMessage('');
       } catch (error) {
-        setStaleMessage(error instanceof Error ? error.message : 'Не удалось скачать вложение');
+        setStaleMessage(
+          error instanceof Error ? error.message : 'Не удалось скачать вложение'
+        );
       } finally {
         setIsMutating(false);
       }
@@ -944,7 +1167,11 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     setStaleMessage('Для этого вложения нет токена или URL скачивания');
   };
 
-  const hitTest = (event: React.PointerEvent<HTMLCanvasElement> | React.MouseEvent<HTMLCanvasElement>): CanvasSelection | null => {
+  const hitTest = (
+    event:
+      | React.PointerEvent<HTMLCanvasElement>
+      | React.MouseEvent<HTMLCanvasElement>
+  ): CanvasSelection | null => {
     const rect = event.currentTarget.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
@@ -953,10 +1180,19 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
       return null;
     }
 
-    const rowIndex = Math.floor((y + scrollOffset.top - HEADER_HEIGHT) / ROW_HEIGHT);
-    const fieldIndex = Math.floor((x + scrollOffset.left - INDEX_WIDTH) / COLUMN_WIDTH);
+    const rowIndex = Math.floor(
+      (y + scrollOffset.top - HEADER_HEIGHT) / ROW_HEIGHT
+    );
+    const fieldIndex = Math.floor(
+      (x + scrollOffset.left - INDEX_WIDTH) / COLUMN_WIDTH
+    );
 
-    if (rowIndex < 0 || rowIndex >= visibleRows.length || fieldIndex < 0 || fieldIndex >= visibleFields.length) {
+    if (
+      rowIndex < 0 ||
+      rowIndex >= visibleRows.length ||
+      fieldIndex < 0 ||
+      fieldIndex >= visibleFields.length
+    ) {
       return null;
     }
 
@@ -967,7 +1203,10 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     return { rowIndex, fieldIndex };
   };
 
-  const beginEdit = (nextSelection: CanvasSelection | null, options?: BeginEditOptions) => {
+  const beginEdit = (
+    nextSelection: CanvasSelection | null,
+    options?: BeginEditOptions
+  ) => {
     if (!nextSelection) {
       return;
     }
@@ -976,7 +1215,12 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     const record = row && row.kind === 'record' ? row.record : null;
     const field = visibleFields[nextSelection.fieldIndex];
 
-    if (!record || !field || !canInlineEdit || !EDITABLE_FIELD_TYPES.has(field.type)) {
+    if (
+      !record ||
+      !field ||
+      !canInlineEdit ||
+      !EDITABLE_FIELD_TYPES.has(field.type)
+    ) {
       return;
     }
 
@@ -998,7 +1242,7 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
           width: COLUMN_WIDTH,
           options: availableOptions,
           values,
-          multiple: field.type === 'MultiSelect',
+          multiple: field.type === 'MultiSelect'
         });
         return;
       }
@@ -1015,7 +1259,7 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
       top: HEADER_HEIGHT + nextSelection.rowIndex * ROW_HEIGHT,
       width: COLUMN_WIDTH,
       height: ROW_HEIGHT,
-      value: options?.replaceValue ?? renderCell(getFieldValue(record, field)),
+      value: options?.replaceValue ?? renderCell(getFieldValue(record, field))
     });
   };
 
@@ -1042,13 +1286,23 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     const row = visibleRows[editingSelectCell.rowIndex];
     const record = row && row.kind === 'record' ? row.record : null;
     const field = visibleFields[editingSelectCell.fieldIndex];
-    if (!record || !field || (field.type !== 'SingleSelect' && field.type !== 'MultiSelect')) {
+    if (
+      !record ||
+      !field ||
+      (field.type !== 'SingleSelect' && field.type !== 'MultiSelect')
+    ) {
       return;
     }
 
     const nextNames: string[] = [];
-    const patchValue = toSelectPatchValue(field, getFieldValue(record, field), nextNames);
-    setEditingSelectCell((current) => (current ? { ...current, values: nextNames } : current));
+    const patchValue = toSelectPatchValue(
+      field,
+      getFieldValue(record, field),
+      nextNames
+    );
+    setEditingSelectCell((current) =>
+      current ? { ...current, values: nextNames } : current
+    );
     void updateCell(record, field, patchValue);
   };
 
@@ -1060,7 +1314,11 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     const row = visibleRows[editingSelectCell.rowIndex];
     const record = row && row.kind === 'record' ? row.record : null;
     const field = visibleFields[editingSelectCell.fieldIndex];
-    if (!record || !field || (field.type !== 'SingleSelect' && field.type !== 'MultiSelect')) {
+    if (
+      !record ||
+      !field ||
+      (field.type !== 'SingleSelect' && field.type !== 'MultiSelect')
+    ) {
       return;
     }
 
@@ -1075,18 +1333,24 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
         current.add(optionName);
       }
       nextNames = [...current];
-      setEditingSelectCell((currentCell) => (currentCell ? { ...currentCell, values: nextNames } : currentCell));
+      setEditingSelectCell((currentCell) =>
+        currentCell ? { ...currentCell, values: nextNames } : currentCell
+      );
     } else {
       nextNames = [optionName];
       setEditingSelectCell(null);
     }
 
-    const patchValue = toSelectPatchValue(field, getFieldValue(record, field), nextNames);
+    const patchValue = toSelectPatchValue(
+      field,
+      getFieldValue(record, field),
+      nextNames
+    );
     void updateCell(record, field, patchValue);
   };
 
   const handleCanvasScroll = () => {
-    const element = scrollRef.current;
+    const element = scrollElement ?? scrollRef.current;
     if (!element) {
       return;
     }
@@ -1121,6 +1385,7 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     editingSelectCell,
     setEditingSelectCell,
     scrollRef,
+    registerScrollElement,
     canvasRef,
     canInlineEdit,
     capabilities,
@@ -1154,6 +1419,6 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     commitEdit,
     clearSelectValue,
     applySelectValue,
-    handleCanvasScroll,
+    handleCanvasScroll
   };
 }

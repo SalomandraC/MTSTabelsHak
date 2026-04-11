@@ -1,5 +1,5 @@
-import { X } from 'lucide-react';
 import type { MwsTableEmbedController } from '../model/use-wiki-table-embed';
+import { MwsTableActionBar } from './mws-table-action-bar';
 import { TableGridCanvas } from './table-grid-canvas';
 
 export type ExpandedTableModalProps = {
@@ -9,8 +9,20 @@ export type ExpandedTableModalProps = {
   selectColorToCss: (color: string) => string;
   selectEditorRef: React.RefObject<HTMLDivElement>;
   onClose: () => void;
+  onSearchQueryChange: (value: string) => void;
+  onCreateField: () => void;
+  onHideFields: () => void;
+  onFilter: () => void;
+  onGroup: () => void;
+  onSort: () => void;
+  onExpand: () => void;
+  onOpenFilePicker: () => void;
+  onDownloadSelectedAttachment: () => void;
+  onCreateRow: () => void;
+  onDeleteRow: () => void;
+  canUploadToCell: boolean;
+  canDownloadFromCell: boolean;
   onCanvasKeyDown: (event: React.KeyboardEvent<HTMLCanvasElement>) => void;
-  onCanvasPointerDown?: (event: React.PointerEvent<HTMLCanvasElement>) => void;
 };
 
 export function ExpandedTableModal({
@@ -20,7 +32,20 @@ export function ExpandedTableModal({
   selectColorToCss,
   selectEditorRef,
   onClose,
-  onCanvasKeyDown,
+  onSearchQueryChange,
+  onCreateField,
+  onHideFields,
+  onFilter,
+  onGroup,
+  onSort,
+  onExpand,
+  onOpenFilePicker,
+  onDownloadSelectedAttachment,
+  onCreateRow,
+  onDeleteRow,
+  canUploadToCell,
+  canDownloadFromCell,
+  onCanvasKeyDown
 }: ExpandedTableModalProps) {
   if (!isOpen) {
     return null;
@@ -33,10 +58,13 @@ export function ExpandedTableModal({
       onClick={onClose}
     >
       <div
-        className="flex flex-col w-full h-full max-w-6xl max-h-[90vh] bg-white rounded-lg shadow-2xl overflow-hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Полноэкранная таблица ${tableTitle}`}
+        className="flex h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-2 border-b border-editor-border-subtle bg-[#f8fafc] px-5 py-4">
+        <div className="border-b border-editor-border-subtle bg-[#f8fafc] px-5 py-4">
           <div className="min-w-0">
             <h2 className="truncate font-wide text-lg font-semibold text-editor-text-primary leading-none">
               {tableTitle}
@@ -45,19 +73,46 @@ export function ExpandedTableModal({
               Полноэкранный просмотр
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="shrink-0 rounded-lg p-2 text-editor-text-secondary hover:bg-white transition-colors"
-            aria-label="Закрыть"
-          >
-            <X className="h-5 w-5" />
-          </button>
         </div>
 
-        <div className="flex-1 overflow-hidden">
+        <MwsTableActionBar
+          canCreateRow={
+            Boolean(controller.capabilities.canCreateRecords) &&
+            !controller.isMutating &&
+            controller.fields.length > 0
+          }
+          canDeleteRow={
+            Boolean(
+              controller.selectedRecord &&
+              controller.capabilities.canDeleteRecords
+            ) && !controller.isMutating
+          }
+          canUploadToCell={canUploadToCell && !controller.isMutating}
+          canDownloadFromCell={canDownloadFromCell && !controller.isMutating}
+          canManageFields={controller.fields.length > 0}
+          canExpand={controller.records.length > 0}
+          isLoading={controller.isLoading}
+          isMutating={controller.isMutating}
+          searchQuery={controller.searchQuery}
+          onSearchQueryChange={onSearchQueryChange}
+          onCreateRow={onCreateRow}
+          onCreateField={onCreateField}
+          onOpenFilePicker={onOpenFilePicker}
+          onDownloadSelectedAttachment={onDownloadSelectedAttachment}
+          onHideFields={onHideFields}
+          onFilter={onFilter}
+          onGroup={onGroup}
+          onSort={onSort}
+          onDeleteRow={onDeleteRow}
+          onExpand={onExpand}
+          onRefresh={() => void controller.loadEmbed()}
+          onCloseExpanded={onClose}
+        />
+
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <TableGridCanvas
             controller={controller}
+            isExpanded
             selectColorToCss={selectColorToCss}
             onCanvasKeyDown={onCanvasKeyDown}
             selectEditorRef={selectEditorRef}

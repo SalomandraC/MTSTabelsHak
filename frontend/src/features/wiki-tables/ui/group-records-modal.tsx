@@ -1,5 +1,5 @@
 import { Group, RotateCcw } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 
 import type { MwsField } from '../../../shared/api/wikilive';
 import { ModalActionButton } from '../../../shared/ui';
@@ -23,6 +23,17 @@ export function GroupRecordsModal({
 }: GroupRecordsModalProps) {
   const modalId = useId();
   const [draftRule, setDraftRule] = useState<GroupRule | null>(groupRule ?? (fields.length > 0 ? { fieldId: fields[0].id, desc: false } : null));
+
+  useEffect(() => {
+    if (isOpen) {
+      setDraftRule(
+        groupRule ??
+          (fields.length > 0
+            ? { fieldId: fields[0].id, desc: false }
+            : null),
+      );
+    }
+  }, [fields, groupRule, isOpen]);
 
   if (!isOpen) {
     return null;
