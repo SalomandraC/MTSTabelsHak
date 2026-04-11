@@ -231,6 +231,83 @@ describe('MwsService', () => {
     expect(response.embed.capabilities.canInlineEdit).toBe(true);
   });
 
+  it('reads nested upstream records payloads so table previews are not empty', async () => {
+    const { service } = createService((url) => {
+      if (url.endsWith('/datasheets/dst-1/records')) {
+        return {
+          data: {
+            records: {
+              items: [{ recordId: 'rec-nested-1', fields: { 'fld-1': 'Nested task' } }],
+              total: 1,
+              pageNum: 1,
+              pageSize: 25,
+            },
+          },
+        };
+      }
+
+      return { data: {} };
+    });
+
+    const response = await service.listRecords(
+      'dst-1',
+      {
+        pageNum: 1,
+        pageSize: 25,
+      },
+      user,
+    );
+
+    expect(response.items).toEqual([{ recordId: 'rec-nested-1', fields: { 'fld-1': 'Nested task' } }]);
+    expect(response.total).toBe(1);
+    expect(response.pageNum).toBe(1);
+    expect(response.pageSize).toBe(25);
+  });
+
+  it('resolves embed preview records from nested upstream payloads', async () => {
+    const { service } = createService((url) => {
+      if (url.endsWith('/nodes/node-1')) {
+        return { data: { id: 'node-1', name: 'Roadmap', type: 'datasheet', dstId: 'dst-1' } };
+      }
+      if (url.endsWith('/datasheets/dst-1/fields')) {
+        return { data: { fields: { items: [{ id: 'fld-1', name: 'Name', type: 'SingleText' }] } } };
+      }
+      if (url.endsWith('/datasheets/dst-1/views')) {
+        return { data: { views: { items: [{ id: 'viw-1', name: 'Grid', type: 'table' }] } } };
+      }
+      if (url.endsWith('/datasheets/dst-1/records')) {
+        return {
+          data: {
+            records: {
+              items: [{ recordId: 'rec-1', fields: { 'fld-1': 'Task from nested payload' } }],
+              pageNum: 1,
+              pageSize: 20,
+              total: 1,
+            },
+          },
+        };
+      }
+      return { data: {} };
+    });
+
+    const response = await service.resolveTableEmbed(
+      {
+        spaceId: 'space-1',
+        nodeId: 'node-1',
+        datasheetId: 'dst-1',
+        viewId: 'viw-1',
+        pageSize: 20,
+        allowInlineEdit: true,
+      },
+      user,
+    );
+
+    expect(response.embed.fields[0].id).toBe('fld-1');
+    expect(response.embed.views[0].id).toBe('viw-1');
+    expect(response.embed.preview.items[0].fields['fld-1']).toBe('Task from nested payload');
+    expect(response.embed.total).toBe(1);
+  });
+
   it('invalidates datasheet cache after record mutations', async () => {
     const { service, redisService } = createService(() => ({
       data: {

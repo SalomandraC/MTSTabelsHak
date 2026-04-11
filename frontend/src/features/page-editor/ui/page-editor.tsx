@@ -1,6 +1,7 @@
 import { EditorContent } from '@tiptap/react';
 
 import { SlashMenu } from '../../slash-menu';
+import { WikiTablePickerModal } from '../../wiki-tables';
 import type { PresenceUser, WikiPage } from '../../../shared/api/wikilive';
 import { usePageEditorController } from '../model/use-page-editor-controller';
 import { FloatingToolbar } from './floating-toolbar';
@@ -9,7 +10,6 @@ import { PageImageModal } from './page-image-modal';
 import { PageLinkModal } from './page-link-modal';
 import { PageEditorToolbar } from './page-editor-toolbar';
 import { PagePickerModal } from './page-picker-modal';
-import { TablePickerModal } from './table-picker-modal';
 
 type PageEditorProps = {
   spaceId: string;
@@ -96,7 +96,7 @@ export function PageEditor({ spaceId, page, onRenamePage, onCheckpoint }: PageEd
           <PageLinkModal {...controller.linkModal} />
           <PageImageModal {...controller.imageModal} />
           <PagePickerModal {...controller.pagePicker} />
-          <TablePickerModal {...controller.tablePicker} />
+          <WikiTablePickerModal {...controller.tablePicker} />
         </div>
       </section>
     </main>

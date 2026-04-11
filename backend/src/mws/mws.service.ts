@@ -181,11 +181,12 @@ export class MwsService {
     return this.withCache(cacheKey, 10, async () => {
       const data = await this.request(user, 'GET', `/datasheets/${datasheetId}/records`, undefined, query);
       const payload = this.unwrapPayload(data);
+      const nestedRecords = this.readNestedValue(payload, ['records']);
       return {
         items: this.readArray(payload, ['records', 'items']),
-        pageNum: Number(payload.pageNum ?? query.pageNum ?? 1),
-        pageSize: Number(payload.pageSize ?? query.pageSize ?? 50),
-        total: Number(payload.total ?? 0),
+        pageNum: Number(payload.pageNum ?? nestedRecords?.pageNum ?? query.pageNum ?? 1),
+        pageSize: Number(payload.pageSize ?? nestedRecords?.pageSize ?? query.pageSize ?? 50),
+        total: Number(payload.total ?? nestedRecords?.total ?? 0),
       };
     });
   }
@@ -523,6 +524,11 @@ export class MwsService {
   }
 
   private readArray(payload: any, keys: string[]) {
+    const direct = this.readNestedValue(payload, keys);
+    if (Array.isArray(direct)) {
+      return direct;
+    }
+
     for (const key of keys) {
       if (Array.isArray(payload?.[key])) {
         return payload[key];
@@ -530,6 +536,20 @@ export class MwsService {
     }
 
     return Array.isArray(payload) ? payload : [];
+  }
+
+  private readNestedValue(payload: any, keys: string[]) {
+    let current = payload;
+
+    for (const key of keys) {
+      if (!current || typeof current !== 'object' || !(key in current)) {
+        return undefined;
+      }
+
+      current = current[key];
+    }
+
+    return current;
   }
 
   private async invalidateNodeCache(spaceId: string) {

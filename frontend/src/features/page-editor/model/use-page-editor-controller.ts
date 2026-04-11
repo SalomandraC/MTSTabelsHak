@@ -11,6 +11,7 @@ import {
   type WikiPage,
   wikiliveApi,
 } from '../../../shared/api/wikilive';
+import { createWikiTableEmbed, createWikiTableEmbedNode, type WikiTableSelection } from '../../wiki-tables';
 import type { SlashMenuItem } from '../../slash-menu';
 import { createPageEditorExtensions, initialContent } from './editor-config';
 import { formatFileSize, readFileAsDataUrl, validateImageFile } from './image-utils';
@@ -673,22 +674,14 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
     setIsPagePickerOpen(false);
   };
 
-  const handleSelectTable = (table: {
-    spaceId: string;
-    nodeId: string;
-    datasheetId: string;
-    title: string;
-    viewId: string | null;
-    selectedFieldIds: string[];
-    pageSize: number;
-    allowInlineEdit: boolean;
-  }) => {
+  const handleSelectTable = (table: WikiTableSelection) => {
     if (!editor) {
       return;
     }
 
-    const attrs = {
+    const embed = createWikiTableEmbed({
       blockId: crypto.randomUUID(),
+      title: table.title,
       spaceId: table.spaceId,
       nodeId: table.nodeId,
       datasheetId: table.datasheetId,
@@ -698,14 +691,15 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
       filterByFormula: null,
       pageSize: table.pageSize,
       allowInlineEdit: table.allowInlineEdit,
-    };
+    });
+    const attrs = embed.toJson();
 
     const inserted = editor.commands.insertMwsTableEmbed(attrs);
 
     if (!inserted) {
       editor.commands.insertContent({
         type: 'rootblock',
-        content: [{ type: 'mwsTableEmbed', attrs }],
+        content: [createWikiTableEmbedNode(attrs)],
       });
     }
 

@@ -35,9 +35,9 @@ import { ReactNodeViewRenderer } from '@tiptap/react';
 import type { HocuspocusProvider } from '@hocuspocus/provider';
 import type * as Y from 'yjs';
 
+import { MwsTableEmbed } from '../../wiki-tables';
 import { CodeBlockComponent } from '../ui/code-block-component.tsx';
 import { ImageBlock } from './image-block';
-import { MwsTableEmbed } from './mws-table-embed';
 import { PageLink } from './page-link';
 import { RootBlock } from './root-block';
 
