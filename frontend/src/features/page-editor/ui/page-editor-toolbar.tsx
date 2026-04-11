@@ -1,8 +1,8 @@
 import type { Editor } from '@tiptap/core';
-import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { useEditorState } from '@tiptap/react';
 import type { MouseEvent } from 'react';
 
+import { handleListAction } from '../model/list-actions';
 import { menuBarStateSelector } from '../model/menu-state';
 
 import VectorLeft from '../../../app/images/VectorLeft.svg';
@@ -222,211 +222,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
 
   const alignSelection = (align: 'left' | 'center' | 'right') => {
     editor.chain().focus().setTextAlign(align).run();
-  };
-
-  const getSelectedRootBlocks = () => {
-    const { state } = editor;
-    const { selection, schema, doc } = state;
-    const rootBlockType = schema.nodes.rootblock;
-
-    if (!rootBlockType || selection.empty) {
-      return [] as Array<{ pos: number; node: ProseMirrorNode }>;
-    }
-
-    const selectedRootBlocks: Array<{ pos: number; node: ProseMirrorNode }> = [];
-
-    doc.nodesBetween(selection.from, selection.to, (node, pos, parent) => {
-      if (node.type === rootBlockType && parent === doc) {
-        selectedRootBlocks.push({ pos, node });
-      }
-    });
-
-    return selectedRootBlocks;
-  };
-
-  const unwrapSelectionFromList = (listTypeName: 'bulletList' | 'orderedList' | 'taskList') => {
-    const { state, view } = editor;
-    const { selection, schema } = state;
-
-    if (selection.empty) {
-      return false;
-    }
-
-    const selectedRootBlocks = getSelectedRootBlocks();
-    if (selectedRootBlocks.length === 0) {
-      return false;
-    }
-
-    const rootBlockType = schema.nodes.rootblock;
-    const paragraphType = schema.nodes.paragraph;
-    const listType = schema.nodes[listTypeName];
-
-    if (!rootBlockType || !paragraphType || !listType) {
-      return false;
-    }
-
-    // Unwrap only when the whole selected region is this exact list type.
-    if (!selectedRootBlocks.every(({ node }) => node.firstChild?.type === listType)) {
-      return false;
-    }
-
-    let hasSelectedItems = false;
-    let tr = state.tr;
-
-    [...selectedRootBlocks]
-      .sort((a, b) => b.pos - a.pos)
-      .forEach(({ pos, node }) => {
-        const listNode = node.firstChild;
-        if (!listNode) {
-          return;
-        }
-
-        const listPos = pos + 1;
-        const selectedIndexes = new Set<number>();
-
-        listNode.forEach((item, offset, index) => {
-          const itemFrom = listPos + 1 + offset;
-          const itemTo = itemFrom + item.nodeSize;
-          const intersectsSelection = itemFrom < selection.to && itemTo > selection.from;
-
-          if (intersectsSelection) {
-            selectedIndexes.add(index);
-          }
-        });
-
-        if (selectedIndexes.size === 0) {
-          return;
-        }
-
-        hasSelectedItems = true;
-        const replacementNodes: ProseMirrorNode[] = [];
-        let pendingListItems: ProseMirrorNode[] = [];
-
-        listNode.forEach((item, _offset, index) => {
-          const isSelected = selectedIndexes.has(index);
-
-          if (!isSelected) {
-            pendingListItems.push(item);
-            return;
-          }
-
-          if (pendingListItems.length > 0) {
-            replacementNodes.push(rootBlockType.create(null, [listType.create(listNode.attrs, pendingListItems)]));
-            pendingListItems = [];
-          }
-
-          const paragraphSource = item.firstChild;
-          const paragraphContent = paragraphSource?.type === paragraphType ? paragraphSource.content : item.textContent ? schema.text(item.textContent) : null;
-          const paragraphNode = paragraphType.create(
-            paragraphSource?.type === paragraphType ? paragraphSource.attrs : null,
-            paragraphContent,
-          );
-
-          replacementNodes.push(rootBlockType.create(null, [paragraphNode]));
-        });
-
-        if (pendingListItems.length > 0) {
-          replacementNodes.push(rootBlockType.create(null, [listType.create(listNode.attrs, pendingListItems)]));
-        }
-
-        if (replacementNodes.length > 0) {
-          tr = tr.replaceWith(pos, pos + node.nodeSize, replacementNodes);
-        }
-      });
-
-    if (!hasSelectedItems) {
-      return false;
-    }
-
-    tr = tr.scrollIntoView();
-    view.dispatch(tr);
-    editor.commands.focus(Math.max(1, selectedRootBlocks[0].pos + 2));
-    return true;
-  };
-
-  const convertSelectionToList = (listTypeName: 'bulletList' | 'orderedList' | 'taskList') => {
-    if (!editor) {
-      return false;
-    }
-
-    const { state, view } = editor;
-    const { selection, schema, doc } = state;
-
-    if (selection.empty) {
-      return false;
-    }
-
-    const rootBlockType = schema.nodes.rootblock;
-    const paragraphType = schema.nodes.paragraph;
-    const listType = schema.nodes[listTypeName];
-    const itemType = listTypeName === 'taskList' ? schema.nodes.taskItem : schema.nodes.listItem;
-
-    if (!rootBlockType || !paragraphType || !listType || !itemType) {
-      return false;
-    }
-
-    const selectedRootBlocks = getSelectedRootBlocks();
-
-    if (selectedRootBlocks.length === 0) {
-      return false;
-    }
-
-    const listItems = selectedRootBlocks
-      .map(({ node }) => {
-        const firstChild = node.firstChild;
-        const text = (firstChild?.textContent ?? '').trim();
-        const paragraphContent = text ? state.schema.text(text) : null;
-        const paragraph = paragraphType.create(
-          firstChild?.type === paragraphType ? firstChild.attrs : null,
-          firstChild?.type === paragraphType ? firstChild.content : paragraphContent,
-        );
-
-        if (listTypeName === 'taskList') {
-          return itemType.create({ checked: false }, [paragraph]);
-        }
-
-        return itemType.create(null, [paragraph]);
-      })
-      .filter(Boolean);
-
-    if (listItems.length === 0) {
-      return false;
-    }
-
-    const from = selectedRootBlocks[0].pos;
-    const last = selectedRootBlocks[selectedRootBlocks.length - 1];
-    const to = last.pos + last.node.nodeSize;
-    const listNode = listType.create(null, listItems);
-    const newRootBlock = rootBlockType.create(null, [listNode]);
-
-    let tr = state.tr.replaceWith(from, to, newRootBlock);
-    tr = tr.scrollIntoView();
-    view.dispatch(tr);
-    editor.commands.focus(from + 2);
-
-    return true;
-  };
-
-  const handleListAction = (listTypeName: 'bulletList' | 'orderedList' | 'taskList') => {
-    if (unwrapSelectionFromList(listTypeName)) {
-      return;
-    }
-
-    if (convertSelectionToList(listTypeName)) {
-      return;
-    }
-
-    if (listTypeName === 'bulletList') {
-      editor.chain().focus().toggleBulletList().run();
-      return;
-    }
-
-    if (listTypeName === 'orderedList') {
-      editor.chain().focus().toggleOrderedList().run();
-      return;
-    }
-
-    editor.chain().focus().toggleTaskList().run();
   };
 
   return (
@@ -651,7 +446,7 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
 
         <ToolbarButton
           icon={<List className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
-          onClick={() => handleListAction('bulletList')}
+          onClick={() => handleListAction(editor, 'bulletList')}
           pressed={state.isBulletList}
           disabled={!state.canBulletList}
           isFirst={true}
@@ -661,7 +456,7 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
         />
         <ToolbarButton
           icon={<ListOrdered className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
-          onClick={() => handleListAction('orderedList')}
+          onClick={() => handleListAction(editor, 'orderedList')}
           pressed={state.isOrderedList}
           disabled={!state.canOrderedList}
           isFirst={false}
