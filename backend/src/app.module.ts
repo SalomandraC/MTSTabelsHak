@@ -12,6 +12,7 @@ import { MwsModule } from './mws/mws.module';
 import { PagesModule } from './pages/pages.module';
 import { SearchModule } from './search/search.module';
 import { WikiTreeModule } from './wiki-tree/wiki-tree.module';
+import { WorkspaceTreeModule } from './workspace/workspace-tree.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { WikiTreeModule } from './wiki-tree/wiki-tree.module';
     LinksModule,
     CollabModule,
     MwsModule,
+    WorkspaceTreeModule,
   ],
   controllers: [AppController],
 })

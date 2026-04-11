@@ -142,10 +142,12 @@ export type MwsNode = {
   id: string;
   name: string;
   type: string;
+  spaceId?: string | null;
   parentId?: string | null;
   path?: string[];
   datasheetId?: string | null;
   dstId?: string | null;
+  openInMwsUrl?: string | null;
   icon?: string | null;
   isFav?: boolean | null;
   permission?: number | null;
@@ -156,6 +158,20 @@ export type MwsNode = {
     canDeleteRecords?: boolean;
   };
   children?: MwsNode[];
+};
+
+export type WorkspaceTreeNode = {
+  id: string;
+  kind: 'mwsFolder' | 'mwsTable' | 'mwsNode' | 'wikiPage';
+  title: string;
+  spaceId: string;
+  parentId: string | null;
+  children: WorkspaceTreeNode[];
+  mwsNode?: MwsNode;
+  wikiPage?: PageSummary;
+  datasheetId?: string | null;
+  linkedPageId?: string | null;
+  openInMwsUrl?: string | null;
 };
 
 export type MwsField = {
@@ -411,6 +427,9 @@ export const wikiliveApi = {
   getWikiTree(spaceId: string) {
     return request<{ items: WikiTreeNode[] }>(`/api/v1/spaces/${spaceId}/wiki/tree`);
   },
+  getWorkspaceTree(spaceId: string) {
+    return request<{ items: WorkspaceTreeNode[] }>(`/api/v1/spaces/${spaceId}/workspace/tree`);
+  },
   createPage(spaceId: string, title: string, parentNodeId?: string | null) {
     return request<{ page: PageSummary }>('/api/v1/pages', {
       method: 'POST',
@@ -566,10 +585,26 @@ export const wikiliveApi = {
       query: { recordIds: recordIds.join(',') },
     });
   },
+  deleteMwsDatasheet(spaceId: string, datasheetId: string) {
+    return request<{ deleted: boolean }>(`/api/v1/mws/spaces/${spaceId}/datasheets/${datasheetId}`, {
+      method: 'DELETE',
+    });
+  },
   resolveTableEmbed(payload: ResolveTableEmbedRequest) {
     return request<ResolveTableEmbedResponse>('/api/v1/mws/table-embeds/resolve', {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  },
+  createMwsTablePage(payload: { spaceId: string; nodeId: string; datasheetId?: string | null; title?: string }) {
+    return request<{ page: PageSummary; node: MwsNode; created: boolean; openInMwsUrl: string | null }>('/api/v1/mws/table-pages', {
+      method: 'POST',
+      body: JSON.stringify({
+        spaceId: payload.spaceId,
+        nodeId: payload.nodeId,
+        datasheetId: payload.datasheetId ?? undefined,
+        title: payload.title,
+      }),
     });
   },
 };

@@ -178,6 +178,28 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/v1/spaces/{spaceId}/workspace/tree:
+    get:
+      tags: [Pages, MWS Nodes]
+      summary: Получить MWS-first дерево пространства
+      description: |
+        Возвращает дерево пространства, где источником иерархии являются MWS Tables nodes.
+        WikiLive-страницы накладываются поверх MWS-дерева как sibling-документы рядом с привязанными таблицами.
+      operationId: getWorkspaceTree
+      parameters:
+        - $ref: '#/components/parameters/SpaceId'
+      responses:
+        '200':
+          description: MWS-first дерево получено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceTreeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
   /api/v1/folders:
     post:
       tags: [Pages]
@@ -603,6 +625,29 @@ paths:
         '502':
           $ref: '#/components/responses/UpstreamError'
 
+  /api/v1/mws/spaces/{spaceId}/datasheets/{datasheetId}:
+    delete:
+      tags: [MWS Datasheets]
+      summary: Удалить таблицу MWS Tables
+      description: |
+        Удаляет datasheet в выбранном пространстве MWS Tables через BFF и сбрасывает кеш MWS-дерева/табличных данных.
+        Используется из MWS-first проводника после явного подтверждения пользователя.
+      operationId: deleteMwsDatasheet
+      parameters:
+        - $ref: '#/components/parameters/SpaceId'
+        - $ref: '#/components/parameters/DatasheetId'
+      responses:
+        '200':
+          description: Таблица удалена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteMwsDatasheetResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
   /api/v1/mws/datasheets/{datasheetId}/fields:
     get:
       tags: [MWS Fields]
@@ -925,6 +970,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ResolveTableEmbedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /api/v1/mws/table-pages:
+    post:
+      tags: [MWS Embeds, Pages]
+      summary: Создать или открыть WikiLive-страницу для MWS таблицы
+      description: |
+        Идемпотентная ручка для MWS-first проводника.
+        Если WikiLive-страница для `spaceId + nodeId` уже есть, backend возвращает ее с `created=false`.
+        Если страницы нет, backend создает документ с live `mwsTableEmbed` и привязкой к MWS node.
+      operationId: createMwsTablePage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMwsTablePageRequest'
+      responses:
+        '201':
+          description: Страница создана или найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateMwsTablePageResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1285,6 +1361,51 @@ components:
           items:
             $ref: '#/components/schemas/WikiTreeNode'
 
+    WorkspaceTreeNode:
+      type: object
+      required: [id, kind, title, spaceId, children]
+      properties:
+        id:
+          type: string
+          description: Для MWS nodes имеет префикс `mws:`, для wiki pages равен page id.
+        kind:
+          type: string
+          enum: [mwsFolder, mwsTable, mwsNode, wikiPage]
+        title:
+          type: string
+        spaceId:
+          type: string
+        parentId:
+          type: string
+          nullable: true
+        datasheetId:
+          type: string
+          nullable: true
+        linkedPageId:
+          type: string
+          format: uuid
+          nullable: true
+        openInMwsUrl:
+          type: string
+          nullable: true
+        mwsNode:
+          $ref: '#/components/schemas/MwsNode'
+        wikiPage:
+          $ref: '#/components/schemas/PageSummary'
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceTreeNode'
+
+    WorkspaceTreeResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceTreeNode'
+
     CreateFolderRequest:
       type: object
       required: [spaceId, title]
@@ -1515,6 +1636,9 @@ components:
           type: string
         type:
           type: string
+        spaceId:
+          type: string
+          nullable: true
         parentId:
           type: string
           nullable: true
@@ -1527,6 +1651,9 @@ components:
           type: string
           nullable: true
         dstId:
+          type: string
+          nullable: true
+        openInMwsUrl:
           type: string
           nullable: true
         icon:
@@ -1807,6 +1934,43 @@ components:
       properties:
         deleted:
           type: boolean
+
+    DeleteMwsDatasheetResponse:
+      type: object
+      required: [deleted]
+      properties:
+        deleted:
+          type: boolean
+
+    CreateMwsTablePageRequest:
+      type: object
+      required: [spaceId, nodeId]
+      properties:
+        spaceId:
+          type: string
+        nodeId:
+          type: string
+        datasheetId:
+          type: string
+          nullable: true
+        title:
+          type: string
+          maxLength: 255
+
+    CreateMwsTablePageResponse:
+      type: object
+      required: [page, node, created]
+      properties:
+        page:
+          $ref: '#/components/schemas/PageSummary'
+        node:
+          $ref: '#/components/schemas/MwsNode'
+        created:
+          type: boolean
+          description: `false`, если страница для этой MWS таблицы уже существовала.
+        openInMwsUrl:
+          type: string
+          nullable: true
 
     ResolveTableEmbedRequest:
       type: object

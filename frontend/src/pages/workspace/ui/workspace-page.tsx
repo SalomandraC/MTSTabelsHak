@@ -1,20 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Archive,
   ChevronDown,
   ChevronRight,
-  FilePlus2,
+  Database,
   FileText,
   Folder,
-  FolderPlus,
-  MoreVertical,
-  PenLine,
   Plus,
   Search,
   Sparkles,
+  Table2,
   Trash2,
-  Upload,
   Users,
+  X,
 } from 'lucide-react';
 
 import { PageEditor } from '../../../features/page-editor';
@@ -24,10 +21,10 @@ import {
   type MwsSpace,
   type OutgoingLink,
   type WikiPage,
-  type WikiTreeNode,
+  type WorkspaceTreeNode,
   wikiliveApi,
 } from '../../../shared/api/wikilive';
-import { DocumentLinkGraph, type DocumentGraphEdge } from './document-link-graph';
+import { DocumentLinkGraph, type DocumentGraphEdge, type DocumentGraphPage } from './document-link-graph';
 
 const SELECTED_SPACE_STORAGE_KEY = 'wikilive:selected-space-id';
 
@@ -75,47 +72,21 @@ function getShareUrl(spaceId: string, pageId: string | null) {
   return url.toString();
 }
 
-function flattenPages(nodes: WikiTreeNode[]): WikiTreeNode[] {
+function flattenWorkspacePages(nodes: WorkspaceTreeNode[]): DocumentGraphPage[] {
   return nodes.flatMap((node) => [
-    ...(node.type === 'page' ? [node] : []),
-    ...flattenPages(node.children ?? []),
+    ...(node.kind === 'wikiPage' && node.linkedPageId ? [{ id: node.linkedPageId, title: node.title }] : []),
+    ...flattenWorkspacePages(node.children ?? []),
   ]);
 }
 
-function flattenFolders(nodes: WikiTreeNode[]): WikiTreeNode[] {
+function collectWorkspaceFolderIds(nodes: WorkspaceTreeNode[]): string[] {
   return nodes.flatMap((node) => [
-    ...(node.type === 'folder' ? [node] : []),
-    ...flattenFolders(node.children ?? []),
+    ...(node.kind === 'mwsFolder' || node.children.length > 0 ? [node.id] : []),
+    ...collectWorkspaceFolderIds(node.children ?? []),
   ]);
 }
 
-function findNode(nodes: WikiTreeNode[], nodeId: string | null): WikiTreeNode | null {
-  if (!nodeId) {
-    return null;
-  }
-
-  for (const node of nodes) {
-    if (node.id === nodeId) {
-      return node;
-    }
-
-    const child = findNode(node.children ?? [], nodeId);
-    if (child) {
-      return child;
-    }
-  }
-
-  return null;
-}
-
-function collectFolderIds(nodes: WikiTreeNode[]): string[] {
-  return nodes.flatMap((node) => [
-    ...(node.type === 'folder' ? [node.id] : []),
-    ...collectFolderIds(node.children ?? []),
-  ]);
-}
-
-function filterTree(nodes: WikiTreeNode[], query: string): WikiTreeNode[] {
+function filterWorkspaceTree(nodes: WorkspaceTreeNode[], query: string): WorkspaceTreeNode[] {
   const normalizedQuery = query.trim().toLowerCase();
 
   if (!normalizedQuery) {
@@ -124,7 +95,7 @@ function filterTree(nodes: WikiTreeNode[], query: string): WikiTreeNode[] {
 
   return nodes
     .map((node) => {
-      const children = filterTree(node.children ?? [], normalizedQuery);
+      const children = filterWorkspaceTree(node.children ?? [], normalizedQuery);
       const isMatched = node.title.toLowerCase().includes(normalizedQuery);
 
       if (!isMatched && children.length === 0) {
@@ -136,7 +107,7 @@ function filterTree(nodes: WikiTreeNode[], query: string): WikiTreeNode[] {
         children,
       };
     })
-    .filter((node): node is WikiTreeNode => Boolean(node));
+    .filter((node): node is WorkspaceTreeNode => Boolean(node));
 }
 
 function WorkspaceLogo() {
@@ -158,89 +129,48 @@ function WorkspaceLogo() {
   );
 }
 
-function FolderOptions({ folders, excludeId }: { folders: WikiTreeNode[]; excludeId?: string }) {
-  const availableFolders = folders.filter((folder) => folder.id !== excludeId);
+function getWorkspaceNodeIcon(node: WorkspaceTreeNode) {
+  if (node.kind === 'mwsFolder') {
+    return <Folder size={18} strokeWidth={1.8} />;
+  }
 
-  return (
-    <>
-      <option value="">Корень</option>
-      {availableFolders.map((folder) => (
-        <option key={folder.id} value={folder.id}>
-          {folder.title}
-        </option>
-      ))}
-    </>
-  );
+  if (node.kind === 'mwsTable') {
+    return <Table2 size={17} strokeWidth={1.9} />;
+  }
+
+  if (node.kind === 'mwsNode') {
+    return <Database size={17} strokeWidth={1.8} />;
+  }
+
+  return <FileText size={17} strokeWidth={1.8} />;
 }
 
-function CatalogActionButton({
-  icon,
-  label,
-  onClick,
-  disabled = false,
-}: {
-  icon: ReactNode;
-  label: string;
-  onClick?: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-semibold text-[#696969] transition-colors hover:bg-[#f2f3f5] disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      {icon}
-      <span>{label}</span>
-    </button>
-  );
-}
-
-function TreeItem({
+function WorkspaceTreeItem({
   node,
   depth,
   activePageId,
-  selectedFolderId,
-  folders,
+  selectedTableNodeId,
   expandedFolderIds,
-  openMenuNodeId,
   onSelectPage,
-  onSelectFolder,
+  onSelectMwsTable,
   onToggleFolder,
-  onOpenMenu,
-  onCreatePageInFolder,
-  onCreateFolderInFolder,
-  onRenamePage,
-  onArchivePage,
-  onRenameFolder,
-  onArchiveFolder,
-  onMoveNode,
+  onDeletePage,
 }: {
-  node: WikiTreeNode;
+  node: WorkspaceTreeNode;
   depth: number;
   activePageId: string | null;
-  selectedFolderId: string | null;
-  folders: WikiTreeNode[];
+  selectedTableNodeId: string | null;
   expandedFolderIds: Set<string>;
-  openMenuNodeId: string | null;
   onSelectPage: (pageId: string) => void;
-  onSelectFolder: (folderId: string) => void;
+  onSelectMwsTable: (node: WorkspaceTreeNode) => void;
   onToggleFolder: (folderId: string) => void;
-  onOpenMenu: (nodeId: string | null) => void;
-  onCreatePageInFolder: (folderId: string) => void;
-  onCreateFolderInFolder: (folderId: string) => void;
-  onRenamePage: (page: WikiTreeNode) => void;
-  onArchivePage: (page: WikiTreeNode) => void;
-  onRenameFolder: (folder: WikiTreeNode) => void;
-  onArchiveFolder: (folder: WikiTreeNode) => void;
-  onMoveNode: (nodeId: string, parentId: string | null) => void;
+  onDeletePage: (pageId: string, title: string) => void;
 }) {
-  const isActivePage = node.id === activePageId;
-  const isSelectedFolder = node.type === 'folder' && node.id === selectedFolderId;
-  const isExpanded = node.type === 'folder' ? expandedFolderIds.has(node.id) : false;
   const hasChildren = node.children.length > 0;
-  const isMenuOpen = openMenuNodeId === node.id;
+  const isExpandable = node.kind === 'mwsFolder' || hasChildren;
+  const isExpanded = isExpandable ? expandedFolderIds.has(node.id) : false;
+  const isActivePage = node.linkedPageId === activePageId;
+  const isSelectedTable = node.kind === 'mwsTable' && node.id === selectedTableNodeId;
   const itemPadding = 8 + depth * 22;
 
   return (
@@ -248,14 +178,14 @@ function TreeItem({
       <div
         className={[
           'group flex h-8 items-center rounded-md pr-1 text-sm transition-colors',
-          node.type === 'page' ? 'text-[#303030] hover:bg-[#f2f3f5]' : 'text-[#4d4d4d] hover:bg-[#f2f3f5]',
-          isActivePage || isSelectedFolder ? 'bg-[#eef3ff] font-semibold text-[#2d5bd1]' : '',
+          node.kind === 'wikiPage' ? 'text-[#303030] hover:bg-[#f2f3f5]' : 'text-[#4d4d4d] hover:bg-[#f2f3f5]',
+          isActivePage ? 'bg-[#fff1f3] font-semibold text-[#d70032]' : '',
+          isSelectedTable ? 'bg-[#f2f3f5] font-semibold text-[#1f1f1f]' : '',
         ].join(' ')}
         style={{ paddingLeft: itemPadding }}
-        draggable
-        data-test-id="treeNodeItem"
+        data-test-id="workspaceTreeNodeItem"
       >
-        {node.type === 'folder' ? (
+        {isExpandable ? (
           <button
             type="button"
             aria-label={isExpanded ? `Свернуть ${node.title}` : `Раскрыть ${node.title}`}
@@ -274,171 +204,65 @@ function TreeItem({
         <button
           type="button"
           onClick={() => {
-            if (node.type === 'page') {
-              onSelectPage(node.id);
+            if (node.kind === 'wikiPage' && node.linkedPageId) {
+              onSelectPage(node.linkedPageId);
               return;
             }
 
-            onSelectFolder(node.id);
-            if (!isExpanded) {
+            if (node.kind === 'mwsTable') {
+              onSelectMwsTable(node);
+              return;
+            }
+
+            if (isExpandable) {
               onToggleFolder(node.id);
             }
           }}
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
-          <span className={node.type === 'folder' ? 'text-[#df9b50]' : 'text-[#7a7f88]'}>
-            {node.type === 'folder' ? <Folder size={18} strokeWidth={1.8} /> : <FileText size={17} strokeWidth={1.8} />}
+          <span
+            className={[
+              node.kind === 'mwsFolder' ? 'text-[#df9b50]' : '',
+              node.kind === 'mwsTable' ? 'text-[#d70032]' : '',
+              node.kind === 'mwsNode' ? 'text-[#8d8d8d]' : '',
+              node.kind === 'wikiPage' ? 'text-[#7a7f88]' : '',
+            ].join(' ')}
+          >
+            {getWorkspaceNodeIcon(node)}
           </span>
           <span className="truncate">{node.title}</span>
         </button>
 
-        {node.type === 'folder' ? (
-          <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onCreatePageInFolder(node.id);
-              }}
-              className="flex h-6 w-6 items-center justify-center rounded text-[#8d8d8d] hover:bg-white hover:text-[#2d5bd1]"
-              title="Создать страницу внутри"
-            >
-              <Plus size={15} strokeWidth={2.4} />
-            </button>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onOpenMenu(isMenuOpen ? null : node.id);
-              }}
-              className="flex h-6 w-6 items-center justify-center rounded text-[#b6b6b6] hover:bg-white hover:text-[#696969]"
-              title="Действия"
-            >
-              <MoreVertical size={15} strokeWidth={2.4} />
-            </button>
-          </div>
-        ) : (
+        {node.kind === 'wikiPage' && node.linkedPageId ? (
           <button
             type="button"
             onClick={(event) => {
               event.stopPropagation();
-              onOpenMenu(isMenuOpen ? null : node.id);
+              onDeletePage(node.linkedPageId!, node.title);
             }}
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[#b6b6b6] opacity-0 transition-opacity hover:bg-white hover:text-[#696969] group-hover:opacity-100"
-            title="Действия"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[#b6b6b6] opacity-0 transition-opacity hover:bg-[#fff1f3] hover:text-[#d70032] group-hover:opacity-100"
+            title="Удалить страницу"
+            aria-label={`Удалить страницу ${node.title}`}
           >
-            <MoreVertical size={15} strokeWidth={2.4} />
+            <Trash2 size={14} strokeWidth={2.2} />
           </button>
-        )}
+        ) : null}
       </div>
 
-      {isMenuOpen ? (
-        <div className="absolute right-2 z-20 mt-1 w-56 rounded-md border border-[#e4e5e8] bg-white p-1 text-xs text-[#333] shadow-lg">
-          {node.type === 'folder' ? (
-            <>
-              <button
-                type="button"
-                onClick={() => {
-                  onCreatePageInFolder(node.id);
-                  onOpenMenu(null);
-                }}
-                className="flex h-8 w-full items-center gap-2 rounded px-2 text-left hover:bg-[#f2f3f5]"
-              >
-                <FilePlus2 size={14} /> Страница внутри
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onCreateFolderInFolder(node.id);
-                  onOpenMenu(null);
-                }}
-                className="flex h-8 w-full items-center gap-2 rounded px-2 text-left hover:bg-[#f2f3f5]"
-              >
-                <FolderPlus size={14} /> Подпапка
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onRenameFolder(node);
-                  onOpenMenu(null);
-                }}
-                className="flex h-8 w-full items-center gap-2 rounded px-2 text-left hover:bg-[#f2f3f5]"
-              >
-                <PenLine size={14} /> Переименовать
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onArchiveFolder(node);
-                  onOpenMenu(null);
-                }}
-                className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-[#b00025] hover:bg-[#fff1f3]"
-              >
-                <Archive size={14} /> Архивировать
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={() => {
-                  onRenamePage(node);
-                  onOpenMenu(null);
-                }}
-                className="flex h-8 w-full items-center gap-2 rounded px-2 text-left hover:bg-[#f2f3f5]"
-              >
-                <PenLine size={14} /> Переименовать
-              </button>
-              <label className="mt-1 block px-2 pb-1 text-[11px] font-semibold text-[#8c8c8c]">Переместить в</label>
-              <select
-                aria-label={`Переместить страницу ${node.title}`}
-                value={node.parentId ?? ''}
-                onChange={(event) => {
-                  onMoveNode(node.id, event.target.value || null);
-                  onOpenMenu(null);
-                }}
-                className="mb-1 h-8 w-full rounded border border-[#d7d9dd] bg-white px-2 text-xs outline-none focus:border-[#5586ff]"
-              >
-                <FolderOptions folders={folders} excludeId={node.id} />
-              </select>
-              <button
-                type="button"
-                onClick={() => {
-                  onArchivePage(node);
-                  onOpenMenu(null);
-                }}
-                className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-[#b00025] hover:bg-[#fff1f3]"
-              >
-                <Archive size={14} /> Архивировать
-              </button>
-            </>
-          )}
-        </div>
-      ) : null}
-
-      {node.type === 'folder' && isExpanded && hasChildren ? (
+      {isExpandable && isExpanded && hasChildren ? (
         <ul className="group" role="group" aria-labelledby="tree_label">
           {node.children.map((child) => (
-            <TreeItem
+            <WorkspaceTreeItem
               key={child.id}
               node={child}
               depth={depth + 1}
               activePageId={activePageId}
-              selectedFolderId={selectedFolderId}
-              folders={folders}
+              selectedTableNodeId={selectedTableNodeId}
               expandedFolderIds={expandedFolderIds}
-              openMenuNodeId={openMenuNodeId}
               onSelectPage={onSelectPage}
-              onSelectFolder={onSelectFolder}
+              onSelectMwsTable={onSelectMwsTable}
               onToggleFolder={onToggleFolder}
-              onOpenMenu={onOpenMenu}
-              onCreatePageInFolder={onCreatePageInFolder}
-              onCreateFolderInFolder={onCreateFolderInFolder}
-              onRenamePage={onRenamePage}
-              onArchivePage={onArchivePage}
-              onRenameFolder={onRenameFolder}
-              onArchiveFolder={onArchiveFolder}
-              onMoveNode={onMoveNode}
+              onDeletePage={onDeletePage}
             />
           ))}
         </ul>
@@ -447,38 +271,118 @@ function TreeItem({
   );
 }
 
+function MwsTableActionModal({
+  node,
+  isCreating,
+  isDeleting,
+  onCreatePage,
+  onOpenMws,
+  onDelete,
+  onClose,
+}: {
+  node: WorkspaceTreeNode | null;
+  isCreating: boolean;
+  isDeleting: boolean;
+  onCreatePage: () => void;
+  onOpenMws: () => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  if (!node) {
+    return null;
+  }
+
+  const isBusy = isCreating || isDeleting;
+
+  return (
+    <div className="fixed inset-0 z-[80] bg-black/30" onMouseDown={onClose}>
+      <section
+        className="fixed left-1/2 top-1/2 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-editor-border-subtle bg-white shadow-[0_24px_70px_rgba(17,25,40,0.24)]"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Действия с MWS таблицей"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-editor-border-subtle p-5">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#d70032]">MWS Tables</p>
+            <h3 className="mt-2 truncate font-wide text-xl font-semibold text-[#1f1f1f]">{node.title}</h3>
+            <p className="mt-2 text-sm text-editor-text-tertiary">
+              Таблица остается живой сущностью MWS. WikiLive может создать рядом страницу с embedded live-таблицей.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#8d8d8d] hover:bg-[#f2f3f5] hover:text-[#1f1f1f]"
+            aria-label="Закрыть"
+          >
+            <X size={17} strokeWidth={2.2} />
+          </button>
+        </div>
+        <div className="grid gap-3 p-5">
+          <button
+            type="button"
+            onClick={onCreatePage}
+            disabled={isBusy}
+            className="rounded-xl bg-[#d70032] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#b8002b] disabled:cursor-wait disabled:opacity-60"
+          >
+            {isCreating ? 'Создаем страницу...' : 'Создать страницу с таблицей'}
+          </button>
+          <button
+            type="button"
+            onClick={onOpenMws}
+            className="rounded-xl border border-[#1f1f1f] bg-white px-4 py-3 text-sm font-semibold text-[#1f1f1f] transition-colors hover:bg-[#f2f3f5]"
+          >
+            Перейти на таблицу в tables.mws.ru
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={isBusy}
+            className="rounded-xl border border-[#ffd2d9] bg-[#fff7f8] px-4 py-3 text-sm font-semibold text-[#b00025] transition-colors hover:border-[#d70032] hover:bg-[#fff1f3] disabled:cursor-wait disabled:opacity-60"
+          >
+            {isDeleting ? 'Удаляем таблицу...' : 'Удалить таблицу'}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function WorkspacePage() {
   const initialRoute = useMemo(() => readWorkspaceRoute(), []);
   const pendingRoutePageIdRef = useRef(initialRoute.pageId);
   const [spaces, setSpaces] = useState<MwsSpace[]>([]);
   const [selectedSpaceId, setSelectedSpaceId] = useState(initialRoute.spaceId ?? DEFAULT_WIKILIVE_SPACE_ID);
-  const [tree, setTree] = useState<WikiTreeNode[]>([]);
+  const [tree, setTree] = useState<WorkspaceTreeNode[]>([]);
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
-  const [openMenuNodeId, setOpenMenuNodeId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [workbenchTab, setWorkbenchTab] = useState<'catalog' | 'favorite'>('catalog');
   const [activePageId, setActivePageId] = useState<string | null>(null);
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [selectedTableNode, setSelectedTableNode] = useState<WorkspaceTreeNode | null>(null);
   const [activePage, setActivePage] = useState<WikiPage | null>(null);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [outgoingLinks, setOutgoingLinks] = useState<OutgoingLink[]>([]);
   const [graphEdges, setGraphEdges] = useState<DocumentGraphEdge[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isCreatingTablePage, setIsCreatingTablePage] = useState(false);
+  const [isDeletingTable, setIsDeletingTable] = useState(false);
+  const [isDeletingPage, setIsDeletingPage] = useState(false);
   const [statusMessage, setStatusMessage] = useState('Загружаем wiki workspace');
   const [errorMessage, setErrorMessage] = useState('');
   const [shareStatus, setShareStatus] = useState('');
 
-  const folders = useMemo(() => flattenFolders(tree), [tree]);
-  const visibleTree = useMemo(() => filterTree(tree, searchQuery), [searchQuery, tree]);
+  const visibleTree = useMemo(() => filterWorkspaceTree(tree, searchQuery), [searchQuery, tree]);
   const hasSearch = searchQuery.trim().length > 0;
   const effectiveExpandedFolderIds = useMemo(
-    () => (hasSearch ? new Set(collectFolderIds(visibleTree)) : expandedFolderIds),
+    () => (hasSearch ? new Set(collectWorkspaceFolderIds(visibleTree)) : expandedFolderIds),
     [expandedFolderIds, hasSearch, visibleTree],
   );
 
-  const refreshGraphLinks = useCallback(async (nodes: WikiTreeNode[]) => {
-    const pages = flattenPages(nodes);
+  const refreshGraphLinks = useCallback(async (nodes: WorkspaceTreeNode[]) => {
+    const pages = flattenWorkspacePages(nodes);
     const responses = await Promise.all(
       pages.map(async (page) => {
         const response = await wikiliveApi.getOutgoingLinks(page.id);
@@ -496,32 +400,27 @@ export function WorkspacePage() {
 
   const refreshTree = useCallback(
     async (spaceId: string, preferredPageId?: string | null) => {
-      const response = await wikiliveApi.getWikiTree(spaceId);
-      let nextTree = response.items;
-      let pages = flattenPages(nextTree);
+      const response = await wikiliveApi.getWorkspaceTree(spaceId);
+      const nextTree = response.items;
+      const pages = flattenWorkspacePages(nextTree);
       let nextActivePageId: string | null = null;
 
-      if (pages.length === 0) {
-        const created = await wikiliveApi.createPage(spaceId, 'Новая страница');
-        const refreshed = await wikiliveApi.getWikiTree(spaceId);
-        nextTree = refreshed.items;
-        pages = flattenPages(nextTree);
-        nextActivePageId = created.page.id;
-      } else if (preferredPageId && pages.some((page) => page.id === preferredPageId)) {
+      if (preferredPageId && pages.some((page) => page.id === preferredPageId)) {
         nextActivePageId = preferredPageId;
-      } else {
-        nextActivePageId = pages[0].id;
+      } else if (!nextActivePageId || !pages.some((page) => page.id === nextActivePageId)) {
+        nextActivePageId = pages[0]?.id ?? null;
       }
 
       setTree(nextTree);
       setActivePageId(nextActivePageId);
-      setSelectedFolderId((current) => (findNode(nextTree, current)?.type === 'folder' ? current : null));
       setExpandedFolderIds((current) => {
         const nextIds = new Set(current);
-        collectFolderIds(nextTree).forEach((folderId) => nextIds.add(folderId));
+        collectWorkspaceFolderIds(nextTree).forEach((folderId) => nextIds.add(folderId));
         return nextIds;
       });
       await refreshGraphLinks(nextTree).catch(() => setGraphEdges([]));
+
+      return nextActivePageId;
     },
     [refreshGraphLinks],
   );
@@ -589,10 +488,9 @@ export function WorkspacePage() {
     localStorage.setItem(SELECTED_SPACE_STORAGE_KEY, selectedSpaceId);
     setActivePage(null);
     setActivePageId(null);
-    setSelectedFolderId(null);
+    setSelectedTableNode(null);
     setBacklinks([]);
     setOutgoingLinks([]);
-    setOpenMenuNodeId(null);
     setSearchQuery('');
 
     void (async () => {
@@ -631,8 +529,7 @@ export function WorkspacePage() {
       }
 
       if (route.pageId) {
-        setSelectedFolderId(null);
-        setOpenMenuNodeId(null);
+        setSelectedTableNode(null);
         setActivePageId(route.pageId);
       }
     };
@@ -688,8 +585,7 @@ export function WorkspacePage() {
   }, [activePageId]);
 
   const handleSelectPage = (pageId: string) => {
-    setSelectedFolderId(null);
-    setOpenMenuNodeId(null);
+    setSelectedTableNode(null);
     setActivePageId(pageId);
     writeWorkspaceRoute(selectedSpaceId, pageId, 'push');
   };
@@ -727,17 +623,19 @@ export function WorkspacePage() {
     });
   };
 
-  const handleCreatePage = async (parentNodeId: string | null = selectedFolderId) => {
+  const handleSelectMwsTable = (node: WorkspaceTreeNode) => {
+    setSelectedTableNode(node);
+  };
+
+  const handleCreatePage = async () => {
     const title = `Страница ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
     setStatusMessage('Создаем страницу');
 
     try {
-      const created = await wikiliveApi.createPage(selectedSpaceId, title, parentNodeId);
+      const created = await wikiliveApi.createPage(selectedSpaceId, title);
       await refreshTree(selectedSpaceId, created.page.id);
-      setSelectedFolderId(parentNodeId);
-      if (parentNodeId) {
-        setExpandedFolderIds((current) => new Set(current).add(parentNodeId));
-      }
+      setActivePageId(created.page.id);
+      writeWorkspaceRoute(selectedSpaceId, created.page.id, 'push');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Не удалось создать страницу');
     } finally {
@@ -745,95 +643,98 @@ export function WorkspacePage() {
     }
   };
 
-  const handleCreateFolder = async (parentNodeId: string | null = selectedFolderId) => {
-    const title = window.prompt('Название папки', 'Новая папка')?.trim();
-    if (!title) {
+  const handleCreateTablePage = async () => {
+    if (!selectedTableNode?.mwsNode) {
       return;
     }
 
-    setStatusMessage('Создаем папку');
+    setIsCreatingTablePage(true);
+    setStatusMessage('Создаем страницу с MWS таблицей');
 
     try {
-      const created = await wikiliveApi.createFolder({
+      const response = await wikiliveApi.createMwsTablePage({
         spaceId: selectedSpaceId,
-        parentNodeId,
-        title,
+        nodeId: selectedTableNode.mwsNode.id,
+        datasheetId: selectedTableNode.datasheetId ?? selectedTableNode.mwsNode.datasheetId ?? selectedTableNode.mwsNode.dstId,
       });
-      await refreshTree(selectedSpaceId, activePageId);
-      setSelectedFolderId(created.folder.id);
-      if (parentNodeId) {
-        setExpandedFolderIds((current) => new Set(current).add(parentNodeId));
-      }
+      setSelectedTableNode(null);
+      await refreshTree(selectedSpaceId, response.page.id);
+      setActivePageId(response.page.id);
+      writeWorkspaceRoute(selectedSpaceId, response.page.id, 'push');
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Не удалось создать папку');
+      setErrorMessage(error instanceof Error ? error.message : 'Не удалось создать страницу с MWS таблицей');
     } finally {
+      setIsCreatingTablePage(false);
       setStatusMessage('');
     }
   };
 
-  const handleRenameFolder = async (folder: WikiTreeNode) => {
-    const title = window.prompt('Новое название папки', folder.title)?.trim();
-    if (!title || title === folder.title) {
+  const handleOpenSelectedMwsTable = () => {
+    const url = selectedTableNode?.openInMwsUrl ?? selectedTableNode?.mwsNode?.openInMwsUrl;
+    if (!url) {
+      setErrorMessage('Для этой таблицы не удалось построить ссылку на tables.mws.ru');
       return;
     }
 
+    window.open(url, '_blank', 'noopener,noreferrer');
+    setSelectedTableNode(null);
+  };
+
+  const handleDeleteSelectedMwsTable = async () => {
+    if (!selectedTableNode?.mwsNode) {
+      return;
+    }
+
+    const datasheetId = selectedTableNode.datasheetId
+      ?? selectedTableNode.mwsNode.datasheetId
+      ?? selectedTableNode.mwsNode.dstId
+      ?? selectedTableNode.mwsNode.id;
+    const confirmed = window.confirm(`Удалить таблицу "${selectedTableNode.title}" из MWS Tables? Это действие нельзя отменить в WikiLive.`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeletingTable(true);
+    setStatusMessage('Удаляем MWS таблицу');
+
     try {
-      await wikiliveApi.updateFolder(folder.id, { title });
+      await wikiliveApi.deleteMwsDatasheet(selectedSpaceId, datasheetId);
+      setSelectedTableNode(null);
       await refreshTree(selectedSpaceId, activePageId);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Не удалось переименовать папку');
+      setErrorMessage(error instanceof Error ? error.message : 'Не удалось удалить MWS таблицу');
+    } finally {
+      setIsDeletingTable(false);
+      setStatusMessage('');
     }
   };
 
-  const handleRenamePageNode = async (page: WikiTreeNode) => {
-    const title = window.prompt('Новое название страницы', page.title)?.trim();
-    if (!title || title === page.title) {
+  const handleDeletePage = async (pageId: string, title: string) => {
+    const confirmed = window.confirm(`Удалить страницу "${title}"? Таблицы MWS при этом не удаляются.`);
+
+    if (!confirmed) {
       return;
     }
 
+    setIsDeletingPage(true);
+    setStatusMessage('Удаляем страницу');
+
     try {
-      const response = await wikiliveApi.updatePage(page.id, { title });
-      if (activePageId === page.id) {
-        setActivePage(response.page);
+      await wikiliveApi.deletePage(pageId);
+      const nextActivePageId = await refreshTree(selectedSpaceId, activePageId === pageId ? null : activePageId);
+
+      if (activePageId === pageId) {
+        setActivePage(null);
+        setBacklinks([]);
+        setOutgoingLinks([]);
+        writeWorkspaceRoute(selectedSpaceId, nextActivePageId, 'push');
       }
-      await refreshTree(selectedSpaceId, activePageId);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Не удалось переименовать страницу');
-    }
-  };
-
-  const handleArchivePage = async (page: WikiTreeNode) => {
-    if (!window.confirm(`Архивировать страницу "${page.title}"?`)) {
-      return;
-    }
-
-    try {
-      await wikiliveApi.deletePage(page.id);
-      await refreshTree(selectedSpaceId, activePageId === page.id ? null : activePageId);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Не удалось архивировать страницу');
-    }
-  };
-
-  const handleArchiveFolder = async (folder: WikiTreeNode) => {
-    if (!window.confirm(`Архивировать папку "${folder.title}" и все вложенные страницы?`)) {
-      return;
-    }
-
-    try {
-      await wikiliveApi.deleteFolder(folder.id);
-      await refreshTree(selectedSpaceId, activePageId);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Не удалось архивировать папку');
-    }
-  };
-
-  const handleMoveNode = async (nodeId: string, parentId: string | null) => {
-    try {
-      await wikiliveApi.moveNode(nodeId, { targetParentId: parentId });
-      await refreshTree(selectedSpaceId, activePageId);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Не удалось переместить ноду');
+      setErrorMessage(error instanceof Error ? error.message : 'Не удалось удалить страницу');
+    } finally {
+      setIsDeletingPage(false);
+      setStatusMessage('');
     }
   };
 
@@ -898,7 +799,7 @@ export function WorkspacePage() {
               autoFocus
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Найти страницу или папку"
+              placeholder="Найти MWS таблицу, папку или wiki-страницу"
               className="h-9 w-full rounded-md border border-[#dfe2e7] bg-[#fafafa] px-3 text-sm outline-none focus:border-[#5586ff]"
             />
           </div>
@@ -929,15 +830,16 @@ export function WorkspacePage() {
           </div>
         </div>
 
-        <div className="mt-3 flex items-center gap-1 px-3">
-          <CatalogActionButton icon={<Plus size={15} strokeWidth={2.4} />} label="Добавить" onClick={() => void handleCreatePage()} />
-          <CatalogActionButton icon={<Upload size={15} strokeWidth={2.1} />} label="Импорт" disabled />
-          <CatalogActionButton icon={<FolderPlus size={15} strokeWidth={2.1} />} label="Папка" onClick={() => void handleCreateFolder()} />
+        <div className="mt-3 px-3">
+          <button
+            type="button"
+            onClick={() => void handleCreatePage()}
+            className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-[#d70032] px-3 text-sm font-semibold text-white transition-colors hover:bg-[#b8002b]"
+          >
+            <Plus size={16} strokeWidth={2.4} />
+            Создать страницу
+          </button>
         </div>
-
-        {selectedFolderId ? (
-          <p className="mx-4 mt-2 rounded-md bg-[#f6f8fb] px-2 py-1 text-xs text-[#7c8490]">Новые элементы попадут в выбранную папку.</p>
-        ) : null}
 
         <div className="mt-2 min-h-0 flex-1 overflow-y-auto px-2 pb-2" id="WORKBENCH_SIDE_NODE_WRAPPER">
           {workbenchTab === 'favorite' ? (
@@ -945,35 +847,23 @@ export function WorkspacePage() {
           ) : (
             <>
               {isLoading ? <p className="px-2 py-2 text-sm text-[#969fa8]">Загрузка дерева...</p> : null}
-              {!isLoading && tree.length === 0 ? <p className="px-2 py-2 text-sm text-[#969fa8]">Пока нет страниц</p> : null}
+              {!isLoading && tree.length === 0 ? <p className="px-2 py-2 text-sm text-[#969fa8]">MWS-дерево пустое</p> : null}
               {!isLoading && hasSearch && visibleTree.length === 0 ? (
                 <p className="px-2 py-2 text-sm text-[#969fa8]">Ничего не найдено</p>
               ) : null}
               <ul role="tree" aria-label="Проводник" className="treeViewRoot space-y-0.5" tabIndex={0}>
                 {visibleTree.map((node) => (
-                  <TreeItem
+                  <WorkspaceTreeItem
                     key={node.id}
                     node={node}
                     depth={0}
                     activePageId={activePageId}
-                    selectedFolderId={selectedFolderId}
-                    folders={folders}
+                    selectedTableNodeId={selectedTableNode?.id ?? null}
                     expandedFolderIds={effectiveExpandedFolderIds}
-                    openMenuNodeId={openMenuNodeId}
                     onSelectPage={handleSelectPage}
-                    onSelectFolder={(folderId) => {
-                      setSelectedFolderId(folderId);
-                      setOpenMenuNodeId(null);
-                    }}
+                    onSelectMwsTable={handleSelectMwsTable}
                     onToggleFolder={handleToggleFolder}
-                    onOpenMenu={setOpenMenuNodeId}
-                    onCreatePageInFolder={(folderId) => void handleCreatePage(folderId)}
-                    onCreateFolderInFolder={(folderId) => void handleCreateFolder(folderId)}
-                    onRenamePage={(page) => void handleRenamePageNode(page)}
-                    onArchivePage={(page) => void handleArchivePage(page)}
-                    onRenameFolder={(folder) => void handleRenameFolder(folder)}
-                    onArchiveFolder={(folder) => void handleArchiveFolder(folder)}
-                    onMoveNode={(nodeId, parentId) => void handleMoveNode(nodeId, parentId)}
+                    onDeletePage={(pageId, title) => void handleDeletePage(pageId, title)}
                   />
                 ))}
               </ul>
@@ -1011,16 +901,27 @@ export function WorkspacePage() {
           <button
             type="button"
             onClick={() => void handleCopyShareLink()}
-            className="mt-3 w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm font-semibold text-editor-text-secondary transition-colors hover:bg-editor-bg-control"
+            disabled={!activePageId}
+            className="mt-3 w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm font-semibold text-editor-text-secondary transition-colors hover:bg-editor-bg-control disabled:cursor-not-allowed disabled:opacity-50"
           >
             {shareStatus || 'Скопировать ссылку'}
           </button>
+          {activePageId ? (
+            <button
+              type="button"
+              onClick={() => void handleDeletePage(activePageId, activePage?.title ?? 'Без названия')}
+              disabled={isDeletingPage}
+              className="mt-2 w-full rounded-lg border border-[#ffd2d9] bg-[#fff7f8] px-3 py-2 text-sm font-semibold text-[#b00025] transition-colors hover:border-[#d70032] hover:bg-[#fff1f3] disabled:cursor-wait disabled:opacity-60"
+            >
+              {isDeletingPage ? 'Удаляем страницу...' : 'Удалить страницу'}
+            </button>
+          ) : null}
         </div>
         <div className="space-y-5 overflow-y-auto p-4">
           <section>
             <h3 className="text-sm font-semibold">Граф страниц</h3>
             <div className="mt-2">
-              <DocumentLinkGraph pages={flattenPages(tree)} activePageId={activePageId} edges={graphEdges} onSelectPage={handleSelectPage} />
+              <DocumentLinkGraph pages={flattenWorkspacePages(tree)} activePageId={activePageId} edges={graphEdges} onSelectPage={handleSelectPage} />
             </div>
           </section>
 
@@ -1061,6 +962,15 @@ export function WorkspacePage() {
           </section>
         </div>
       </aside>
+      <MwsTableActionModal
+        node={selectedTableNode}
+        isCreating={isCreatingTablePage}
+        isDeleting={isDeletingTable}
+        onCreatePage={() => void handleCreateTablePage()}
+        onOpenMws={handleOpenSelectedMwsTable}
+        onDelete={() => void handleDeleteSelectedMwsTable()}
+        onClose={() => setSelectedTableNode(null)}
+      />
     </main>
   );
 }

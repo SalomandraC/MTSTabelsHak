@@ -24,10 +24,12 @@ export type NormalizedMwsNode = {
   id: string;
   name: string;
   type: string;
+  spaceId: string | null;
   parentId: string | null;
   path: string[];
   datasheetId: string | null;
   dstId: string | null;
+  openInMwsUrl: string | null;
   icon?: string | null;
   isFav?: boolean | null;
   permission?: number | null;
@@ -43,6 +45,7 @@ export type NormalizedMwsNode = {
 @Injectable()
 export class MwsService {
   private readonly baseUrl: string;
+  private readonly nodeUrlTemplate: string;
 
   constructor(
     private readonly httpService: HttpService,
@@ -52,6 +55,10 @@ export class MwsService {
     this.baseUrl = this.configService.get<string>(
       'MWS_TABLES_BASE_URL',
       'https://tables.mws.ru/fusion/v1',
+    );
+    this.nodeUrlTemplate = this.configService.get<string>(
+      'MWS_TABLES_NODE_URL_TEMPLATE',
+      'https://tables.mws.ru/workbench/{spaceId}/{nodeId}',
     );
   }
 
@@ -78,10 +85,18 @@ export class MwsService {
         'GET',
         `/spaces/${spaceId}/nodes`,
         undefined,
-        includeChildren ? undefined : { type },
+        {
+          includeChildren,
+          type,
+        },
       );
       const payload = this.unwrapPayload(data);
-      const nodes = this.normalizeNodes(this.readArray(payload, ['nodes', 'items']));
+      const normalizedNodes = this.ensureNodeTree(
+        this.normalizeNodes(this.readArray(payload, ['nodes', 'items']), null, [], spaceId),
+      );
+      const nodes = includeChildren
+        ? await this.hydrateFolderChildren(normalizedNodes, spaceId, user)
+        : normalizedNodes;
       const filteredNodes = type && includeChildren ? this.filterNodeTreeByType(nodes, type) : nodes;
 
       return {
@@ -197,6 +212,18 @@ export class MwsService {
     };
   }
 
+  async deleteDatasheet(spaceId: string, datasheetId: string, user: UserContext) {
+    const data = await this.request(user, 'DELETE', `/spaces/${spaceId}/datasheet/${datasheetId}`);
+    await Promise.all([
+      this.invalidateNodeCache(spaceId),
+      this.invalidateDatasheetCache(datasheetId),
+    ]);
+
+    return {
+      deleted: Boolean(this.unwrapPayload(data) ?? true),
+    };
+  }
+
   async resolveTableEmbed(dto: ResolveTableEmbedDto, user: UserContext) {
     const cacheKey = `mws:embed:${Buffer.from(JSON.stringify(dto)).toString('base64')}`;
     return this.withCache(cacheKey, 10, async () => {
@@ -236,7 +263,7 @@ export class MwsService {
             canDeleteRecords: true,
             canUploadAttachments: true,
           },
-          openInMwsUrl: null,
+          openInMwsUrl: node.item.openInMwsUrl,
         },
       };
     });
@@ -305,28 +332,91 @@ export class MwsService {
       .filter((node): node is NormalizedMwsNode => Boolean(node));
   }
 
-  private normalizeNodes(nodes: any[], parentId: string | null = null, parentPath: string[] = []) {
+  private async hydrateFolderChildren(
+    nodes: NormalizedMwsNode[],
+    spaceId: string,
+    user: UserContext,
+    visited = new Set<string>(),
+  ): Promise<NormalizedMwsNode[]> {
+    return Promise.all(
+      nodes.map(async (node) => {
+        if (visited.has(node.id)) {
+          return node;
+        }
+
+        visited.add(node.id);
+
+        const explicitChildren = node.children.length > 0
+          ? node.children
+          : this.isFolderNode(node)
+            ? await this.fetchNodeChildren(node, spaceId, user)
+            : [];
+
+        return {
+          ...node,
+          children: await this.hydrateFolderChildren(explicitChildren, spaceId, user, visited),
+        };
+      }),
+    );
+  }
+
+  private async fetchNodeChildren(
+    node: NormalizedMwsNode,
+    spaceId: string,
+    user: UserContext,
+  ): Promise<NormalizedMwsNode[]> {
+    const data = await this.request(user, 'GET', `/nodes/${node.id}`);
+    const payload = this.unwrapPayload(data);
+    const detail = payload.item ?? payload.node ?? payload;
+
+    return this.normalizeNodes(
+      this.readNodeChildren(detail),
+      node.id,
+      node.path,
+      node.spaceId ?? spaceId,
+    );
+  }
+
+  private isFolderNode(node: NormalizedMwsNode) {
+    return node.type.toLowerCase().includes('folder');
+  }
+
+  private normalizeNodes(
+    nodes: any[],
+    parentId: string | null = null,
+    parentPath: string[] = [],
+    spaceId?: string | null,
+  ) {
     return nodes
-      .map((node) => this.normalizeNode(node, parentId, parentPath))
+      .map((node) => this.normalizeNode(node, parentId, parentPath, spaceId))
       .filter((node): node is NormalizedMwsNode => Boolean(node.id));
   }
 
-  private normalizeNode(node: any, parentId: string | null, parentPath: string[]): NormalizedMwsNode {
+  private normalizeNode(
+    node: any,
+    parentId: string | null,
+    parentPath: string[],
+    spaceId?: string | null,
+  ): NormalizedMwsNode {
     const id = String(node?.id ?? node?.nodeId ?? node?.uuid ?? '');
     const name = String(node?.name ?? node?.title ?? node?.label ?? id);
     const type = String(node?.type ?? node?.nodeType ?? node?.kind ?? 'unknown');
+    const nodeSpaceId = node?.spaceId ?? node?.space?.id ?? spaceId ?? null;
+    const normalizedSpaceId = nodeSpaceId ? String(nodeSpaceId) : null;
     const path = [...parentPath, name].filter(Boolean);
     const datasheetId = node?.datasheetId ?? node?.dstId ?? node?.datasheet?.id ?? null;
-    const children = Array.isArray(node?.children) ? node.children : [];
+    const children = this.readNodeChildren(node);
 
     return {
       id,
       name,
       type,
+      spaceId: normalizedSpaceId,
       parentId: node?.parentId ?? parentId,
       path,
       datasheetId: datasheetId ? String(datasheetId) : null,
       dstId: node?.dstId ? String(node.dstId) : datasheetId ? String(datasheetId) : null,
+      openInMwsUrl: this.buildOpenInMwsUrl(node, normalizedSpaceId, id, datasheetId),
       icon: node?.icon ?? null,
       isFav: node?.isFav ?? node?.favorite ?? null,
       permission: node?.permission ?? null,
@@ -336,8 +426,88 @@ export class MwsService {
         canCreateRecords: node?.capabilities?.canCreateRecords ?? this.canEditByPermission(node?.permission),
         canDeleteRecords: node?.capabilities?.canDeleteRecords ?? this.canEditByPermission(node?.permission),
       },
-      children: this.normalizeNodes(children, id || parentId, path),
+      children: this.normalizeNodes(children, id || parentId, path, normalizedSpaceId),
     };
+  }
+
+  private buildOpenInMwsUrl(
+    node: any,
+    spaceId: string | null,
+    nodeId: string,
+    datasheetId?: unknown,
+  ) {
+    const upstreamUrl =
+      node?.openInMwsUrl ??
+      node?.url ??
+      node?.webUrl ??
+      node?.shareUrl ??
+      node?.links?.web ??
+      node?.links?.self;
+
+    if (typeof upstreamUrl === 'string' && upstreamUrl.trim()) {
+      return upstreamUrl;
+    }
+
+    if (!spaceId || !nodeId) {
+      return null;
+    }
+
+    return this.nodeUrlTemplate
+      .replaceAll('{spaceId}', encodeURIComponent(spaceId))
+      .replaceAll('{nodeId}', encodeURIComponent(nodeId))
+      .replaceAll('{datasheetId}', encodeURIComponent(String(datasheetId ?? '')));
+  }
+
+  private readNodeChildren(node: any): any[] {
+    if (Array.isArray(node?.children)) {
+      return node.children;
+    }
+
+    if (Array.isArray(node?.childNodes)) {
+      return node.childNodes;
+    }
+
+    if (Array.isArray(node?.nodes)) {
+      return node.nodes;
+    }
+
+    if (Array.isArray(node?.items)) {
+      return node.items;
+    }
+
+    return [];
+  }
+
+  private ensureNodeTree(nodes: NormalizedMwsNode[]): NormalizedMwsNode[] {
+    const flattened: NormalizedMwsNode[] = this.flattenNodes(nodes).map((node) => ({
+      ...node,
+      children: [],
+    }));
+    const byId = new Map(flattened.map((node) => [node.id, node]));
+    const roots: NormalizedMwsNode[] = [];
+
+    for (const node of flattened) {
+      if (node.parentId && byId.has(node.parentId)) {
+        byId.get(node.parentId)?.children.push(node);
+        continue;
+      }
+
+      roots.push(node);
+    }
+
+    return this.rebuildNodePaths(roots, []);
+  }
+
+  private rebuildNodePaths(nodes: NormalizedMwsNode[], parentPath: string[]): NormalizedMwsNode[] {
+    return nodes.map((node) => {
+      const path = [...parentPath, node.name].filter(Boolean);
+
+      return {
+        ...node,
+        path,
+        children: this.rebuildNodePaths(node.children, path),
+      };
+    });
   }
 
   private canEditByPermission(permission: unknown) {

@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsString,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
 
@@ -97,4 +98,21 @@ export class ResolveTableEmbedDto {
   @IsOptional()
   @IsBoolean()
   allowInlineEdit?: boolean;
+}
+
+export class CreateMwsTablePageDto {
+  @IsString()
+  spaceId!: string;
+
+  @IsString()
+  nodeId!: string;
+
+  @IsOptional()
+  @IsString()
+  datasheetId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  title?: string;
 }
