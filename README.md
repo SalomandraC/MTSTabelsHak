@@ -86,7 +86,7 @@ npm run start:dev
 - backend отдает каталог через `GET /api/v1/plugins/catalog`
 - пользователь может включать/выключать реализованные optional plugins через `POST /api/v1/plugins/:pluginId/activate` и `POST /api/v1/plugins/:pluginId/deactivate`
 - core-модули неотключаемы и всегда активны
-- `DEFAULT_PLUGIN_PLAN` задает базовый план для всех пользователей, если для них нет явного маппинга
+- по умолчанию `DEFAULT_PLUGIN_PLAN=enterprise`, поэтому новый пользователь получает максимальный план и видит все доступные в MVP плагины
 - `PLUGIN_USER_PLAN_MAP` принимает JSON вида `{"demo-user":"free","demo-user-2":"pro"}`
 
 Авторизация по API-ключу:

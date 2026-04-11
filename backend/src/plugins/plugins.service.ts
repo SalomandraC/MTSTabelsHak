@@ -73,10 +73,10 @@ export class PluginsService {
         status = 'core';
       } else if (!planAllowed) {
         status = 'locked';
-        lockedReason = `Available on ${definition.requiredPlans?.join(', ')} plan.`;
+        lockedReason = `Доступно на тарифе: ${definition.requiredPlans?.join(', ')}.`;
       } else if (!definition.implemented) {
         status = 'comingSoon';
-        lockedReason = 'Planned, but not implemented in this MVP yet.';
+        lockedReason = 'Запланировано, но еще не реализовано в текущем MVP.';
       } else if (enabled) {
         status = 'enabled';
       }
@@ -164,10 +164,12 @@ export class PluginsService {
   }
 
   private resolvePlanId(user: UserContext): PluginPlanId {
-    const configuredDefault = this.configService.get<string>('DEFAULT_PLUGIN_PLAN', 'pro');
+    const configuredDefault = this.configService.get<string>('DEFAULT_PLUGIN_PLAN', 'enterprise');
     const defaultPlanId = configuredDefault === 'free' || configuredDefault === 'enterprise'
       ? configuredDefault
-      : 'pro';
+      : configuredDefault === 'pro'
+        ? configuredDefault
+        : 'enterprise';
     const explicitPlanMap = parsePlanMap(this.configService.get<string>('PLUGIN_USER_PLAN_MAP'));
 
     return explicitPlanMap[user.userId] ?? defaultPlanId;
