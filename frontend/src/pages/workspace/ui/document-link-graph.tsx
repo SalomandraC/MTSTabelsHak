@@ -1,11 +1,14 @@
 import { useMemo } from 'react';
 
-import type { WikiTreeNode } from '../../../shared/api/wikilive';
-
 export type DocumentGraphEdge = {
   sourcePageId: string;
   targetPageId: string;
   mentionCount: number;
+};
+
+export type DocumentGraphPage = {
+  id: string;
+  title: string;
 };
 
 type GraphNode = {
@@ -17,7 +20,7 @@ type GraphNode = {
 };
 
 type DocumentLinkGraphProps = {
-  pages: WikiTreeNode[];
+  pages: DocumentGraphPage[];
   activePageId: string | null;
   edges: DocumentGraphEdge[];
   onSelectPage: (pageId: string) => void;

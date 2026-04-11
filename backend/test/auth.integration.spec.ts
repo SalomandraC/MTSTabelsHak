@@ -49,13 +49,9 @@ describe('Auth flow integration', () => {
         }),
         AuthModule,
       ],
-      providers: [
-        {
-          provide: RedisService,
-          useValue: redisMock,
-        },
-      ],
     })
+      .overrideProvider(RedisService)
+      .useValue(redisMock)
       .overrideProvider(HttpService)
       .useValue(httpMock)
       .compile();

@@ -13,6 +13,7 @@ import { PagesModule } from './pages/pages.module';
 import { PluginsModule } from './plugins/plugins.module';
 import { SearchModule } from './search/search.module';
 import { WikiTreeModule } from './wiki-tree/wiki-tree.module';
+import { WorkspaceTreeModule } from './workspace/workspace-tree.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { WikiTreeModule } from './wiki-tree/wiki-tree.module';
     CollabModule,
     MwsModule,
     PluginsModule,
+    WorkspaceTreeModule,
   ],
   controllers: [AppController],
 })

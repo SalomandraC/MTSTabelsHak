@@ -37,6 +37,10 @@ model WikiNode {
   icon        String?
   position    Int          @default(0)
   isArchived  Boolean      @default(false) @map("is_archived")
+  mwsSpaceId  String?      @map("mws_space_id")
+  mwsParentNodeId String?  @map("mws_parent_node_id")
+  mwsSourceNodeId String?  @map("mws_source_node_id")
+  mwsDatasheetId  String?  @map("mws_datasheet_id")
   createdBy   String       @map("created_by")
   updatedBy   String       @map("updated_by")
   createdAt   DateTime     @default(now()) @map("created_at")
@@ -51,6 +55,8 @@ model WikiNode {
 
   @@index([spaceId, parentId, position])
   @@index([spaceId, type, isArchived])
+  @@index([spaceId, mwsParentNodeId])
+  @@index([spaceId, mwsSourceNodeId])
   @@map("wiki_nodes")
 }
 
