@@ -148,7 +148,7 @@ export function PluginsModal({
         role="dialog"
         aria-modal="true"
         aria-label="Каталог плагинов"
-        className="flex h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-[24px] bg-white shadow-[0_28px_80px_rgba(17,24,39,0.26)]"
+        className="flex h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-[24px] bg-white shadow-[0_28px_80px_rgba(17,24,39,0.26)]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex-shrink-0 border-b border-[#b81235] bg-[#d81f44] px-4 py-5 text-white sm:px-6">
