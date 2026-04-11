@@ -10,6 +10,17 @@ async function bootstrap() {
   const logger = app.get(Logger);
   app.useLogger(logger);
   app.setGlobalPrefix('');
+  app.enableCors({
+    origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-user-id',
+      'x-user-name',
+      'x-mws-token',
+    ],
+  });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

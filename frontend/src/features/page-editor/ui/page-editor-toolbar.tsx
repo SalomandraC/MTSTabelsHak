@@ -1,8 +1,8 @@
 import type { Editor } from '@tiptap/core';
-import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { useEditorState } from '@tiptap/react';
 import type { MouseEvent } from 'react';
 
+import { handleListAction } from '../model/list-actions';
 import { menuBarStateSelector } from '../model/menu-state';
 
 import VectorLeft from '../../../app/images/VectorLeft.svg';
@@ -15,9 +15,6 @@ import H3 from '../../../app/images/H3.svg';
 import T from '../../../app/images/T.svg';
 import T1 from '../../../app/images/T1.svg';
 import U from '../../../app/images/U.svg';
-import AlignLeft from '../../../app/images/AlignLeft.svg';
-import AlignCenter from '../../../app/images/AlignCenter.svg';
-import AlignRight from '../../../app/images/AlignRight.svg';
 
 import {
   List,
@@ -27,6 +24,9 @@ import {
   Image,
   BrushCleaning,
   ListChecks,
+  TextAlignEnd,
+  TextAlignStart,
+  TextAlignCenter,
 } from 'lucide-react';
 
 const redFilter = 'brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(2665%) hue-rotate(346deg) brightness(101%) contrast(97%)';
@@ -53,6 +53,57 @@ type ToolbarButtonProps = {
 
   onClick: ((event: React.MouseEvent<HTMLButtonElement>) => void) | (() => void);
 };
+
+function areMenuStatesEqual(
+  previous: ReturnType<typeof menuBarStateSelector> | null,
+  next: ReturnType<typeof menuBarStateSelector> | null,
+) {
+  if (previous === next) {
+    return true;
+  }
+
+  if (!previous || !next) {
+    return false;
+  }
+
+  return (
+    previous.isBold === next.isBold &&
+    previous.canBold === next.canBold &&
+    previous.isItalic === next.isItalic &&
+    previous.canItalic === next.canItalic &&
+    previous.isStrike === next.isStrike &&
+    previous.canStrike === next.canStrike &&
+    previous.isCode === next.isCode &&
+    previous.canCode === next.canCode &&
+    previous.isUnderline === next.isUnderline &&
+    previous.canUnderline === next.canUnderline &&
+    previous.canClearNodes === next.canClearNodes &&
+    previous.isParagraph === next.isParagraph &&
+    previous.isHeading1 === next.isHeading1 &&
+    previous.isHeading2 === next.isHeading2 &&
+    previous.isHeading3 === next.isHeading3 &&
+    previous.isAlignLeft === next.isAlignLeft &&
+    previous.isAlignCenter === next.isAlignCenter &&
+    previous.isAlignRight === next.isAlignRight &&
+    previous.isBulletList === next.isBulletList &&
+    previous.canBulletList === next.canBulletList &&
+    previous.isOrderedList === next.isOrderedList &&
+    previous.canOrderedList === next.canOrderedList &&
+    previous.isTaskList === next.isTaskList &&
+    previous.canTaskList === next.canTaskList &&
+    previous.isBlockquote === next.isBlockquote &&
+    previous.isCodeBlock === next.isCodeBlock &&
+    previous.canCodeBlock === next.canCodeBlock &&
+    previous.isLink === next.isLink &&
+    previous.linkHref === next.linkHref &&
+    previous.linkLabel === next.linkLabel &&
+    previous.canUnsetLink === next.canUnsetLink &&
+    previous.isImageSelected === next.isImageSelected &&
+    previous.canUndo === next.canUndo &&
+    previous.canRedo === next.canRedo &&
+    previous.canClearFormatting === next.canClearFormatting
+  );
+}
 
 function ToolbarButton({ 
   label, 
@@ -122,6 +173,7 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
     useEditorState({
       editor,
       selector: menuBarStateSelector,
+      equalityFn: areMenuStatesEqual,
     }) ??
     {
       isBold: false,
@@ -154,7 +206,8 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
       isLink: false,
       linkHref: undefined,
       linkLabel: undefined,
-      isImage: false,
+      canUnsetLink: false,
+      isImageSelected: false,
       canUndo: false,
       canRedo: false,
       canClearFormatting: false,
@@ -166,211 +219,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
 
   const alignSelection = (align: 'left' | 'center' | 'right') => {
     editor.chain().focus().setTextAlign(align).run();
-  };
-
-  const getSelectedRootBlocks = () => {
-    const { state } = editor;
-    const { selection, schema, doc } = state;
-    const rootBlockType = schema.nodes.rootblock;
-
-    if (!rootBlockType || selection.empty) {
-      return [] as Array<{ pos: number; node: ProseMirrorNode }>;
-    }
-
-    const selectedRootBlocks: Array<{ pos: number; node: ProseMirrorNode }> = [];
-
-    doc.nodesBetween(selection.from, selection.to, (node, pos, parent) => {
-      if (node.type === rootBlockType && parent === doc) {
-        selectedRootBlocks.push({ pos, node });
-      }
-    });
-
-    return selectedRootBlocks;
-  };
-
-  const unwrapSelectionFromList = (listTypeName: 'bulletList' | 'orderedList' | 'taskList') => {
-    const { state, view } = editor;
-    const { selection, schema } = state;
-
-    if (selection.empty) {
-      return false;
-    }
-
-    const selectedRootBlocks = getSelectedRootBlocks();
-    if (selectedRootBlocks.length === 0) {
-      return false;
-    }
-
-    const rootBlockType = schema.nodes.rootblock;
-    const paragraphType = schema.nodes.paragraph;
-    const listType = schema.nodes[listTypeName];
-
-    if (!rootBlockType || !paragraphType || !listType) {
-      return false;
-    }
-
-    // Unwrap only when the whole selected region is this exact list type.
-    if (!selectedRootBlocks.every(({ node }) => node.firstChild?.type === listType)) {
-      return false;
-    }
-
-    let hasSelectedItems = false;
-    let tr = state.tr;
-
-    [...selectedRootBlocks]
-      .sort((a, b) => b.pos - a.pos)
-      .forEach(({ pos, node }) => {
-        const listNode = node.firstChild;
-        if (!listNode) {
-          return;
-        }
-
-        const listPos = pos + 1;
-        const selectedIndexes = new Set<number>();
-
-        listNode.forEach((item, offset, index) => {
-          const itemFrom = listPos + 1 + offset;
-          const itemTo = itemFrom + item.nodeSize;
-          const intersectsSelection = itemFrom < selection.to && itemTo > selection.from;
-
-          if (intersectsSelection) {
-            selectedIndexes.add(index);
-          }
-        });
-
-        if (selectedIndexes.size === 0) {
-          return;
-        }
-
-        hasSelectedItems = true;
-        const replacementNodes: ProseMirrorNode[] = [];
-        let pendingListItems: ProseMirrorNode[] = [];
-
-        listNode.forEach((item, _offset, index) => {
-          const isSelected = selectedIndexes.has(index);
-
-          if (!isSelected) {
-            pendingListItems.push(item);
-            return;
-          }
-
-          if (pendingListItems.length > 0) {
-            replacementNodes.push(rootBlockType.create(null, [listType.create(listNode.attrs, pendingListItems)]));
-            pendingListItems = [];
-          }
-
-          const paragraphSource = item.firstChild;
-          const paragraphContent = paragraphSource?.type === paragraphType ? paragraphSource.content : item.textContent ? schema.text(item.textContent) : null;
-          const paragraphNode = paragraphType.create(
-            paragraphSource?.type === paragraphType ? paragraphSource.attrs : null,
-            paragraphContent,
-          );
-
-          replacementNodes.push(rootBlockType.create(null, [paragraphNode]));
-        });
-
-        if (pendingListItems.length > 0) {
-          replacementNodes.push(rootBlockType.create(null, [listType.create(listNode.attrs, pendingListItems)]));
-        }
-
-        if (replacementNodes.length > 0) {
-          tr = tr.replaceWith(pos, pos + node.nodeSize, replacementNodes);
-        }
-      });
-
-    if (!hasSelectedItems) {
-      return false;
-    }
-
-    tr = tr.scrollIntoView();
-    view.dispatch(tr);
-    editor.commands.focus(Math.max(1, selectedRootBlocks[0].pos + 2));
-    return true;
-  };
-
-  const convertSelectionToList = (listTypeName: 'bulletList' | 'orderedList' | 'taskList') => {
-    if (!editor) {
-      return false;
-    }
-
-    const { state, view } = editor;
-    const { selection, schema, doc } = state;
-
-    if (selection.empty) {
-      return false;
-    }
-
-    const rootBlockType = schema.nodes.rootblock;
-    const paragraphType = schema.nodes.paragraph;
-    const listType = schema.nodes[listTypeName];
-    const itemType = listTypeName === 'taskList' ? schema.nodes.taskItem : schema.nodes.listItem;
-
-    if (!rootBlockType || !paragraphType || !listType || !itemType) {
-      return false;
-    }
-
-    const selectedRootBlocks = getSelectedRootBlocks();
-
-    if (selectedRootBlocks.length === 0) {
-      return false;
-    }
-
-    const listItems = selectedRootBlocks
-      .map(({ node }) => {
-        const firstChild = node.firstChild;
-        const text = (firstChild?.textContent ?? '').trim();
-        const paragraphContent = text ? state.schema.text(text) : null;
-        const paragraph = paragraphType.create(
-          firstChild?.type === paragraphType ? firstChild.attrs : null,
-          firstChild?.type === paragraphType ? firstChild.content : paragraphContent,
-        );
-
-        if (listTypeName === 'taskList') {
-          return itemType.create({ checked: false }, [paragraph]);
-        }
-
-        return itemType.create(null, [paragraph]);
-      })
-      .filter(Boolean);
-
-    if (listItems.length === 0) {
-      return false;
-    }
-
-    const from = selectedRootBlocks[0].pos;
-    const last = selectedRootBlocks[selectedRootBlocks.length - 1];
-    const to = last.pos + last.node.nodeSize;
-    const listNode = listType.create(null, listItems);
-    const newRootBlock = rootBlockType.create(null, [listNode]);
-
-    let tr = state.tr.replaceWith(from, to, newRootBlock);
-    tr = tr.scrollIntoView();
-    view.dispatch(tr);
-    editor.commands.focus(from + 2);
-
-    return true;
-  };
-
-  const handleListAction = (listTypeName: 'bulletList' | 'orderedList' | 'taskList') => {
-    if (unwrapSelectionFromList(listTypeName)) {
-      return;
-    }
-
-    if (convertSelectionToList(listTypeName)) {
-      return;
-    }
-
-    if (listTypeName === 'bulletList') {
-      editor.chain().focus().toggleBulletList().run();
-      return;
-    }
-
-    if (listTypeName === 'orderedList') {
-      editor.chain().focus().toggleOrderedList().run();
-      return;
-    }
-
-    editor.chain().focus().toggleTaskList().run();
   };
 
   return (
@@ -419,7 +267,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           pressed={state.isBold}
           disabled={!state.canBold}
           noBorder={false}
-          size="sm"
           isFirst={true}  
           isLast={false}
           isInGroup={true}
@@ -438,7 +285,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           pressed={state.isItalic}
           disabled={!state.canItalic}
           noBorder={false}
-          size="sm"
           isFirst={false}
           isLast={false}
           isInGroup={true}
@@ -457,7 +303,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           pressed={state.isStrike}
           disabled={!state.canStrike}
           noBorder={false}
-          size="sm"
           isFirst={false}
           isLast={false}
           isInGroup={true}
@@ -476,7 +321,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           pressed={state.isUnderline}
           disabled={!state.canUnderline}
           noBorder={false}
-          size="sm"
           isFirst={false}
           isLast={true}
           isInGroup={true}
@@ -557,11 +401,8 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
 
         <ToolbarButton
           icon={
-            <img
-              src={AlignLeft}
-              alt="Выровнять по левому краю"
-              className="h-4 w-4"
-              style={state.isAlignLeft ? { filter: redFilter } : {}}
+            <TextAlignStart className="h-4 w-4" 
+              style={{ color: 'rgba(80, 87, 98, 1)' }} 
             />
           }
           onClick={() => alignSelection('left')}
@@ -573,11 +414,8 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
         />
         <ToolbarButton
           icon={
-            <img
-              src={AlignCenter}
-              alt="Выровнять по центру"
-              className="h-4 w-4"
-              style={state.isAlignCenter ? { filter: redFilter } : {}}
+            <TextAlignCenter className="h-4 w-4" 
+              style={{ color: 'rgba(80, 87, 98, 1)' }} 
             />
           }
           onClick={() => alignSelection('center')}
@@ -589,11 +427,8 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
         />
         <ToolbarButton
           icon={
-            <img
-              src={AlignRight}
-              alt="Выровнять по правому краю"
-              className="h-4 w-4"
-              style={state.isAlignRight ? { filter: redFilter } : {}}
+            <TextAlignEnd className="h-4 w-4" 
+              style={{ color: 'rgba(80, 87, 98, 1)' }} 
             />
           }
           onClick={() => alignSelection('right')}
@@ -608,7 +443,7 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
 
         <ToolbarButton
           icon={<List className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
-          onClick={() => handleListAction('bulletList')}
+          onClick={() => handleListAction(editor, 'bulletList')}
           pressed={state.isBulletList}
           disabled={!state.canBulletList}
           isFirst={true}
@@ -618,7 +453,7 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
         />
         <ToolbarButton
           icon={<ListOrdered className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
-          onClick={() => handleListAction('orderedList')}
+          onClick={() => handleListAction(editor, 'orderedList')}
           pressed={state.isOrderedList}
           disabled={!state.canOrderedList}
           isFirst={false}
@@ -627,8 +462,12 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           aria-label="Нумерованный список"
         />
         <ToolbarButton
-          icon={<ListChecks className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
-          onClick={() => handleListAction('taskList')}
+          icon={
+            <ListChecks className="h-4 w-4" 
+              style={{ color: 'rgba(80, 87, 98, 1)' }} 
+            />
+          }
+          onClick={() => handleListAction(editor, 'taskList')}
           pressed={state.isTaskList}
           disabled={!state.canTaskList}
           isFirst={false}
@@ -658,7 +497,7 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           onClick={() => editor.chain().focus().toggleCodeBlock().run()}
           pressed={state.isCodeBlock}
           disabled={!state.canCodeBlock}
-          isFirst={false}
+          isFirst={true}
           isLast={true}
           isInGroup={true}
           aria-label="Блок кода"

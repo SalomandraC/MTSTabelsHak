@@ -76,35 +76,28 @@ export class CollabPersistenceService {
     update: Uint8Array,
     context: { sessionId?: string; clientId?: string; userId?: string } = {},
   ) {
-    const current = await this.prisma.pageDocument.findUnique({
-      where: { pageId },
-      select: { serverVersion: true },
-    });
+    await this.prisma.$transaction(async (tx) => {
+      const document = await tx.pageDocument.update({
+        where: { pageId },
+        data: {
+          serverVersion: {
+            increment: 1,
+          },
+        },
+        select: { serverVersion: true },
+      });
 
-    if (!current) {
-      throw new NotFoundException('Page document not found');
-    }
-
-    const nextVersion = BigInt(current.serverVersion) + 1n;
-
-    await this.prisma.$transaction([
-      this.prisma.pageCrdtUpdate.create({
+      await tx.pageCrdtUpdate.create({
         data: {
           pageId,
-          seq: nextVersion,
+          seq: document.serverVersion,
           updatePayload: Buffer.from(update),
           originSessionId: context.sessionId,
           originClientId: context.clientId,
           createdBy: context.userId,
         },
-      }),
-      this.prisma.pageDocument.update({
-        where: { pageId },
-        data: {
-          serverVersion: nextVersion,
-        },
-      }),
-    ]);
+      });
+    });
   }
 
   async storeDocument(pageId: string, document: Y.Doc) {
@@ -141,7 +134,7 @@ export class CollabPersistenceService {
       REINDEX_PAGE_JOB,
       { pageId, snapshot: encodeBytesToBase64(snapshot) },
       {
-        jobId: `${REINDEX_PAGE_JOB}:${pageId}`,
+        jobId: `${REINDEX_PAGE_JOB}-${pageId}`,
         removeOnComplete: true,
         removeOnFail: 10,
       },

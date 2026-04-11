@@ -1,4 +1,6 @@
 import { Extension, textInputRule } from '@tiptap/core';
+import Collaboration from '@tiptap/extension-collaboration';
+import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import Document from '@tiptap/extension-document';
 import Dropcursor from '@tiptap/extension-dropcursor';
@@ -30,9 +32,13 @@ import xml from 'highlight.js/lib/languages/xml';
 import yaml from 'highlight.js/lib/languages/yaml';
 import { createLowlight } from 'lowlight';
 import { ReactNodeViewRenderer } from '@tiptap/react';
+import type { HocuspocusProvider } from '@hocuspocus/provider';
+import type * as Y from 'yjs';
 
 import { CodeBlockComponent } from '../ui/code-block-component.tsx';
 import { ImageBlock } from './image-block';
+import { MwsTableEmbed } from './mws-table-embed';
+import { PageLink } from './page-link';
 import { RootBlock } from './root-block';
 
 const lowlight = createLowlight();
@@ -84,7 +90,16 @@ export const initialContent = `
 <div data-type="rootblock"><p></p></div>
 `;
 
-export function createPageEditorExtensions() {
+type PageEditorExtensionOptions = {
+  ydoc?: Y.Doc | null;
+  provider?: HocuspocusProvider | null;
+  user?: {
+    name: string;
+    color: string;
+  };
+};
+
+export function createPageEditorExtensions(options: PageEditorExtensionOptions = {}) {
   return [
     TextStyle,
     Highlight,
@@ -97,6 +112,8 @@ export function createPageEditorExtensions() {
     RootDocument,
     RootBlock,
     ImageBlock,
+    PageLink,
+    MwsTableEmbed,
     TaskList,
     TaskItem.configure({ nested: true }),
     Link.configure({
@@ -123,5 +140,23 @@ export function createPageEditorExtensions() {
       emptyEditorClass: 'is-editor-empty',
       placeholder: 'Начните вводить содержимое или нажмите / чтобы использовать команды',
     }),
+    ...(options.ydoc
+      ? [
+          Collaboration.configure({
+            document: options.ydoc,
+          }),
+        ]
+      : []),
+    ...(options.provider
+      ? [
+          CollaborationCaret.configure({
+            provider: options.provider,
+            user: options.user ?? {
+              name: 'Demo User',
+              color: '#7b67ee',
+            },
+          }),
+        ]
+      : []),
   ];
 }

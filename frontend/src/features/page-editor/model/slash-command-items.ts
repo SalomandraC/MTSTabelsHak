@@ -28,6 +28,26 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     },
   },
   {
+    id: 'page-link',
+    label: 'Страница',
+    hint: 'Вставить ссылку на wiki-страницу',
+    keywords: ['page', 'wiki', 'страница', 'вики', 'backlink', 'связь'],
+    icon: '@',
+    run: () => {
+      // Handled in PageEditor with page picker flow.
+    },
+  },
+  {
+    id: 'mws-table',
+    label: 'MWS таблица',
+    hint: 'Вставить live embed существующей таблицы',
+    keywords: ['table', 'mws', 'таблица', 'embed', 'live', 'datasheet'],
+    icon: 'Tbl',
+    run: () => {
+      // Handled in PageEditor with table picker flow.
+    },
+  },
+  {
     id: 'task-list',
     label: 'Чеклист',
     hint: 'Создать список задач с чекбоксами',
