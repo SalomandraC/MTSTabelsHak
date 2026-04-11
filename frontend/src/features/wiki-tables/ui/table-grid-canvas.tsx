@@ -26,7 +26,9 @@ export function TableGridCanvas({
   isAttachmentWidgetDismissed = false,
   onAttachmentWidgetClose,
   onAddColumn,
-  onAddRow
+  onAddRow,
+  onOpenAttachmentUpload,
+  onDownloadAllAttachments
 }: TableGridProps & {
   onCanvasKeyDown: (event: React.KeyboardEvent<HTMLCanvasElement>) => void;
   selectEditorRef: React.RefObject<HTMLDivElement>;
@@ -34,6 +36,8 @@ export function TableGridCanvas({
   onAttachmentWidgetClose?: () => void;
   onAddColumn?: () => void;
   onAddRow?: () => void;
+  onOpenAttachmentUpload?: () => void;
+  onDownloadAllAttachments?: () => void;
 }) {
   const gridHeight = resolveTableGridHeight(controller.gridHeight, isExpanded);
   const selectedAttachmentCell =
@@ -264,6 +268,24 @@ export function TableGridCanvas({
             </div>
             {controller.selectedAttachments.length > 0 ? (
               <div className="max-h-56 overflow-y-auto p-2">
+                <div className="mb-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={onOpenAttachmentUpload}
+                    className="inline-flex items-center gap-1 rounded-md border border-editor-border-control px-2 py-1 text-xs font-semibold text-editor-text-primary"
+                  >
+                    <Paperclip className="h-3.5 w-3.5" />
+                    Добавить файл
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onDownloadAllAttachments}
+                    className="inline-flex items-center gap-1 rounded-md border border-editor-border-control px-2 py-1 text-xs font-semibold text-editor-text-primary"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Скачать все
+                  </button>
+                </div>
                 <div className="grid gap-2">
                   {controller.selectedAttachments.map((item, index) => (
                     <div
@@ -292,8 +314,18 @@ export function TableGridCanvas({
                 </div>
               </div>
             ) : (
-              <div className="px-3 py-3 text-sm text-editor-text-tertiary">
-                В этой ячейке нет вложений.
+              <div className="px-3 py-3">
+                <p className="mb-3 text-sm text-editor-text-tertiary">
+                  В этой ячейке нет вложений.
+                </p>
+                <button
+                  type="button"
+                  onClick={onOpenAttachmentUpload}
+                  className="inline-flex items-center gap-1 rounded-md border border-editor-border-control px-2 py-1.5 text-xs font-semibold text-editor-text-primary"
+                >
+                  <Paperclip className="h-3.5 w-3.5" />
+                  Загрузить файл
+                </button>
               </div>
             )}
           </div>

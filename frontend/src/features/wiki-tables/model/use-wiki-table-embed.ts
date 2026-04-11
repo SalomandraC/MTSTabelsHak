@@ -1249,6 +1249,54 @@ export function useWikiTableEmbed(
     }
   };
 
+  const uploadAttachments = async (
+    record: MwsRecord | null,
+    field: MwsField | null,
+    files: File[]
+  ) => {
+    if (
+      !attrs.datasheetId ||
+      !record ||
+      !field ||
+      field.type !== 'Attachment' ||
+      files.length === 0
+    ) {
+      return;
+    }
+
+    try {
+      setIsMutating(true);
+      const results = await Promise.allSettled(
+        files.map((file) =>
+          wikiliveApi.uploadMwsAttachment(attrs.datasheetId!, {
+            file,
+            recordId: record.recordId,
+            fieldId: field.id
+          })
+        )
+      );
+
+      const failed = results.find(
+        (result): result is PromiseRejectedResult =>
+          result.status === 'rejected'
+      );
+
+      await loadEmbed();
+
+      if (failed) {
+        throw failed.reason;
+      }
+    } catch (error) {
+      setStaleMessage(
+        error instanceof Error
+          ? error.message
+          : 'Не удалось загрузить файл в ячейку'
+      );
+    } finally {
+      setIsMutating(false);
+    }
+  };
+
   const downloadAttachment = async (attachment: AttachmentItem) => {
     if (!attrs.datasheetId) {
       return;
@@ -1527,6 +1575,7 @@ export function useWikiTableEmbed(
     createField,
     deleteRow,
     uploadAttachment,
+    uploadAttachments,
     downloadAttachment,
     hitTest,
     beginEdit,

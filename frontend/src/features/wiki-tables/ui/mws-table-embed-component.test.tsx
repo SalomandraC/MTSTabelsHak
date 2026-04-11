@@ -22,6 +22,7 @@ vi.mock('../../../shared/api/wikilive', async () => {
       resolveTableEmbed: vi.fn(),
       listMwsRecords: vi.fn(),
       createMwsField: vi.fn(),
+      uploadMwsAttachment: vi.fn(),
       updateMwsRecords: vi.fn(),
       createMwsRecords: vi.fn(),
       deleteMwsRecords: vi.fn()
@@ -162,6 +163,44 @@ const RESOLVE_ATTACHMENT_TABLE_EMBED_MOCK: ResolveTableEmbedResponse = {
   }
 };
 
+const RESOLVE_EMPTY_ATTACHMENT_TABLE_EMBED_MOCK: ResolveTableEmbedResponse = {
+  embed: {
+    datasheetId: 'dst-attachment-empty',
+    node: {
+      id: 'node-attachment-empty',
+      name: 'Таблица пустых вложений',
+      type: 'Datasheet',
+      datasheetId: 'dst-attachment-empty'
+    },
+    view: {
+      id: 'view-main',
+      name: 'Все',
+      type: 'grid'
+    },
+    fields: [{ id: 'fld-files', name: 'Файлы', type: 'Attachment' }],
+    preview: {
+      items: [
+        {
+          recordId: 'rec-attachment-empty-1',
+          fields: {
+            'fld-files': []
+          }
+        }
+      ],
+      pageNum: 1,
+      pageSize: 20,
+      total: 1
+    },
+    total: 1,
+    capabilities: {
+      canInlineEdit: true,
+      canCreateRecords: true,
+      canDeleteRecords: true
+    },
+    openInMwsUrl: 'https://tables.mws.ru/fusion/v1/mock'
+  }
+};
+
 describe('MwsTableEmbedComponent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -176,6 +215,9 @@ describe('MwsTableEmbedComponent', () => {
         type: 'SingleText'
       }
     });
+    vi.mocked(wikiliveApi.uploadMwsAttachment).mockResolvedValue({
+      uploaded: true
+    } as never);
   });
 
   it('renders a populated live table instead of an empty state when preview data arrives', async () => {
@@ -614,6 +656,144 @@ describe('MwsTableEmbedComponent', () => {
     expect(
       screen.queryByTestId('mws_attachment_widget')
     ).not.toBeInTheDocument();
+  });
+
+  it('opens upload modal from an empty attachment cell widget', async () => {
+    vi.mocked(wikiliveApi.resolveTableEmbed).mockResolvedValueOnce(
+      RESOLVE_EMPTY_ATTACHMENT_TABLE_EMBED_MOCK
+    );
+
+    render(
+      <MwsTableEmbedComponent
+        node={
+          {
+            attrs: {
+              blockId: 'block-attachment-empty-1',
+              title: 'Таблица пустых вложений',
+              spaceId: 'space-1',
+              nodeId: 'node-attachment-empty',
+              datasheetId: 'dst-attachment-empty',
+              viewId: 'view-main',
+              selectedFieldIds: ['fld-files'],
+              pageSize: 20,
+              allowInlineEdit: true,
+              displayMode: 'table'
+            }
+          } as never
+        }
+        selected={false}
+        editor={null as never}
+        getPos={null as never}
+        updateAttributes={vi.fn()}
+        deleteNode={vi.fn()}
+        decorations={[]}
+        extension={null as never}
+        HTMLAttributes={{}}
+        innerDecorations={null as never}
+        view={null as never}
+      />
+    );
+
+    const canvas = await screen.findByTestId('mws_canvas_grid');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      width: 720,
+      height: 320,
+      top: 0,
+      left: 0,
+      right: 720,
+      bottom: 320,
+      toJSON: () => ({})
+    });
+
+    fireEvent.pointerDown(canvas, { clientX: 80, clientY: 60 });
+
+    const widget = await screen.findByTestId('mws_attachment_widget');
+    fireEvent.click(
+      within(widget).getByRole('button', { name: 'Загрузить файл' })
+    );
+
+    expect(
+      await screen.findByRole('dialog', { name: 'Добавить файлы' })
+    ).toBeInTheDocument();
+  });
+
+  it('uploads multiple files from attachment modal', async () => {
+    vi.mocked(wikiliveApi.resolveTableEmbed).mockResolvedValueOnce(
+      RESOLVE_ATTACHMENT_TABLE_EMBED_MOCK
+    );
+
+    render(
+      <MwsTableEmbedComponent
+        node={
+          {
+            attrs: {
+              blockId: 'block-attachment-1',
+              title: 'Таблица вложений',
+              spaceId: 'space-1',
+              nodeId: 'node-attachment',
+              datasheetId: 'dst-attachment',
+              viewId: 'view-main',
+              selectedFieldIds: ['fld-files'],
+              pageSize: 20,
+              allowInlineEdit: true,
+              displayMode: 'table'
+            }
+          } as never
+        }
+        selected={false}
+        editor={null as never}
+        getPos={null as never}
+        updateAttributes={vi.fn()}
+        deleteNode={vi.fn()}
+        decorations={[]}
+        extension={null as never}
+        HTMLAttributes={{}}
+        innerDecorations={null as never}
+        view={null as never}
+      />
+    );
+
+    const canvas = await screen.findByTestId('mws_canvas_grid');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      width: 720,
+      height: 320,
+      top: 0,
+      left: 0,
+      right: 720,
+      bottom: 320,
+      toJSON: () => ({})
+    });
+
+    fireEvent.pointerDown(canvas, { clientX: 80, clientY: 60 });
+
+    const widget = await screen.findByTestId('mws_attachment_widget');
+    fireEvent.click(
+      within(widget).getByRole('button', { name: 'Добавить файл' })
+    );
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Добавить файлы'
+    });
+    const input = within(dialog).getByLabelText(
+      /добавить файлы/i
+    ) as HTMLInputElement;
+    const fileA = new File(['a'], 'one.txt', { type: 'text/plain' });
+    const fileB = new File(['b'], 'two.txt', { type: 'text/plain' });
+
+    fireEvent.change(input, { target: { files: [fileA, fileB] } });
+
+    expect(within(dialog).getByText('one.txt')).toBeInTheDocument();
+    expect(within(dialog).getByText('two.txt')).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Загрузить' }));
+
+    await waitFor(() => {
+      expect(wikiliveApi.uploadMwsAttachment).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('opens create column modal from the plus area in the header', async () => {

@@ -4,6 +4,7 @@ import { ExternalLink } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { MwsTableActionBar } from './mws-table-action-bar';
+import { AttachmentUploadModal } from './attachment-upload-modal';
 import { CreateFieldModal } from './create-field-modal';
 import { ExpandedTableModal } from './expanded-table-modal';
 import { FilterRecordsModal } from './filter-records-modal';
@@ -46,7 +47,12 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
   const [isExpandedViewOpen, setIsExpandedViewOpen] = useState(false);
   const [isAttachmentWidgetDismissed, setIsAttachmentWidgetDismissed] =
     useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isAttachmentUploadModalOpen, setIsAttachmentUploadModalOpen] =
+    useState(false);
+  const [attachmentUploadFiles, setAttachmentUploadFiles] = useState<File[]>(
+    []
+  );
+  const [attachmentUploadError, setAttachmentUploadError] = useState('');
   const selectEditorRef = useRef<HTMLDivElement | null>(null);
 
   const selectColorToCss = (color: string) => {
@@ -382,6 +388,24 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     controller.setEditingSelectCell(null);
   };
 
+  const openAttachmentUploadModal = () => {
+    setAttachmentUploadError('');
+    setAttachmentUploadFiles([]);
+    setIsAttachmentUploadModalOpen(true);
+  };
+
+  const closeAttachmentUploadModal = () => {
+    setIsAttachmentUploadModalOpen(false);
+    setAttachmentUploadFiles([]);
+    setAttachmentUploadError('');
+  };
+
+  const downloadAllAttachments = async () => {
+    for (const attachment of controller.selectedAttachments) {
+      await controller.downloadAttachment(attachment);
+    }
+  };
+
   return (
     <NodeViewWrapper
       className={[
@@ -473,7 +497,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
           onSearchQueryChange={handleSearchQueryChange}
           onCreateRow={() => void controller.createRow()}
           onCreateField={() => setIsCreateFieldModalOpen(true)}
-          onOpenFilePicker={() => fileInputRef.current?.click()}
+          onOpenFilePicker={openAttachmentUploadModal}
           onDownloadSelectedAttachment={() => {
             const first = controller.selectedAttachments[0];
             if (first) {
@@ -489,24 +513,6 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
           }
           onExpand={() => setIsExpandedViewOpen(true)}
           onRefresh={() => void controllerRef.current?.loadEmbed()}
-        />
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          className="hidden"
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
-            const file = event.target.files?.[0];
-            if (file && controller.selectedRecord && controller.selectedField) {
-              void controller.uploadAttachment(
-                controller.selectedRecord,
-                controller.selectedField,
-                file
-              );
-            }
-
-            event.currentTarget.value = '';
-          }}
         />
         <div className="flex min-h-0 flex-1 flex-col">
           {controller.isLoading && controller.records.length === 0 ? (
@@ -541,6 +547,8 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
               onAttachmentWidgetClose={() =>
                 setIsAttachmentWidgetDismissed(true)
               }
+              onOpenAttachmentUpload={openAttachmentUploadModal}
+              onDownloadAllAttachments={() => void downloadAllAttachments()}
               onAddColumn={() => setIsCreateFieldModalOpen(true)}
               onAddRow={() => void controller.createRow()}
               onCanvasKeyDown={(
@@ -635,7 +643,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         onGroup={() => setIsGroupRecordsModalOpen(true)}
         onSort={() => setIsSortFieldsModalOpen(true)}
         onExpand={() => {}}
-        onOpenFilePicker={() => fileInputRef.current?.click()}
+        onOpenFilePicker={openAttachmentUploadModal}
         onDownloadSelectedAttachment={() => {
           const first = controller.selectedAttachments[0];
           if (first) {
@@ -648,6 +656,8 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         canDownloadFromCell={canDownloadFromCell}
         isAttachmentWidgetDismissed={isAttachmentWidgetDismissed}
         onAttachmentWidgetClose={() => setIsAttachmentWidgetDismissed(true)}
+        onOpenAttachmentUpload={openAttachmentUploadModal}
+        onDownloadAllAttachments={() => void downloadAllAttachments()}
         onRefresh={() => void controllerRef.current?.loadEmbed()}
         onCanvasKeyDown={(event: React.KeyboardEvent<HTMLCanvasElement>) => {
           if (
@@ -669,6 +679,45 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
               replaceValue: event.key
             });
           }
+        }}
+      />
+      <AttachmentUploadModal
+        isOpen={isAttachmentUploadModalOpen}
+        isSubmitting={controller.isMutating}
+        files={attachmentUploadFiles}
+        errorMessage={attachmentUploadError}
+        onClose={closeAttachmentUploadModal}
+        onFilesSelect={(files) => {
+          setAttachmentUploadError('');
+          setAttachmentUploadFiles((current) => [...current, ...files]);
+        }}
+        onRemoveFile={(index) =>
+          setAttachmentUploadFiles((current) =>
+            current.filter((_, currentIndex) => currentIndex !== index)
+          )
+        }
+        onSubmit={() => {
+          if (!controller.selectedRecord || !controller.selectedField) {
+            setAttachmentUploadError('Сначала выберите ячейку вложений');
+            return;
+          }
+
+          if (controller.selectedField.type !== 'Attachment') {
+            setAttachmentUploadError(
+              'Загрузка файлов доступна только для поля вложений'
+            );
+            return;
+          }
+
+          void controller
+            .uploadAttachments(
+              controller.selectedRecord,
+              controller.selectedField,
+              attachmentUploadFiles
+            )
+            .then(() => {
+              closeAttachmentUploadModal();
+            });
         }}
       />
     </NodeViewWrapper>

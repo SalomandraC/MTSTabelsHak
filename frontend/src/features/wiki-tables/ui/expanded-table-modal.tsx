@@ -25,6 +25,8 @@ export type ExpandedTableModalProps = {
   canDownloadFromCell: boolean;
   isAttachmentWidgetDismissed?: boolean;
   onAttachmentWidgetClose?: () => void;
+  onOpenAttachmentUpload?: () => void;
+  onDownloadAllAttachments?: () => void;
   onCanvasKeyDown: (event: React.KeyboardEvent<HTMLCanvasElement>) => void;
 };
 
@@ -51,6 +53,8 @@ export function ExpandedTableModal({
   canDownloadFromCell,
   isAttachmentWidgetDismissed = false,
   onAttachmentWidgetClose,
+  onOpenAttachmentUpload,
+  onDownloadAllAttachments,
   onCanvasKeyDown
 }: ExpandedTableModalProps) {
   if (!isOpen) {
@@ -123,6 +127,8 @@ export function ExpandedTableModal({
             selectColorToCss={selectColorToCss}
             isAttachmentWidgetDismissed={isAttachmentWidgetDismissed}
             onAttachmentWidgetClose={onAttachmentWidgetClose}
+            onOpenAttachmentUpload={onOpenAttachmentUpload}
+            onDownloadAllAttachments={onDownloadAllAttachments}
             onAddColumn={onCreateField}
             onAddRow={onCreateRow}
             onCanvasKeyDown={onCanvasKeyDown}
