@@ -12,6 +12,8 @@ type RefreshResponse = {
   expiresInSec: number;
 };
 
+export type AuthSessionRefresh = RefreshResponse;
+
 export type MeResponse = {
   user: {
     userId: string;
@@ -47,7 +49,7 @@ export type PluginCatalogResponse = {
 
 let accessToken: string | null = null;
 let activeUser: MeResponse['user'] | null = null;
-let refreshInFlight: Promise<string | null> | null = null;
+let refreshInFlight: Promise<RefreshResponse | null> | null = null;
 
 function getDemoUserFromUrl(): MeResponse['user'] | null {
   const params = new URLSearchParams(window.location.search);
@@ -386,7 +388,7 @@ function setActiveUser(user: MeResponse['user'] | null): void {
   activeUser = user;
 }
 
-async function refreshAccessToken(): Promise<string | null> {
+async function refreshAccessToken(): Promise<RefreshResponse | null> {
   if (refreshInFlight) {
     return refreshInFlight;
   }
@@ -408,7 +410,7 @@ async function refreshAccessToken(): Promise<string | null> {
 
     const payload = (await response.json()) as RefreshResponse;
     setAccessToken(payload.accessToken);
-    return payload.accessToken;
+    return payload;
   })().finally(() => {
     refreshInFlight = null;
   });
@@ -449,8 +451,8 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   const isAuthEndpoint = path.startsWith('/api/v1/auth/');
   if (response.status === 401 && authMode === 'required' && !skipAuthRetry && !isAuthEndpoint) {
-    const token = await refreshAccessToken();
-    if (token) {
+    const session = await refreshAccessToken();
+    if (session?.accessToken) {
       return request<T>(path, {
         ...options,
         skipAuthRetry: true,
@@ -505,22 +507,28 @@ export const wikiliveApi = {
     return response;
   },
   async restoreSession() {
-    const token = await refreshAccessToken();
-    if (!token) {
+    const session = await refreshAccessToken();
+    if (!session) {
       if (!getDemoUserFromUrl()) {
         return null;
       }
 
       try {
         const me = await this.getMe();
-        return me.user;
+        return {
+          user: me.user,
+          expiresInSec: null,
+        };
       } catch {
         return null;
       }
     }
 
     const me = await this.getMe();
-    return me.user;
+    return {
+      user: me.user,
+      expiresInSec: session.expiresInSec,
+    };
   },
   listPlugins() {
     return request<PluginCatalogResponse>('/api/v1/plugins/catalog');
@@ -772,8 +780,8 @@ export const wikiliveApi = {
     );
 
     if (response.status === 401) {
-      const token = await refreshAccessToken();
-      if (token) {
+      const session = await refreshAccessToken();
+      if (session?.accessToken) {
         return this.uploadMwsAttachment(datasheetId, payload);
       }
     }
@@ -812,8 +820,8 @@ export const wikiliveApi = {
     );
 
     if (response.status === 401) {
-      const token = await refreshAccessToken();
-      if (token) {
+      const session = await refreshAccessToken();
+      if (session?.accessToken) {
         return this.downloadMwsAttachment(datasheetId, payload);
       }
     }

@@ -17,8 +17,11 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: redis-server --appendonly yes
     ports:
       - "6379:6379"
+    volumes:
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s
@@ -56,4 +59,5 @@ services:
 
 volumes:
   postgres-data:
+  redis-data:
   frontend-node-modules:

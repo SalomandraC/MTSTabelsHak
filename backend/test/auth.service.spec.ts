@@ -95,9 +95,16 @@ describe('AuthService', () => {
     await service.login('test-api-key', response);
 
     expect(response.cookie).toHaveBeenCalledTimes(1);
-    const [cookieName, refreshToken] = response.cookie.mock.calls[0];
+    const [cookieName, refreshToken, cookieOptions] = response.cookie.mock.calls[0];
     expect(cookieName).toBe('refresh_token');
     expect(refreshToken).toContain('refresh::');
+    expect(cookieOptions).toMatchObject({
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      path: '/api/v1/auth',
+      maxAge: 8 * 60 * 60 * 1000,
+    });
 
     const refreshResult = await service.refresh(refreshToken, response);
     expect(refreshResult.expiresInSec).toBe(900);

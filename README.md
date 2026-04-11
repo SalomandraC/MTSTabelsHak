@@ -116,7 +116,8 @@ npm run start:dev
 
 Особенности:
 - refresh token живет 8 часов и хранится только в `HttpOnly` cookie
-- frontend держит access token только в памяти и делает silent refresh каждые 10 минут
+- frontend держит access token только в памяти и делает silent refresh по TTL токена до его истечения
+- auth-сессии в локальном `docker compose` теперь переживают пересоздание контейнера `redis`, потому что Redis пишет данные в named volume `redis-data`
 - по умолчанию `AUTH_REQUIRED=true`; для демо-режима можно вручную выставить `AUTH_REQUIRED=false`
 
 Совместная работа и шаринг страницы:
