@@ -1,4 +1,17 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Maximize2, RefreshCcw, ZoomIn } from 'lucide-react';
+import cytoscape from 'cytoscape';
+import cola from 'cytoscape-cola';
+
+const colaPlugin = (cola as any).default ?? cola;
+const isColaPlugin = typeof colaPlugin === 'function';
+const defaultLayoutName = isColaPlugin ? 'cola' : 'cose';
+
+if (isColaPlugin) {
+  cytoscape.use(colaPlugin);
+} else {
+  console.warn('Cytoscape cola plugin failed to load; falling back to cose layout.');
+}
 
 export type DocumentGraphEdge = {
   sourcePageId: string;
@@ -9,14 +22,7 @@ export type DocumentGraphEdge = {
 export type DocumentGraphPage = {
   id: string;
   title: string;
-};
-
-type GraphNode = {
-  id: string;
-  title: string;
-  x: number;
-  y: number;
-  degree: number;
+  fileSizeBytes?: number;
 };
 
 type DocumentLinkGraphProps = {
@@ -26,102 +32,482 @@ type DocumentLinkGraphProps = {
   onSelectPage: (pageId: string) => void;
 };
 
-const WIDTH = 288;
-const HEIGHT = 230;
-const CENTER_X = WIDTH / 2;
-const CENTER_Y = HEIGHT / 2 + 8;
+type ColaLayoutOptions = cytoscape.LayoutOptions & {
+  [key: string]: unknown;
+};
 
-function ringPoint(index: number, total: number, ring: 1 | 2) {
-  const radiusX = ring === 1 ? 82 : 116;
-  const radiusY = ring === 1 ? 58 : 84;
-  const angleOffset = ring === 1 ? -Math.PI / 2 : -Math.PI / 2 + Math.PI / 8;
-  const angle = total === 1 ? angleOffset : angleOffset + (index / total) * Math.PI * 2;
+function normalizeNodeSize(fileSizeBytes?: number) {
+  if (!fileSizeBytes) {
+    return 24;
+  }
 
-  return {
-    x: CENTER_X + Math.cos(angle) * radiusX,
-    y: CENTER_Y + Math.sin(angle) * radiusY,
-  };
+  const normalized = Math.min(42, Math.max(22, 12 + Math.log10(fileSizeBytes + 1) * 8));
+  return Math.round(normalized);
 }
 
-function truncateTitle(title: string) {
-  return title.length > 28 ? `${title.slice(0, 25)}...` : title;
+function buildElements(pages: DocumentGraphPage[], edges: DocumentGraphEdge[]) {
+  const nodes = pages.map((page) => ({
+    data: {
+      id: page.id,
+      title: page.title,
+      size: normalizeNodeSize(page.fileSizeBytes),
+    },
+    classes: 'document-node',
+  }));
+
+  const edgeElements = edges.map((edge, index) => ({
+    data: {
+      id: `edge-${edge.sourcePageId}-${edge.targetPageId}-${index}`,
+      source: edge.sourcePageId,
+      target: edge.targetPageId,
+      mentionCount: edge.mentionCount,
+    },
+    classes: 'document-edge',
+  }));
+
+  return [...nodes, ...edgeElements];
+}
+
+const GRAPH_ZOOM_MIN = 0.35;
+const GRAPH_ZOOM_MAX = 2.4;
+
+function clampPan(cy: cytoscape.Core) {
+  const pan = cy.pan();
+  const zoom = cy.zoom();
+  const limit = 170;
+
+  const clamped = {
+    x: Math.max(-limit, Math.min(limit, pan.x)),
+    y: Math.max(-limit, Math.min(limit, pan.y)),
+  };
+
+  if (clamped.x !== pan.x || clamped.y !== pan.y) {
+    cy.pan(clamped);
+  }
+
+  if (zoom < GRAPH_ZOOM_MIN) {
+    cy.zoom(GRAPH_ZOOM_MIN);
+  }
+  if (zoom > GRAPH_ZOOM_MAX) {
+    cy.zoom(GRAPH_ZOOM_MAX);
+  }
+}
+
+function updateSelection(cy: cytoscape.Core, activePageId: string | null, edges: DocumentGraphEdge[]) {
+  cy.batch(() => {
+    cy.elements().removeClass(['selected-node', 'highlight-node', 'highlighted-edge']);
+
+    if (!activePageId) {
+      return;
+    }
+
+    const activeNode = cy.$id(activePageId);
+    if (!activeNode.nonempty()) {
+      return;
+    }
+
+    activeNode.addClass('selected-node');
+
+    const connectedPageIds = new Set<string>();
+    edges.forEach((edge) => {
+      if (edge.sourcePageId === activePageId) {
+        connectedPageIds.add(edge.targetPageId);
+      }
+      if (edge.targetPageId === activePageId) {
+        connectedPageIds.add(edge.sourcePageId);
+      }
+    });
+
+    const connectedNodes = cy.collection();
+    connectedPageIds.forEach((pageId) => {
+      const node = cy.$id(pageId);
+      if (node.nonempty()) {
+        connectedNodes.merge(node);
+      }
+    });
+
+    connectedNodes.addClass('highlight-node');
+    cy.edges()
+      .filter((edge) => {
+        const data = edge.data();
+        return data.source === activePageId || data.target === activePageId;
+      })
+      .addClass('highlighted-edge');
+  });
+}
+
+function updateGraphElements(cy: cytoscape.Core, elements: cytoscape.ElementDefinition[]) {
+  const incomingNodeIds = new Set<string>();
+  const incomingEdgeIds = new Set<string>();
+
+  elements.forEach((element) => {
+    if (!element.data?.id) {
+      return;
+    }
+
+    if (element.data.source) {
+      incomingEdgeIds.add(element.data.id.toString());
+    } else {
+      incomingNodeIds.add(element.data.id.toString());
+    }
+  });
+
+  cy.batch(() => {
+    cy.nodes().filter((node) => !incomingNodeIds.has(node.id())).remove();
+    cy.edges().filter((edge) => !incomingEdgeIds.has(edge.id())).remove();
+
+    elements.forEach((element) => {
+      if (!element.data?.id) {
+        return;
+      }
+
+      const existing = cy.getElementById(element.data.id.toString());
+      if (existing.nonempty()) {
+        existing.data(element.data);
+      } else {
+        cy.add(element);
+      }
+    });
+  });
 }
 
 export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: DocumentLinkGraphProps) {
-  const { nodes, visibleEdges } = useMemo(() => {
-    const degree = new Map<string, number>();
-    const pageIds = new Set(pages.map((page) => page.id));
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const cytoscapeRef = useRef<cytoscape.Core | null>(null);
+  const onSelectPageRef = useRef(onSelectPage);
+  const dragStateRef = useRef<{ startX: number; startY: number; anchorX: number; anchorY: number } | null>(null);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalOffset, setModalOffset] = useState({ x: 80, y: 60 });
 
-    edges.forEach((edge) => {
-      degree.set(edge.sourcePageId, (degree.get(edge.sourcePageId) ?? 0) + edge.mentionCount);
-      degree.set(edge.targetPageId, (degree.get(edge.targetPageId) ?? 0) + edge.mentionCount);
-    });
+  useEffect(() => {
+    onSelectPageRef.current = onSelectPage;
+  }, [onSelectPage]);
 
-    const sortedPages = [...pages].sort((a, b) => {
-      if (a.id === activePageId) return -1;
-      if (b.id === activePageId) return 1;
-      return (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) || a.title.localeCompare(b.title);
-    });
-
-    const activePage = sortedPages.find((page) => page.id === activePageId);
-    const otherPages = sortedPages.filter((page) => page.id !== activePageId);
-    const innerCount = Math.min(otherPages.length, 8);
-    const outerCount = Math.max(0, otherPages.length - innerCount);
-
-    const nextNodes: GraphNode[] = [];
-
-    if (activePage) {
-      nextNodes.push({
-        id: activePage.id,
-        title: activePage.title,
-        x: CENTER_X,
-        y: CENTER_Y,
-        degree: degree.get(activePage.id) ?? 0,
-      });
-    }
-
-    otherPages.forEach((page, index) => {
-      const isInner = index < innerCount;
-      const point = isInner
-        ? ringPoint(index, innerCount, 1)
-        : ringPoint(index - innerCount, outerCount, 2);
-
-      nextNodes.push({
-        id: page.id,
-        title: page.title,
-        degree: degree.get(page.id) ?? 0,
-        ...point,
-      });
-    });
-
-    if (!activePage) {
-      sortedPages.forEach((page, index, all) => {
-        nextNodes.push({
-          id: page.id,
-          title: page.title,
-          degree: degree.get(page.id) ?? 0,
-          ...ringPoint(index, all.length, all.length > 8 ? 2 : 1),
-        });
-      });
-    }
-
-    const visiblePageIds = new Set(nextNodes.map((node) => node.id));
-
-    return {
-      nodes: nextNodes,
-      visibleEdges: edges.filter(
-        (edge) =>
-          pageIds.has(edge.sourcePageId) &&
-          pageIds.has(edge.targetPageId) &&
-          visiblePageIds.has(edge.sourcePageId) &&
-          visiblePageIds.has(edge.targetPageId),
-      ),
-    };
-  }, [activePageId, edges, pages]);
-
-  const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
+  const pagesKey = pages.map((page) => `${page.id}:${page.title}:${page.fileSizeBytes ?? ''}`).join('|');
+  const edgesKey = edges.map((edge) => `${edge.sourcePageId}:${edge.targetPageId}:${edge.mentionCount}`).join('|');
+  const elements = useMemo(() => buildElements(pages, edges), [pagesKey, edgesKey]);
   const activeTitle = pages.find((page) => page.id === activePageId)?.title;
-  const maxDegree = Math.max(1, ...nodes.map((node) => node.degree));
+
+  const layoutOptions: ColaLayoutOptions = {
+    name: defaultLayoutName,
+    animate: true,
+    refresh: 1,
+    maxSimulationTime: 4000,
+    ungrabifyWhileSimulating: false,
+    fit: false,
+    padding: 30,
+    nodeDimensionsIncludeLabels: false,
+    randomize: false,
+    avoidOverlap: true,
+    handleDisconnected: true,
+    convergenceThreshold: 0.01,
+    nodeSpacing: 18,
+    centerGraph: true,
+    edgeLengthVal: 80,
+    componentSpacing: 30,
+  };
+
+  useEffect(() => {
+    if (!containerRef.current || cytoscapeRef.current || pages.length === 0) {
+      return;
+    }
+
+    const cy = cytoscape({
+      container: containerRef.current,
+      elements,
+      style: [
+        {
+          selector: 'node',
+          style: {
+            'background-color': '#9ca3af',
+            'border-width': 2,
+            'border-color': '#d1d5db',
+            width: 'data(size)',
+            height: 'data(size)',
+            label: 'data(title)',
+            'font-size': 10,
+            color: '#6b7280',
+            'text-valign': 'top',
+            'text-halign': 'center',
+            'text-margin-y': -10,
+            'text-wrap': 'wrap',
+            'text-max-width': 140,
+            'text-opacity': 1,
+            'text-background-color': '#ffffff',
+            'text-background-opacity': 0.75,
+            'text-background-padding': 4,
+            'text-background-shape': 'roundrectangle',
+            'transition-property': 'background-color width height border-color text-opacity',
+            'transition-duration': '250ms',
+            'transition-timing-function': 'ease-in-out',
+          },
+        },
+        {
+          selector: 'edge',
+          style: {
+            'curve-style': 'bezier',
+            'target-arrow-shape': 'none',
+            'line-color': 'rgba(17,24,39,0.24)',
+            width: 1,
+            opacity: 0.9,
+          },
+        },
+        {
+          selector: '.selected-node',
+          style: {
+            'background-color': '#ff0037',
+            'border-color': '#ff7b96',
+            'text-opacity': 1,
+            color: '#111827',
+            'font-size': 12,
+            'font-weight': '700',
+            'text-valign': 'top',
+            'text-margin-y': -12,
+            'text-background-color': '#ffffff',
+            'text-background-opacity': 0.95,
+            'text-background-padding': 6,
+          },
+        },
+        {
+          selector: '.highlight-node',
+          style: {
+            'background-color': '#fde2e8',
+            'border-color': '#fb7185',
+            'text-opacity': 1,
+            color: '#111827',
+            'font-weight': '600',
+            'text-valign': 'top',
+            'text-margin-y': -12,
+            'text-background-color': '#ffffff',
+            'text-background-opacity': 0.9,
+            'text-background-padding': 6,
+          },
+        },
+        {
+          selector: '.highlighted-edge',
+          style: {
+            'line-color': '#ff0037',
+            width: 2,
+            opacity: 0.95,
+          },
+        },
+      ],
+      layout: {
+        name: defaultLayoutName,
+        animate: true,
+        refresh: 1,
+        maxSimulationTime: 4000,
+        ungrabifyWhileSimulating: false,
+        fit: false,
+        padding: 30,
+        nodeDimensionsIncludeLabels: false,
+        randomize: false,
+        avoidOverlap: true,
+        handleDisconnected: true,
+        convergenceThreshold: 0.01,
+        nodeSpacing: 18,
+        centerGraph: true,
+        edgeLengthVal: 80,
+        componentSpacing: 30,
+      } as ColaLayoutOptions,
+      minZoom: 0.35,
+      maxZoom: 2.4,
+      wheelSensitivity: 0.9,
+      userZoomingEnabled: true,
+      userPanningEnabled: true,
+      boxSelectionEnabled: false,
+      autounselectify: true,
+    });
+
+    cy.on('tap', 'node', (event) => {
+      const node = event.target;
+      onSelectPageRef.current(node.id());
+    });
+
+    cy.on('pan zoom', () => clampPan(cy));
+
+    const scheduleLayout = () => {
+      window.requestAnimationFrame(() => {
+        cy.resize();
+        const layout = cy.layout(layoutOptions);
+        layout.on('layoutstop', () => {
+          if (cy.elements().nonempty()) {
+            cy.fit(cy.elements(), 25);
+          }
+        });
+        layout.run();
+      });
+    };
+
+    const resizeObserver = new ResizeObserver(() => scheduleLayout());
+    resizeObserver.observe(containerRef.current);
+
+    scheduleLayout();
+    cytoscapeRef.current = cy;
+    updateSelection(cy, activePageId, edges);
+
+    return () => {
+      resizeObserver.disconnect();
+      cy.destroy();
+      cytoscapeRef.current = null;
+    };
+  }, [pages.length]);
+
+  useEffect(() => {
+    if (!isModalOpen) {
+      return;
+    }
+
+    const cy = cytoscapeRef.current;
+    if (!cy) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      cy.resize();
+      cy.fit(cy.elements(), 25);
+    });
+  }, [isModalOpen]);
+
+  useEffect(() => {
+    const cy = cytoscapeRef.current;
+    if (!cy) {
+      return;
+    }
+
+    updateSelection(cy, activePageId, edges);
+  }, [activePageId, edgesKey]);
+
+  useEffect(() => {
+    const cy = cytoscapeRef.current;
+    if (!cy) {
+      return;
+    }
+
+    const container = cy.container();
+    if (!container) {
+      return undefined;
+    }
+
+    const onMouseEnter = () => setIsHovered(true);
+    const onMouseLeave = () => setIsHovered(false);
+
+    container.addEventListener('mouseenter', onMouseEnter);
+    container.addEventListener('mouseleave', onMouseLeave);
+
+    return () => {
+      container.removeEventListener('mouseenter', onMouseEnter);
+      container.removeEventListener('mouseleave', onMouseLeave);
+    };
+  }, []);
+
+  useEffect(() => {
+    const cy = cytoscapeRef.current;
+    if (!cy || pages.length === 0) {
+      return;
+    }
+
+    updateGraphElements(cy, elements);
+    window.requestAnimationFrame(() => {
+      cy.resize();
+      const layout = cy.layout(layoutOptions);
+      layout.on('layoutstop', () => {
+        if (cy.elements().nonempty()) {
+          cy.fit(cy.elements(), 25);
+        }
+      });
+      layout.run();
+    });
+  }, [elements, pages.length]);
+
+  const handleRefreshGraph = () => {
+    const cy = cytoscapeRef.current;
+    if (!cy) {
+      return;
+    }
+
+    updateGraphElements(cy, elements);
+    cy.layout({
+      name: defaultLayoutName,
+      animate: true,
+      refresh: 1,
+      maxSimulationTime: 4000,
+      ungrabifyWhileSimulating: false,
+      fit: false,
+      padding: 30,
+      nodeDimensionsIncludeLabels: false,
+      randomize: false,
+      avoidOverlap: true,
+      handleDisconnected: true,
+      convergenceThreshold: 0.01,
+      nodeSpacing: 18,
+      centerGraph: true,
+      edgeLengthVal: 80,
+      componentSpacing: 30,
+    } as ColaLayoutOptions).run();
+  };
+
+  const handleExpandGraph = () => {
+    const cy = cytoscapeRef.current;
+    if (!cy) {
+      return;
+    }
+
+    cy.fit(cy.elements(), 20);
+    const targetZoom = Math.min(cy.maxZoom(), cy.zoom() * 1.1);
+    cy.zoom(targetZoom);
+  };
+
+  const handleOpenModal = () => {
+    const modalWidth = Math.min(window.innerWidth * 0.84, 820);
+    const modalHeight = Math.min(window.innerHeight * 0.76, 640);
+
+    setModalOffset({
+      x: Math.round((window.innerWidth - modalWidth) / 2),
+      y: Math.round((window.innerHeight - modalHeight) / 2),
+    });
+    setIsModalOpen(true);
+  };
+
+  const graphContainerStyle = {
+    touchAction: 'none',
+    cursor: isHovered ? 'grab' : 'default',
+  } as const;
+
+  const handleModalPointerDown = (event: any) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    dragStateRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      anchorX: modalOffset.x,
+      anchorY: modalOffset.y,
+    };
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleModalPointerMove = (event: any) => {
+    if (!dragStateRef.current) {
+      return;
+    }
+
+    const deltaX = event.clientX - dragStateRef.current.startX;
+    const deltaY = event.clientY - dragStateRef.current.startY;
+
+    setModalOffset({
+      x: Math.max(8, Math.min(window.innerWidth - 200, dragStateRef.current.anchorX + deltaX)),
+      y: Math.max(8, Math.min(window.innerHeight - 120, dragStateRef.current.anchorY + deltaY)),
+    });
+  };
+
+  const handleModalPointerUp = (event: any) => {
+    dragStateRef.current = null;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  };
 
   return (
     <section className="overflow-hidden rounded-2xl border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm">
@@ -132,78 +518,78 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-editor-text-tertiary">Graph View</p>
             <h3 className="mt-1 truncate font-wide text-sm font-semibold text-editor-text-primary">{activeTitle ?? 'Все документы'}</h3>
           </div>
-          <span className="shrink-0 rounded-full border border-editor-border-subtle bg-editor-bg-control px-2.5 py-1 text-xs font-semibold text-editor-text-secondary">
-            {pages.length}/{edges.length}
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleRefreshGraph}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
+              aria-label="Обновить граф"
+              title="Обновить граф"
+            >
+              <RefreshCcw size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={handleExpandGraph}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
+              aria-label="Приблизить граф"
+              title="Приблизить граф"
+            >
+              <ZoomIn size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenModal}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
+              aria-label="Открыть большой граф"
+              title="Открыть большой граф"
+            >
+              <Maximize2 size={14} />
+            </button>
+            <span className="shrink-0 rounded-full border border-editor-border-subtle bg-editor-bg-control px-2.5 py-1 text-xs font-semibold text-editor-text-secondary">
+              {pages.length}/{edges.length}
+            </span>
+          </div>
         </div>
       </div>
 
       <div className="relative h-[214px] bg-[radial-gradient(circle_at_center,rgba(255,0,55,0.055),transparent_44%)]">
         {pages.length > 0 ? (
           <>
-            <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} aria-hidden="true">
-              {visibleEdges.map((edge) => {
-                const from = nodeById.get(edge.sourcePageId);
-                const to = nodeById.get(edge.targetPageId);
-                const touchesActive = edge.sourcePageId === activePageId || edge.targetPageId === activePageId;
-
-                if (!from || !to) {
-                  return null;
-                }
-
-                return (
-                  <line
-                    key={`${edge.sourcePageId}-${edge.targetPageId}`}
-                    x1={from.x}
-                    y1={from.y}
-                    x2={to.x}
-                    y2={to.y}
-                    stroke={touchesActive ? '#ff0037' : 'rgba(17,24,39,0.26)'}
-                    strokeWidth={touchesActive ? 1.8 : 1.1}
-                    strokeLinecap="round"
-                  />
-                );
-              })}
-            </svg>
-
-            {nodes.map((node) => {
-              const isActive = node.id === activePageId;
-              const size = isActive ? 18 : 9 + Math.round((node.degree / maxDegree) * 7);
-
-              return (
-                <button
-                  key={node.id}
-                  type="button"
-                  disabled={isActive}
-                  onClick={() => onSelectPage(node.id)}
-                  title={node.title}
-                  aria-label={`Открыть страницу ${node.title}`}
-                  className={[
-                    'group absolute rounded-full border transition-transform hover:scale-125',
-                    isActive
-                      ? 'border-[#ff0037] bg-[#ff0037] shadow-[0_0_0_6px_rgba(255,0,55,0.12),0_8px_20px_rgba(255,0,55,0.26)]'
-                      : 'border-[#111827] bg-[#111827] shadow-[0_6px_16px_rgba(17,24,39,0.16)]',
-                    isActive ? 'cursor-default' : 'cursor-pointer',
-                  ].join(' ')}
-                  style={{
-                    left: node.x,
-                    top: node.y,
-                    width: size,
-                    height: size,
-                    transform: 'translate(-50%, -50%)',
-                  }}
+            {isModalOpen && (
+              <div className="fixed inset-0 z-40">
+                <div className="absolute inset-0 bg-black/30" onClick={() => setIsModalOpen(false)} />
+                <div
+                  className="absolute z-50 flex h-10 cursor-grab items-center justify-between gap-3 rounded-t-3xl bg-slate-200 px-3 text-sm font-semibold text-slate-900"
+                  style={{ left: modalOffset.x, top: modalOffset.y, width: 'min(84vw,820px)' }}
+                  onPointerDown={handleModalPointerDown}
+                  onPointerMove={handleModalPointerMove}
+                  onPointerUp={handleModalPointerUp}
                 >
-                  <span
-                    className={[
-                      'pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap rounded-full border border-editor-border-subtle bg-white px-2 py-0.5 text-[10px] font-semibold text-editor-text-primary shadow-lg',
-                      isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
-                    ].join(' ')}
-                  >
-                    {truncateTitle(node.title)}
-                  </span>
-                </button>
-              );
-            })}
+                </div>
+              </div>
+            )}
+
+            <div
+              ref={containerRef}
+              className={isModalOpen ? 'absolute rounded-b-3xl bg-white shadow-[0_30px_80px_rgba(17,25,40,0.25)]' : 'h-full w-full'}
+              style={{
+                ...graphContainerStyle,
+                ...(isModalOpen
+                  ? {
+                      position: 'fixed' as const,
+                      top: modalOffset.y + 40,
+                      left: modalOffset.x,
+                      width: 'min(84vw,820px)',
+                      height: 'calc(min(76vh,640px) - 40px)',
+                      zIndex: 1000,
+                      borderRadius: '0 0 24px 24px',
+                      backgroundColor: '#ffffff',
+                    }
+                  : {}),
+              }}
+              aria-label="Graph canvas"
+            />
           </>
         ) : (
           <div className="flex h-full items-center justify-center px-8 text-center text-sm text-editor-text-tertiary">Создайте страницы, чтобы увидеть граф связей.</div>
