@@ -3,6 +3,7 @@ import { EditorContent } from '@tiptap/react';
 import { useEffect } from 'react';
 
 import { SlashMenu } from '../../slash-menu';
+import { usePlugins } from '../../plugins';
 import type { PresenceUser, WikiPage } from '../../../shared/api/wikilive';
 import { usePageEditorController } from '../model/use-page-editor-controller';
 import { FloatingToolbar } from './floating-toolbar';
@@ -47,7 +48,19 @@ function PresenceStrip({ users }: { users: PresenceUser[] }) {
 }
 
 export function PageEditor({ spaceId, page, onRenamePage, onCheckpoint, onEditorChange }: PageEditorProps) {
-  const controller = usePageEditorController({ spaceId, page, onRenamePage, onCheckpoint });
+  const { isEditorSlotEnabled } = usePlugins();
+  const isAiSlashEnabled = isEditorSlotEnabled('slash_menu');
+  const isAiToolbarEnabled = isEditorSlotEnabled('toolbar_bubble');
+  const isAiExtensionEnabled = isEditorSlotEnabled('editor_extension');
+
+  const controller = usePageEditorController({
+    spaceId,
+    page,
+    onRenamePage,
+    onCheckpoint,
+    isAiSlashEnabled,
+    isAiEditorExtensionEnabled: isAiExtensionEnabled,
+  });
 
   useEffect(() => {
     onEditorChange?.(controller.editor);
@@ -95,6 +108,7 @@ export function PageEditor({ spaceId, page, onRenamePage, onCheckpoint, onEditor
               editor={controller.editor}
               onOpenLinkModal={() => controller.openLinkModal()}
               pageTitle={controller.title}
+              isAiTransformEnabled={isAiToolbarEnabled}
             />
           )}
           <SlashMenu

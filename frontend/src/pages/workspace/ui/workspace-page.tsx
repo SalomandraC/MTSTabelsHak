@@ -8,7 +8,6 @@ import {
   Folder,
   Plus,
   Search,
-  Send,
   Sparkles,
   Table2,
   Trash2,
@@ -17,6 +16,7 @@ import {
 } from 'lucide-react';
 
 import { PageEditor } from '../../../features/page-editor';
+import { AiChatSidebar } from '../../../features/plugins/ai-assistant';
 import { PluginsModal, usePlugins } from '../../../features/plugins';
 import {
   DEFAULT_WIKILIVE_SPACE_ID,
@@ -146,132 +146,6 @@ function getWorkspaceNodeIcon(node: WorkspaceTreeNode) {
   }
 
   return <FileText size={17} strokeWidth={1.8} />;
-}
-
-type ChatMessage = {
-  id: string;
-  role: 'user' | 'assistant';
-  text: string;
-};
-
-function getEditorMarkdown(editor: Editor | null): string {
-  if (!editor) {
-    return '';
-  }
-
-  const markdownStorage = (editor.storage as { markdown?: { getMarkdown?: () => string } }).markdown;
-
-  if (markdownStorage?.getMarkdown) {
-    return markdownStorage.getMarkdown();
-  }
-
-  return editor.getText();
-}
-
-function AIChatSidebar({
-  pageId,
-  pageTitle,
-  editor,
-}: {
-  pageId: string | null;
-  pageTitle?: string;
-  editor: Editor | null;
-}) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [question, setQuestion] = useState('');
-  const [isSending, setIsSending] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-
-  const handleSend = async () => {
-    const trimmed = question.trim();
-    if (!trimmed || isSending) {
-      return;
-    }
-
-    const markdown = getEditorMarkdown(editor);
-    const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      text: trimmed,
-    };
-
-    setMessages((current) => [...current, userMessage]);
-    setQuestion('');
-    setErrorMessage('');
-    setIsSending(true);
-
-    try {
-      const response = await wikiliveApi.aiChat({
-        question: trimmed,
-        pageId: pageId ?? undefined,
-        pageTitle,
-        pageSnapshot: {
-          markdown,
-        },
-      });
-
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          text: response.answer,
-        },
-      ]);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Не удалось получить ответ AI');
-    } finally {
-      setIsSending(false);
-    }
-  };
-
-  return (
-    <section>
-      <h3 className="text-sm font-semibold">AI Chat</h3>
-      <div className="mt-2 space-y-2">
-        <div className="max-h-52 space-y-2 overflow-y-auto rounded-lg border border-editor-border-subtle bg-[#fafbfd] p-2">
-          {messages.length === 0 ? <p className="text-xs text-editor-text-tertiary">Задайте вопрос по текущей странице</p> : null}
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={[
-                'rounded-md px-2 py-1.5 text-xs',
-                message.role === 'user' ? 'bg-[#eef3ff] text-[#1f2f55]' : 'bg-white text-[#2f3136] border border-[#e8ebf2]',
-              ].join(' ')}
-            >
-              <p className="mb-1 font-semibold">{message.role === 'user' ? 'Вы' : 'AI'}</p>
-              <p className="whitespace-pre-wrap">{message.text}</p>
-            </div>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          <input
-            value={question}
-            onChange={(event) => setQuestion(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                void handleSend();
-              }
-            }}
-            placeholder="Спросить AI про страницу"
-            className="h-9 w-full rounded-md border border-editor-border-subtle bg-white px-3 text-sm outline-none focus:border-[#5586ff]"
-            disabled={isSending}
-          />
-          <button
-            type="button"
-            onClick={() => void handleSend()}
-            disabled={isSending || !question.trim()}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-editor-border-subtle bg-white text-editor-text-primary hover:bg-editor-bg-control disabled:cursor-not-allowed disabled:opacity-50"
-            title="Отправить вопрос"
-          >
-            <Send size={14} />
-          </button>
-        </div>
-        {errorMessage ? <p className="text-xs text-[#b00025]">{errorMessage}</p> : null}
-      </div>
-    </section>
-  );
 }
 
 function WorkspaceTreeItem({
@@ -517,6 +391,7 @@ export function WorkspacePage() {
   const visibleTree = useMemo(() => filterWorkspaceTree(tree, searchQuery), [searchQuery, tree]);
   const hasSearch = searchQuery.trim().length > 0;
   const isDocumentGraphEnabled = isWorkspaceSidebarEnabled('document-graph');
+  const isAiSidebarEnabled = isWorkspaceSidebarEnabled('sidebar');
   const effectiveExpandedFolderIds = useMemo(
     () => (hasSearch ? new Set(collectWorkspaceFolderIds(visibleTree)) : expandedFolderIds),
     [expandedFolderIds, hasSearch, visibleTree],
@@ -1110,7 +985,12 @@ export function WorkspacePage() {
             </div>
           </section>
 
-          <AIChatSidebar pageId={activePageId} pageTitle={activePage?.title} editor={activeEditor} />
+          <AiChatSidebar
+            pageId={activePageId}
+            pageTitle={activePage?.title}
+            editor={activeEditor}
+            enabled={isAiSidebarEnabled}
+          />
 
           <section>
             <h3 className="text-sm font-semibold">Backlinks ({backlinks.length})</h3>
