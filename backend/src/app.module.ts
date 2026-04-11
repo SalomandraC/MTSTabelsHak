@@ -10,6 +10,7 @@ import { RedisModule } from './infra/redis/redis.module';
 import { LinksModule } from './links/links.module';
 import { MwsModule } from './mws/mws.module';
 import { PagesModule } from './pages/pages.module';
+import { PluginsModule } from './plugins/plugins.module';
 import { SearchModule } from './search/search.module';
 import { WikiTreeModule } from './wiki-tree/wiki-tree.module';
 
@@ -41,6 +42,7 @@ import { WikiTreeModule } from './wiki-tree/wiki-tree.module';
     LinksModule,
     CollabModule,
     MwsModule,
+    PluginsModule,
   ],
   controllers: [AppController],
 })

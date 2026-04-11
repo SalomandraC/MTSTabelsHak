@@ -19,6 +19,32 @@ export type MeResponse = {
   };
 };
 
+export type PluginPlan = {
+  id: 'free' | 'pro' | 'enterprise';
+  title: string;
+  description: string;
+};
+
+export type PluginCatalogItem = {
+  id: string;
+  title: string;
+  description: string;
+  category: 'core' | 'insights' | 'assistant' | 'collaboration';
+  kind: 'core' | 'optional';
+  placement: string[];
+  requiredPlans: string[];
+  implemented: boolean;
+  enabled: boolean;
+  canToggle: boolean;
+  status: 'core' | 'enabled' | 'available' | 'locked' | 'comingSoon';
+  lockedReason: string | null;
+};
+
+export type PluginCatalogResponse = {
+  plan: PluginPlan;
+  items: PluginCatalogItem[];
+};
+
 let accessToken: string | null = null;
 let activeUser: MeResponse['user'] | null = null;
 let refreshInFlight: Promise<string | null> | null = null;
@@ -402,6 +428,19 @@ export const wikiliveApi = {
 
     const me = await this.getMe();
     return me.user;
+  },
+  listPlugins() {
+    return request<PluginCatalogResponse>('/api/v1/plugins/catalog');
+  },
+  activatePlugin(pluginId: string) {
+    return request<PluginCatalogResponse>(`/api/v1/plugins/${pluginId}/activate`, {
+      method: 'POST',
+    });
+  },
+  deactivatePlugin(pluginId: string) {
+    return request<PluginCatalogResponse>(`/api/v1/plugins/${pluginId}/deactivate`, {
+      method: 'POST',
+    });
   },
   listPages(spaceId: string, query = '') {
     return request<{ items: PageSummary[] }>('/api/v1/pages', {

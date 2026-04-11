@@ -16,6 +16,7 @@ WikiLive — это совместный вики-модуль для кейса
 - вики-дерево с папками и страницами
 - CRUD-операции со страницами с иерархическим размещением
 - обратные и исходящие ссылки
+- server-driven каталог плагинов с entitlement-логикой по подписке и пользовательскими override-переключателями
 - начальная загрузка сессии совместной работы для `Tiptap + Yjs`
 - персистентность CRDT с моментальными снимками, контрольными точками и журналом обновлений в режиме append-only
 - BFF-эндпоинты живых MWS Tables для пространств, узлов, таблиц, полей, представлений, записей и разрешения встраивания таблиц
@@ -76,8 +77,17 @@ npm run start:dev
 - `JWT_SECRET`
 - `MWS_TABLES_BASE_URL`
 - `AUTH_REQUIRED`
+- `DEFAULT_PLUGIN_PLAN`
+- `PLUGIN_USER_PLAN_MAP`
 - `VITE_API_BASE_URL`
 - `VITE_WIKILIVE_SPACE_ID`
+
+Плагины и entitlement-модель:
+- backend отдает каталог через `GET /api/v1/plugins/catalog`
+- пользователь может включать/выключать реализованные optional plugins через `POST /api/v1/plugins/:pluginId/activate` и `POST /api/v1/plugins/:pluginId/deactivate`
+- core-модули неотключаемы и всегда активны
+- `DEFAULT_PLUGIN_PLAN` задает базовый план для всех пользователей, если для них нет явного маппинга
+- `PLUGIN_USER_PLAN_MAP` принимает JSON вида `{"demo-user":"free","demo-user-2":"pro"}`
 
 Авторизация по API-ключу:
 - `POST /api/v1/auth/login` принимает `{ "apiKey": "sk-..." }`, валидирует ключ через MWS `/spaces` и выставляет `HttpOnly` cookie `refresh_token`

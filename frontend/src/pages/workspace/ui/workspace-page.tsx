@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 
 import { PageEditor } from '../../../features/page-editor';
+import { PluginsModal, usePlugins } from '../../../features/plugins';
 import {
   DEFAULT_WIKILIVE_SPACE_ID,
   type Backlink,
@@ -448,6 +449,15 @@ function TreeItem({
 }
 
 export function WorkspacePage() {
+  const {
+    items: plugins,
+    plan,
+    isLoading: isPluginsLoading,
+    errorMessage: pluginsErrorMessage,
+    pendingPluginId,
+    togglePlugin,
+    isWorkspaceSidebarEnabled,
+  } = usePlugins();
   const initialRoute = useMemo(() => readWorkspaceRoute(), []);
   const pendingRoutePageIdRef = useRef(initialRoute.pageId);
   const [spaces, setSpaces] = useState<MwsSpace[]>([]);
@@ -468,10 +478,12 @@ export function WorkspacePage() {
   const [statusMessage, setStatusMessage] = useState('Загружаем wiki workspace');
   const [errorMessage, setErrorMessage] = useState('');
   const [shareStatus, setShareStatus] = useState('');
+  const [isPluginsModalOpen, setIsPluginsModalOpen] = useState(false);
 
   const folders = useMemo(() => flattenFolders(tree), [tree]);
   const visibleTree = useMemo(() => filterTree(tree, searchQuery), [searchQuery, tree]);
   const hasSearch = searchQuery.trim().length > 0;
+  const isDocumentGraphEnabled = isWorkspaceSidebarEnabled('document-graph');
   const effectiveExpandedFolderIds = useMemo(
     () => (hasSearch ? new Set(collectFolderIds(visibleTree)) : expandedFolderIds),
     [expandedFolderIds, hasSearch, visibleTree],
@@ -521,9 +533,8 @@ export function WorkspacePage() {
         collectFolderIds(nextTree).forEach((folderId) => nextIds.add(folderId));
         return nextIds;
       });
-      await refreshGraphLinks(nextTree).catch(() => setGraphEdges([]));
     },
-    [refreshGraphLinks],
+    [],
   );
 
   const refreshLinks = async (pageId: string) => {
@@ -619,6 +630,20 @@ export function WorkspacePage() {
       cancelled = true;
     };
   }, [refreshTree, selectedSpaceId]);
+
+  useEffect(() => {
+    if (!isDocumentGraphEnabled) {
+      setGraphEdges([]);
+      return;
+    }
+
+    if (tree.length === 0) {
+      setGraphEdges([]);
+      return;
+    }
+
+    void refreshGraphLinks(tree).catch(() => setGraphEdges([]));
+  }, [isDocumentGraphEnabled, refreshGraphLinks, tree]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -985,7 +1010,14 @@ export function WorkspacePage() {
           <button type="button" className="flex h-8 w-8 items-center justify-center rounded-md text-[#30c28b] hover:bg-[#f2f3f5]" title="Корзина">
             <Trash2 size={18} strokeWidth={2.1} />
           </button>
-          <button type="button" className="flex h-8 w-8 items-center justify-center rounded-md text-[#5586ff] hover:bg-[#f2f3f5]" title="Шаблоны">
+          <button
+            type="button"
+            onClick={() => setIsPluginsModalOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={isPluginsModalOpen}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-[#5586ff] hover:bg-[#f2f3f5]"
+            title="Плагины"
+          >
             <Sparkles size={18} strokeWidth={2.1} />
           </button>
           <button type="button" className="flex h-8 w-8 items-center justify-center rounded-md text-[#7b67ee] hover:bg-[#f2f3f5]" title="Пригласить">
@@ -1018,9 +1050,26 @@ export function WorkspacePage() {
         </div>
         <div className="space-y-5 overflow-y-auto p-4">
           <section>
-            <h3 className="text-sm font-semibold">Граф страниц</h3>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold">Граф страниц</h3>
+              {!isDocumentGraphEnabled ? (
+                <button
+                  type="button"
+                  onClick={() => setIsPluginsModalOpen(true)}
+                  className="rounded-full border border-editor-border-subtle bg-editor-bg-control px-2.5 py-1 text-[11px] font-semibold text-editor-text-secondary transition-colors hover:bg-[#e7eaef]"
+                >
+                  Подключить
+                </button>
+              ) : null}
+            </div>
             <div className="mt-2">
-              <DocumentLinkGraph pages={flattenPages(tree)} activePageId={activePageId} edges={graphEdges} onSelectPage={handleSelectPage} />
+              {isDocumentGraphEnabled ? (
+                <DocumentLinkGraph pages={flattenPages(tree)} activePageId={activePageId} edges={graphEdges} onSelectPage={handleSelectPage} />
+              ) : (
+                <div className="rounded-2xl border border-dashed border-editor-border-subtle bg-[#fafbfc] px-4 py-5 text-sm text-editor-text-tertiary">
+                  Плагин `Document Graph` сейчас отключен или недоступен по плану.
+                </div>
+              )}
             </div>
           </section>
 
@@ -1061,6 +1110,17 @@ export function WorkspacePage() {
           </section>
         </div>
       </aside>
+
+      <PluginsModal
+        isOpen={isPluginsModalOpen}
+        items={plugins}
+        plan={plan}
+        isLoading={isPluginsLoading}
+        errorMessage={pluginsErrorMessage}
+        pendingPluginId={pendingPluginId}
+        onClose={() => setIsPluginsModalOpen(false)}
+        onTogglePlugin={(pluginId, enabled) => void togglePlugin(pluginId, enabled)}
+      />
     </main>
   );
 }
