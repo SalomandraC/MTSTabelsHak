@@ -266,6 +266,10 @@ export type ResolveTableEmbedRequest = {
   pageSize?: number;
   filterByFormula?: string | null;
   allowInlineEdit?: boolean;
+  sort?: Array<{
+    fieldId: string;
+    desc: boolean;
+  }>;
 };
 
 export type ResolveTableEmbedResponse = {
@@ -634,6 +638,10 @@ export const wikiliveApi = {
     pageNum?: number;
     fields?: string[];
     filterByFormula?: string | null;
+    sort?: Array<{
+      fieldId: string;
+      desc: boolean;
+    }>;
   } = {}) {
     return request<MwsRecordList>(`/api/v1/mws/datasheets/${datasheetId}/records`, {
       query: {
@@ -644,6 +652,7 @@ export const wikiliveApi = {
         filterByFormula: query.filterByFormula,
         fieldKey: 'id',
         cellFormat: 'json',
+        sort: query.sort ? JSON.stringify(query.sort) : undefined,
       },
     });
   },

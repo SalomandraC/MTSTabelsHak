@@ -22,6 +22,8 @@ import {
 import { useEffect, useRef, useState } from 'react';
 
 import { CreateFieldModal } from './create-field-modal';
+import { HideFieldsModal } from './hide-fields-modal';
+import { SortFieldsModal } from './sort-fields-modal';
 import {
   clampText,
   COLUMN_WIDTH,
@@ -67,6 +69,8 @@ function isDirectEditKey(event: React.KeyboardEvent<HTMLElement>) {
 export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
   const controller = useWikiTableEmbed(node.attrs);
   const [isCreateFieldModalOpen, setIsCreateFieldModalOpen] = useState(false);
+  const [isHideFieldsModalOpen, setIsHideFieldsModalOpen] = useState(false);
+  const [isSortFieldsModalOpen, setIsSortFieldsModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const selectEditorRef = useRef<HTMLDivElement | null>(null);
 
@@ -132,7 +136,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     ctx.fillStyle = '#6b7280';
     ctx.fillText('#', 20, HEADER_HEIGHT / 2);
 
-    controller.fields.forEach((field, fieldIndex) => {
+    controller.visibleFields.forEach((field, fieldIndex) => {
       const x = INDEX_WIDTH + fieldIndex * COLUMN_WIDTH - controller.scrollOffset.left;
       if (x + COLUMN_WIDTH < INDEX_WIDTH || x > width) {
         return;
@@ -176,7 +180,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       ctx.fillStyle = '#555b66';
       ctx.fillText(String(rowIndex + 1), 22, y + ROW_HEIGHT / 2);
 
-      controller.fields.forEach((field, fieldIndex) => {
+      controller.visibleFields.forEach((field, fieldIndex) => {
         const x = INDEX_WIDTH + fieldIndex * COLUMN_WIDTH - controller.scrollOffset.left;
         if (x + COLUMN_WIDTH < INDEX_WIDTH || x > width) {
           return;
@@ -218,7 +222,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       ctx.fillStyle = '#7b8190';
       ctx.fillText('Нет строк для отображения', INDEX_WIDTH + 16, HEADER_HEIGHT + ROW_HEIGHT / 2);
     }
-  }, [controller.canvasRef, controller.fields, controller.scrollOffset.left, controller.scrollOffset.top, controller.selection, controller.viewport.height, controller.viewport.width, controller.visibleRecords]);
+  }, [controller.canvasRef, controller.scrollOffset.left, controller.scrollOffset.top, controller.selection, controller.viewport.height, controller.viewport.width, controller.visibleFields, controller.visibleRecords]);
 
   useEffect(() => {
     if (!controller.selection || controller.editingCell || controller.editingSelectCell || !controller.canvasRef.current) {
@@ -326,10 +330,10 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
           }}
           disabled={!canDownloadFromCell || controller.isMutating}
         />
-        <ToolbarButton label="Скрыть поля" icon={<EyeOff className="h-4 w-4" />} disabled />
+        <ToolbarButton label="Скрыть поля" icon={<EyeOff className="h-4 w-4" />} onClick={() => setIsHideFieldsModalOpen(true)} disabled={controller.fields.length === 0} />
         <ToolbarButton label="Фильтр" icon={<Filter className="h-4 w-4" />} disabled />
         <ToolbarButton label="Группа" icon={<Group className="h-4 w-4" />} disabled />
-        <ToolbarButton label="Сортировка" icon={<SortAsc className="h-4 w-4" />} disabled />
+        <ToolbarButton label="Сортировка" icon={<SortAsc className="h-4 w-4" />} onClick={() => setIsSortFieldsModalOpen(true)} disabled={controller.fields.length === 0} />
         <ToolbarButton label="Удалить строку" icon={<Trash2 className="h-4 w-4" />} onClick={() => void controller.deleteRow(controller.selectedRecord)} disabled={!controller.selectedRecord || !controller.capabilities.canDeleteRecords || controller.isMutating} />
         <ToolbarButton label="Обновить" icon={<RefreshCw className="h-4 w-4" />} onClick={() => void controller.loadEmbed()} disabled={controller.isLoading} />
         <div className="flex h-8 shrink-0 items-center gap-1 rounded-md border border-[#dfe3ea] bg-white px-2">
@@ -477,7 +481,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
                 <input
                   autoFocus
                   value={controller.editingCell.value}
-                  type={fieldInputType(controller.fields[controller.editingCell.fieldIndex])}
+                  type={fieldInputType(controller.visibleFields[controller.editingCell.fieldIndex])}
                   onChange={(event) => controller.setEditingCell((current) => (current ? { ...current, value: event.target.value } : current))}
                   onBlur={controller.commitEdit}
                   onKeyDown={(event) => {
@@ -565,6 +569,20 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         onSubmit={(payload) => {
           void controller.createField(payload).then(() => setIsCreateFieldModalOpen(false));
         }}
+      />
+      <HideFieldsModal
+        isOpen={isHideFieldsModalOpen}
+        fields={controller.fields}
+        hiddenFieldIds={controller.hiddenFieldIds}
+        onChangeHiddenFieldIds={controller.setHiddenFieldIds}
+        onClose={() => setIsHideFieldsModalOpen(false)}
+      />
+      <SortFieldsModal
+        isOpen={isSortFieldsModalOpen}
+        fields={controller.fields}
+        sortRules={controller.sortRules}
+        onChangeSortRules={controller.setSortRules}
+        onClose={() => setIsSortFieldsModalOpen(false)}
       />
     </NodeViewWrapper>
   );

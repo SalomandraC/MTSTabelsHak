@@ -107,6 +107,13 @@ export class ResolveTableEmbedDto {
   @IsOptional()
   @IsBoolean()
   allowInlineEdit?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  sort?: Array<{
+    fieldId: string;
+    desc?: boolean;
+  }>;
 }
 
 export class CreateMwsTablePageDto {

@@ -267,4 +267,38 @@ describe('MwsTableEmbedComponent', () => {
       });
     });
   });
+
+  it('opens the sort modal from the toolbar', async () => {
+    render(
+      <MwsTableEmbedComponent
+        node={{
+          attrs: {
+            blockId: 'block-1',
+            title: 'Таблица 2',
+            spaceId: 'space-1',
+            nodeId: 'node-2',
+            datasheetId: 'dst-2',
+            viewId: 'view-1',
+            selectedFieldIds: ['fld-title'],
+            pageSize: 20,
+            allowInlineEdit: true,
+            displayMode: 'table',
+          },
+        } as never}
+        selected={false}
+        editor={null as never}
+        getPos={null as never}
+        updateAttributes={vi.fn()}
+        deleteNode={vi.fn()}
+        decorations={[]}
+        extension={null as never}
+        HTMLAttributes={{}}
+        innerDecorations={null as never}
+        view={null as never}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Сортировка' }));
+    expect(await screen.findByRole('dialog', { name: 'Сортировка' })).toBeInTheDocument();
+  });
 });

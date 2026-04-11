@@ -52,6 +52,21 @@ export type AttachmentItem = {
   url: string | null;
 };
 
+export type HiddenFieldState = {
+  hiddenFieldIds: string[];
+};
+
+export type SortRule = {
+  id: string;
+  fieldId: string;
+  desc: boolean;
+};
+
+export type SortRulePayload = {
+  fieldId: string;
+  desc: boolean;
+};
+
 export type EditingSelectCell = CanvasSelection & {
   left: number;
   top: number;
@@ -65,6 +80,10 @@ type BeginEditOptions = {
   replaceValue?: string;
   fromSingleClick?: boolean;
 };
+
+function createSortRuleId(seed: number) {
+  return `sort-rule-${seed}`;
+}
 
 function readAttachmentName(value: unknown): string {
   if (typeof value === 'string' && value.trim()) {
@@ -104,6 +123,69 @@ function readAttachmentUrl(value: unknown): string | null {
   return typeof raw === 'string' && raw.trim().length > 0 ? raw : null;
 }
 
+function normalizeSortValue(rawValue: unknown, field: MwsField): string | number | null {
+  if (rawValue === null || rawValue === undefined || rawValue === '') {
+    return null;
+  }
+
+  if (field.type === 'Number' || field.type === 'Currency' || field.type === 'Percent') {
+    const numeric = typeof rawValue === 'number' ? rawValue : Number(renderCell(rawValue, field));
+    return Number.isFinite(numeric) ? numeric : renderCell(rawValue, field);
+  }
+
+  if (field.type === 'DateTime') {
+    const parsed = Date.parse(renderCell(rawValue, field));
+    return Number.isFinite(parsed) ? parsed : renderCell(rawValue, field);
+  }
+
+  return renderCell(rawValue, field).toLowerCase();
+}
+
+function compareSortValues(left: string | number | null, right: string | number | null) {
+  if (left === right) {
+    return 0;
+  }
+
+  if (left === null) {
+    return 1;
+  }
+
+  if (right === null) {
+    return -1;
+  }
+
+  if (typeof left === 'number' && typeof right === 'number') {
+    return left - right;
+  }
+
+  return String(left).localeCompare(String(right), 'ru', { numeric: true, sensitivity: 'base' });
+}
+
+function sortRecords(records: MwsRecord[], fields: MwsField[], sortRules: SortRule[]) {
+  if (sortRules.length === 0 || fields.length === 0) {
+    return records;
+  }
+
+  const fieldMap = new Map(fields.map((field) => [field.id, field] as const));
+  return [...records].sort((left, right) => {
+    for (const rule of sortRules) {
+      const field = fieldMap.get(rule.fieldId);
+      if (!field) {
+        continue;
+      }
+
+      const leftValue = normalizeSortValue(getFieldValue(left, field), field);
+      const rightValue = normalizeSortValue(getFieldValue(right, field), field);
+      const result = compareSortValues(leftValue, rightValue);
+      if (result !== 0) {
+        return rule.desc ? -result : result;
+      }
+    }
+
+    return 0;
+  });
+}
+
 export function readAttachments(value: unknown): AttachmentItem[] {
   if (value === null || value === undefined || value === '') {
     return [];
@@ -136,7 +218,7 @@ export function renderCell(value: unknown, field?: MwsField): string {
   }
 
   if (Array.isArray(value)) {
-    return value.map(renderCell).join(', ');
+    return value.map((item) => renderCell(item, field)).join(', ');
   }
 
   return JSON.stringify(value);
@@ -306,6 +388,8 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [nextRefreshAt, setNextRefreshAt] = useState<number | null>(null);
   const [nowTs, setNowTs] = useState(() => Date.now());
+  const [hiddenFieldIds, setHiddenFieldIds] = useState<string[]>([]);
+  const [sortRules, setSortRules] = useState<SortRule[]>([]);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -340,12 +424,31 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
         filterByFormula: attrs.filterByFormula,
         pageSize,
         allowInlineEdit: attrs.allowInlineEdit,
+        sort: sortRules.map(({ fieldId, desc }) => ({ fieldId, desc })),
       });
 
       setData(response);
       setRecords(response.embed.preview.items);
       setPageNum(response.embed.preview.pageNum);
       setTotal(response.embed.total ?? response.embed.preview.total);
+      setHiddenFieldIds((current) => {
+        const nextIds = response.embed.fields.map((field) => field.id);
+        if (current.length === 0) {
+          return [];
+        }
+
+        const nextSet = new Set(nextIds);
+        return current.filter((fieldId) => nextSet.has(fieldId));
+      });
+      setSortRules((current) => {
+        const next = current.filter((rule) => response.embed.fields.some((field) => field.id === rule.fieldId));
+        const isSame = next.length === current.length && next.every((rule, index) => {
+          const currentRule = current[index];
+          return currentRule?.id === rule.id && currentRule.fieldId === rule.fieldId && currentRule.desc === rule.desc;
+        });
+
+        return isSame ? current : next;
+      });
       if (!silent) {
         setSelection(null);
         setEditingCell(null);
@@ -366,7 +469,7 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
         setIsLoading(false);
       }
     }
-  }, [attrs.allowInlineEdit, attrs.datasheetId, attrs.displayMode, attrs.filterByFormula, attrs.nodeId, attrs.selectedFieldIds, attrs.spaceId, attrs.viewId, pageSize]);
+  }, [attrs.allowInlineEdit, attrs.datasheetId, attrs.displayMode, attrs.filterByFormula, attrs.nodeId, attrs.selectedFieldIds, attrs.spaceId, attrs.viewId, pageSize, sortRules]);
 
   useEffect(() => {
     void loadEmbed();
@@ -420,27 +523,36 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
 
   const embed = data?.embed;
   const fields = useMemo(() => embed?.fields ?? [], [embed?.fields]);
+  const visibleFields = useMemo(() => {
+    if (hiddenFieldIds.length === 0) {
+      return fields;
+    }
+
+    const hiddenSet = new Set(hiddenFieldIds);
+    return fields.filter((field) => !hiddenSet.has(field.id));
+  }, [fields, hiddenFieldIds]);
   const capabilities = embed?.capabilities ?? {};
   const canInlineEdit = Boolean(attrs.allowInlineEdit && capabilities.canInlineEdit);
   const hasMore = records.length < total;
-  const gridWidth = INDEX_WIDTH + fields.length * COLUMN_WIDTH;
+  const gridWidth = INDEX_WIDTH + visibleFields.length * COLUMN_WIDTH;
   const updatedAgoSec = lastSyncedAt ? Math.max(0, Math.floor((nowTs - lastSyncedAt) / 1000)) : null;
   const nextRefreshInSec = nextRefreshAt ? Math.max(0, Math.ceil((nextRefreshAt - nowTs) / 1000)) : null;
+  const sortedRecords = useMemo(() => sortRecords(records, fields, sortRules), [fields, records, sortRules]);
 
   const visibleRecords = useMemo(() => {
     const normalized = searchQuery.trim().toLowerCase();
     if (!normalized) {
-      return records;
+      return sortedRecords;
     }
 
-    return records.filter((record) =>
-      fields.some((field) => renderCell(getFieldValue(record, field), field).toLowerCase().includes(normalized)),
+    return sortedRecords.filter((record) =>
+      visibleFields.some((field) => renderCell(getFieldValue(record, field), field).toLowerCase().includes(normalized)),
     );
-  }, [fields, records, searchQuery]);
+  }, [searchQuery, sortedRecords, visibleFields]);
 
   const gridHeight = HEADER_HEIGHT + Math.max(visibleRecords.length, 1) * ROW_HEIGHT;
   const selectedRecord = selection ? visibleRecords[selection.rowIndex] : null;
-  const selectedField = selection ? fields[selection.fieldIndex] ?? null : null;
+  const selectedField = selection ? visibleFields[selection.fieldIndex] ?? null : null;
   const selectedAttachments = useMemo(() => {
     if (!selectedRecord || !selectedField || selectedField.type !== 'Attachment') {
       return [] as AttachmentItem[];
@@ -483,6 +595,7 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
         pageNum: pageNum + 1,
         fields: attrs.selectedFieldIds,
         filterByFormula: attrs.filterByFormula,
+        sort: sortRules.map(({ fieldId, desc }) => ({ fieldId, desc })),
       });
       setRecords((current) => [...current, ...response.items]);
       setPageNum(response.pageNum);
@@ -493,7 +606,7 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     } finally {
       setIsMutating(false);
     }
-  }, [attrs.datasheetId, attrs.filterByFormula, attrs.selectedFieldIds, attrs.viewId, hasMore, isLoading, isMutating, pageNum, pageSize]);
+  }, [attrs.datasheetId, attrs.filterByFormula, attrs.selectedFieldIds, attrs.viewId, hasMore, isLoading, isMutating, pageNum, pageSize, sortRules]);
 
   const updateCell = (record: MwsRecord, field: MwsField, value: unknown) => {
     if (!attrs.datasheetId || !EDITABLE_FIELD_TYPES.has(field.type)) {
@@ -672,7 +785,7 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     const rowIndex = Math.floor((y + scrollOffset.top - HEADER_HEIGHT) / ROW_HEIGHT);
     const fieldIndex = Math.floor((x + scrollOffset.left - INDEX_WIDTH) / COLUMN_WIDTH);
 
-    if (rowIndex < 0 || rowIndex >= visibleRecords.length || fieldIndex < 0 || fieldIndex >= fields.length) {
+    if (rowIndex < 0 || rowIndex >= visibleRecords.length || fieldIndex < 0 || fieldIndex >= visibleFields.length) {
       return null;
     }
 
@@ -685,7 +798,7 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     }
 
     const record = visibleRecords[nextSelection.rowIndex];
-    const field = fields[nextSelection.fieldIndex];
+    const field = visibleFields[nextSelection.fieldIndex];
 
     if (!record || !field || !canInlineEdit || !EDITABLE_FIELD_TYPES.has(field.type)) {
       return;
@@ -736,7 +849,7 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     }
 
     const record = visibleRecords[editingCell.rowIndex];
-    const field = fields[editingCell.fieldIndex];
+    const field = visibleFields[editingCell.fieldIndex];
     setEditingCell(null);
 
     if (record && field) {
@@ -750,7 +863,7 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     }
 
     const record = visibleRecords[editingSelectCell.rowIndex];
-    const field = fields[editingSelectCell.fieldIndex];
+    const field = visibleFields[editingSelectCell.fieldIndex];
     if (!record || !field || (field.type !== 'SingleSelect' && field.type !== 'MultiSelect')) {
       return;
     }
@@ -767,7 +880,7 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     }
 
     const record = visibleRecords[editingSelectCell.rowIndex];
-    const field = fields[editingSelectCell.fieldIndex];
+    const field = visibleFields[editingSelectCell.fieldIndex];
     if (!record || !field || (field.type !== 'SingleSelect' && field.type !== 'MultiSelect')) {
       return;
     }
@@ -811,6 +924,7 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     attrs,
     embed,
     fields,
+    visibleFields,
     records,
     total,
     isLoading,
@@ -840,6 +954,10 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     selectedRecord,
     selectedField,
     selectedAttachments,
+    hiddenFieldIds,
+    setHiddenFieldIds,
+    sortRules,
+    setSortRules,
     loadEmbed,
     loadNextPage,
     createRow,

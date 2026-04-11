@@ -204,7 +204,7 @@ export class MwsService {
   ) {
     const cacheKey = `mws:records:${datasheetId}:${Buffer.from(JSON.stringify(query)).toString('base64')}`;
     return this.withCache(cacheKey, 10, async () => {
-      const data = await this.request(user, 'GET', `/datasheets/${datasheetId}/records`, undefined, query);
+      const data = await this.request(user, 'GET', `/datasheets/${datasheetId}/records`, undefined, this.normalizeRecordsQuery(query));
       const payload = this.unwrapPayload(data);
       const nestedRecords = this.readNestedValue(payload, ['records']);
       return {
@@ -267,6 +267,7 @@ export class MwsService {
             fieldKey: 'id',
             cellFormat: 'json',
             filterByFormula: dto.filterByFormula,
+            sort: dto.sort,
           },
           user,
         ),
@@ -619,6 +620,22 @@ export class MwsService {
     }
 
     return current;
+  }
+
+  private normalizeRecordsQuery(query: Record<string, unknown>) {
+    const sort = query.sort;
+    if (typeof sort !== 'string' || !sort.trim()) {
+      return query;
+    }
+
+    try {
+      return {
+        ...query,
+        sort: JSON.parse(sort),
+      };
+    } catch {
+      return query;
+    }
   }
 
   private async invalidateNodeCache(spaceId: string) {
