@@ -12,6 +12,8 @@ import { HideFieldsModal } from './hide-fields-modal';
 import { SortFieldsModal } from './sort-fields-modal';
 import { TableGridCanvas } from './table-grid-canvas';
 import {
+  ADD_COLUMN_WIDTH,
+  ADD_ROW_HEIGHT,
   clampText,
   COLUMN_WIDTH,
   getFieldValue,
@@ -30,6 +32,11 @@ function isDirectEditKey(event: React.KeyboardEvent<HTMLElement>) {
 
 export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
   const controller = useWikiTableEmbed(node.attrs);
+  const controllerRef = useRef<typeof controller | null>(null);
+
+  useEffect(() => {
+    controllerRef.current = controller;
+  }, [controller]);
   const [isCreateFieldModalOpen, setIsCreateFieldModalOpen] = useState(false);
   const [isHideFieldsModalOpen, setIsHideFieldsModalOpen] = useState(false);
   const [isSortFieldsModalOpen, setIsSortFieldsModalOpen] = useState(false);
@@ -126,6 +133,40 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       ctx.font =
         '13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     });
+
+    const addColumnX =
+      INDEX_WIDTH +
+      controller.visibleFields.length * COLUMN_WIDTH -
+      controller.scrollOffset.left;
+    if (addColumnX < width) {
+      const visibleAddColumnWidth = Math.min(
+        ADD_COLUMN_WIDTH,
+        width - addColumnX
+      );
+      if (visibleAddColumnWidth > 0) {
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(addColumnX, 0, visibleAddColumnWidth, HEADER_HEIGHT);
+        ctx.strokeStyle = '#dde2ea';
+        ctx.strokeRect(
+          addColumnX - 0.5,
+          0.5,
+          visibleAddColumnWidth,
+          HEADER_HEIGHT
+        );
+        ctx.fillStyle = '#7b8190';
+        ctx.font =
+          '600 20px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(
+          '+',
+          addColumnX + visibleAddColumnWidth / 2,
+          HEADER_HEIGHT / 2
+        );
+        ctx.textAlign = 'left';
+        ctx.font =
+          '13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+      }
+    }
 
     ctx.save();
     ctx.beginPath();
@@ -235,6 +276,33 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         INDEX_WIDTH + 16,
         HEADER_HEIGHT + ROW_HEIGHT / 2
       );
+    }
+
+    const addRowY =
+      HEADER_HEIGHT +
+      controller.visibleRows.length * ROW_HEIGHT -
+      controller.scrollOffset.top;
+    if (addRowY < height) {
+      const visibleAddRowHeight = Math.min(ADD_ROW_HEIGHT, height - addRowY);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, addRowY, width, visibleAddRowHeight);
+      ctx.strokeStyle = '#e5e8ef';
+      ctx.beginPath();
+      ctx.moveTo(0, addRowY - 0.5);
+      ctx.lineTo(width, addRowY - 0.5);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(INDEX_WIDTH - 0.5, addRowY);
+      ctx.lineTo(INDEX_WIDTH - 0.5, addRowY + visibleAddRowHeight);
+      ctx.stroke();
+      ctx.fillStyle = '#7b8190';
+      ctx.font =
+        '600 20px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('+', INDEX_WIDTH / 2, addRowY + visibleAddRowHeight / 2);
+      ctx.textAlign = 'left';
+      ctx.font =
+        '13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     }
   }, [
     controller.canvasRef,
@@ -420,7 +488,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
             void controller.deleteRow(controller.selectedRecord)
           }
           onExpand={() => setIsExpandedViewOpen(true)}
-          onRefresh={() => void controller.loadEmbed()}
+          onRefresh={() => void controllerRef.current?.loadEmbed()}
         />
 
         <input
@@ -473,6 +541,8 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
               onAttachmentWidgetClose={() =>
                 setIsAttachmentWidgetDismissed(true)
               }
+              onAddColumn={() => setIsCreateFieldModalOpen(true)}
+              onAddRow={() => void controller.createRow()}
               onCanvasKeyDown={(
                 event: React.KeyboardEvent<HTMLCanvasElement>
               ) => {
@@ -578,6 +648,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         canDownloadFromCell={canDownloadFromCell}
         isAttachmentWidgetDismissed={isAttachmentWidgetDismissed}
         onAttachmentWidgetClose={() => setIsAttachmentWidgetDismissed(true)}
+        onRefresh={() => void controllerRef.current?.loadEmbed()}
         onCanvasKeyDown={(event: React.KeyboardEvent<HTMLCanvasElement>) => {
           if (
             !controller.selection ||

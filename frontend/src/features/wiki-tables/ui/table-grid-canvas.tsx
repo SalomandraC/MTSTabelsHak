@@ -1,5 +1,7 @@
 import type { MwsTableEmbedController } from '../model/use-wiki-table-embed';
 import {
+  ADD_COLUMN_WIDTH,
+  ADD_ROW_HEIGHT,
   COLUMN_WIDTH,
   fieldInputType,
   HEADER_HEIGHT,
@@ -22,12 +24,16 @@ export function TableGridCanvas({
   onCanvasKeyDown,
   selectEditorRef,
   isAttachmentWidgetDismissed = false,
-  onAttachmentWidgetClose
+  onAttachmentWidgetClose,
+  onAddColumn,
+  onAddRow
 }: TableGridProps & {
   onCanvasKeyDown: (event: React.KeyboardEvent<HTMLCanvasElement>) => void;
   selectEditorRef: React.RefObject<HTMLDivElement>;
   isAttachmentWidgetDismissed?: boolean;
   onAttachmentWidgetClose?: () => void;
+  onAddColumn?: () => void;
+  onAddRow?: () => void;
 }) {
   const gridHeight = resolveTableGridHeight(controller.gridHeight, isExpanded);
   const selectedAttachmentCell =
@@ -83,6 +89,42 @@ export function TableGridCanvas({
           }}
           onPointerDown={(event) => {
             event.currentTarget.focus();
+            const rect = event.currentTarget.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            const addColumnStart =
+              INDEX_WIDTH +
+              controller.visibleFields.length * COLUMN_WIDTH -
+              controller.scrollOffset.left;
+            const addColumnEnd = addColumnStart + ADD_COLUMN_WIDTH;
+            const addRowStart =
+              HEADER_HEIGHT +
+              controller.visibleRows.length * ROW_HEIGHT -
+              controller.scrollOffset.top;
+            const addRowEnd = addRowStart + ADD_ROW_HEIGHT;
+
+            if (
+              onAddColumn &&
+              y >= 0 &&
+              y <= HEADER_HEIGHT &&
+              x >= addColumnStart &&
+              x <= addColumnEnd
+            ) {
+              onAddColumn();
+              return;
+            }
+
+            if (
+              onAddRow &&
+              x >= 0 &&
+              x <= INDEX_WIDTH &&
+              y >= addRowStart &&
+              y <= addRowEnd
+            ) {
+              onAddRow();
+              return;
+            }
+
             const nextSelection = controller.hitTest(event);
             controller.setSelection(nextSelection);
             controller.setEditingCell(null);

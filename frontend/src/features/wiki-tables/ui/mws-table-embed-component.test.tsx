@@ -21,6 +21,7 @@ vi.mock('../../../shared/api/wikilive', async () => {
       ...actual.wikiliveApi,
       resolveTableEmbed: vi.fn(),
       listMwsRecords: vi.fn(),
+      createMwsField: vi.fn(),
       updateMwsRecords: vi.fn(),
       createMwsRecords: vi.fn(),
       deleteMwsRecords: vi.fn()
@@ -167,6 +168,14 @@ describe('MwsTableEmbedComponent', () => {
     vi.mocked(wikiliveApi.resolveTableEmbed).mockResolvedValue(
       RESOLVE_TABLE_EMBED_MOCK
     );
+    vi.mocked(wikiliveApi.createMwsRecords).mockResolvedValue({ items: [] });
+    vi.mocked(wikiliveApi.createMwsField).mockResolvedValue({
+      field: {
+        id: 'fld-created',
+        name: 'Новый столбец',
+        type: 'SingleText'
+      }
+    });
   });
 
   it('renders a populated live table instead of an empty state when preview data arrives', async () => {
@@ -605,5 +614,135 @@ describe('MwsTableEmbedComponent', () => {
     expect(
       screen.queryByTestId('mws_attachment_widget')
     ).not.toBeInTheDocument();
+  });
+
+  it('opens create column modal from the plus area in the header', async () => {
+    render(
+      <MwsTableEmbedComponent
+        node={
+          {
+            attrs: {
+              blockId: 'block-1',
+              title: 'Таблица 2',
+              spaceId: 'space-1',
+              nodeId: 'node-2',
+              datasheetId: 'dst-2',
+              viewId: 'view-1',
+              selectedFieldIds: ['fld-title'],
+              pageSize: 20,
+              allowInlineEdit: true,
+              displayMode: 'table'
+            }
+          } as never
+        }
+        selected={false}
+        editor={null as never}
+        getPos={null as never}
+        updateAttributes={vi.fn()}
+        deleteNode={vi.fn()}
+        decorations={[]}
+        extension={null as never}
+        HTMLAttributes={{}}
+        innerDecorations={null as never}
+        view={null as never}
+      />
+    );
+
+    const canvas = await screen.findByTestId('mws_canvas_grid');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      width: 720,
+      height: 320,
+      top: 0,
+      left: 0,
+      right: 720,
+      bottom: 320,
+      toJSON: () => ({})
+    });
+
+    fireEvent.pointerDown(canvas, { clientX: 260, clientY: 20 });
+
+    expect(
+      await screen.findByRole('dialog', { name: /Добавить столбец/i })
+    ).toBeInTheDocument();
+  });
+
+  it('adds a row optimistically from the plus area below the last row', async () => {
+    let resolveCreate:
+      | ((value: {
+          items: Array<{ recordId: string; fields: Record<string, unknown> }>;
+        }) => void)
+      | undefined;
+    vi.mocked(wikiliveApi.createMwsRecords).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCreate = resolve;
+        }) as ReturnType<typeof wikiliveApi.createMwsRecords>
+    );
+
+    render(
+      <MwsTableEmbedComponent
+        node={
+          {
+            attrs: {
+              blockId: 'block-1',
+              title: 'Таблица 2',
+              spaceId: 'space-1',
+              nodeId: 'node-2',
+              datasheetId: 'dst-2',
+              viewId: 'view-1',
+              selectedFieldIds: ['fld-title'],
+              pageSize: 20,
+              allowInlineEdit: true,
+              displayMode: 'table'
+            }
+          } as never
+        }
+        selected={false}
+        editor={null as never}
+        getPos={null as never}
+        updateAttributes={vi.fn()}
+        deleteNode={vi.fn()}
+        decorations={[]}
+        extension={null as never}
+        HTMLAttributes={{}}
+        innerDecorations={null as never}
+        view={null as never}
+      />
+    );
+
+    expect(await screen.findByText(/1\/1 строк/)).toBeInTheDocument();
+
+    const canvas = await screen.findByTestId('mws_canvas_grid');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      width: 720,
+      height: 320,
+      top: 0,
+      left: 0,
+      right: 720,
+      bottom: 320,
+      toJSON: () => ({})
+    });
+
+    fireEvent.pointerDown(canvas, { clientX: 20, clientY: 95 });
+
+    expect(screen.getByText(/2\/2 строк/)).toBeInTheDocument();
+    expect(wikiliveApi.createMwsRecords).toHaveBeenCalledWith('dst-2', {
+      fieldKey: 'id',
+      records: [{ fields: { 'fld-title': '' } }]
+    });
+
+    if (resolveCreate) {
+      resolveCreate({
+        items: [{ recordId: 'rec-2', fields: { 'fld-title': '' } }]
+      });
+    }
+
+    await waitFor(() => {
+      expect(screen.getByText(/2\/2 строк/)).toBeInTheDocument();
+    });
   });
 });

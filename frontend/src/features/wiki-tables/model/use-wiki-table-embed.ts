@@ -31,6 +31,8 @@ export const HEADER_HEIGHT = 40;
 export const ROW_HEIGHT = 38;
 export const INDEX_WIDTH = 56;
 export const COLUMN_WIDTH = 184;
+export const ADD_COLUMN_WIDTH = 72;
+export const ADD_ROW_HEIGHT = ROW_HEIGHT;
 export const MIN_GRID_HEIGHT = 320;
 export const MAX_GRID_HEIGHT = 520;
 
@@ -126,6 +128,18 @@ function createSortRuleId(seed: number) {
 
 function createFilterRuleId(seed: number) {
   return `filter-rule-${seed}`;
+}
+
+function getInitialFieldValue(field: MwsField) {
+  if (field.type === 'Checkbox') {
+    return false;
+  }
+
+  if (field.type === 'MultiSelect') {
+    return [];
+  }
+
+  return '';
 }
 
 function readAttachmentName(value: unknown): string {
@@ -824,7 +838,8 @@ export function useWikiTableEmbed(
   const canInlineEdit = Boolean(
     attrs.allowInlineEdit && capabilities.canInlineEdit
   );
-  const gridWidth = INDEX_WIDTH + visibleFields.length * COLUMN_WIDTH;
+  const gridWidth =
+    INDEX_WIDTH + visibleFields.length * COLUMN_WIDTH + ADD_COLUMN_WIDTH;
   const updatedAgoSec = lastSyncedAt
     ? Math.max(0, Math.floor((nowTs - lastSyncedAt) / 1000))
     : null;
@@ -880,7 +895,9 @@ export function useWikiTableEmbed(
   }, [fields, filteredRecords, groupRule]);
 
   const gridHeight =
-    HEADER_HEIGHT + Math.max(visibleRows.length, 1) * ROW_HEIGHT;
+    HEADER_HEIGHT +
+    Math.max(visibleRows.length, 1) * ROW_HEIGHT +
+    ADD_ROW_HEIGHT;
   const selectedRow = selection
     ? (visibleRows[selection.rowIndex] ?? null)
     : null;
@@ -1025,33 +1042,46 @@ export function useWikiTableEmbed(
       EDITABLE_FIELD_TYPES.has(field.type)
     );
     const initialFields = Object.fromEntries(
-      editableFields.map((field) => {
-        if (field.type === 'Checkbox') {
-          return [field.id, false];
-        }
-
-        if (field.type === 'MultiSelect') {
-          return [field.id, []];
-        }
-
-        return [field.id, ''];
-      })
+      editableFields.map((field) => [field.id, getInitialFieldValue(field)])
     );
+    const optimisticRecord: MwsRecord = {
+      recordId: `temp-record-${Date.now()}`,
+      fields: initialFields,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
 
-    try {
-      setIsMutating(true);
-      await wikiliveApi.createMwsRecords(attrs.datasheetId, {
+    setRecords((current) => [...current, optimisticRecord]);
+    setTotal((current) => current + 1);
+    setStaleMessage('');
+
+    void wikiliveApi
+      .createMwsRecords(attrs.datasheetId, {
         fieldKey: 'id',
         records: [{ fields: initialFields }]
+      })
+      .then((response) => {
+        const createdRecord = response.items[0];
+        if (!createdRecord) {
+          return loadEmbed({ silent: true });
+        }
+
+        setRecords((current) =>
+          current.map((item) =>
+            item.recordId === optimisticRecord.recordId ? createdRecord : item
+          )
+        );
+        setStaleMessage('');
+      })
+      .catch((error) => {
+        setRecords((current) =>
+          current.filter((item) => item.recordId !== optimisticRecord.recordId)
+        );
+        setTotal((current) => Math.max(0, current - 1));
+        setStaleMessage(
+          error instanceof Error ? error.message : 'Не удалось добавить строку'
+        );
       });
-      await loadEmbed();
-    } catch (error) {
-      setStaleMessage(
-        error instanceof Error ? error.message : 'Не удалось добавить строку'
-      );
-    } finally {
-      setIsMutating(false);
-    }
   };
 
   const createField = async (
@@ -1061,20 +1091,104 @@ export function useWikiTableEmbed(
       return;
     }
 
-    try {
-      setIsMutating(true);
-      await wikiliveApi.createMwsField(attrs.datasheetId, {
+    const optimisticField: MwsField = {
+      id: `temp-field-${Date.now()}`,
+      name: payload.name,
+      type: payload.type,
+      property: payload.property
+    };
+
+    setData((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        embed: {
+          ...current.embed,
+          fields: [...current.embed.fields, optimisticField]
+        }
+      };
+    });
+    setRecords((current) =>
+      current.map((record) => ({
+        ...record,
+        fields: {
+          ...record.fields,
+          [optimisticField.id]: getInitialFieldValue(optimisticField)
+        }
+      }))
+    );
+    setStaleMessage('');
+
+    void wikiliveApi
+      .createMwsField(attrs.datasheetId, {
         spaceId: attrs.spaceId,
         ...payload
+      })
+      .then((response) => {
+        const createdField = response.field;
+        if (!createdField) {
+          return loadEmbed({ silent: true });
+        }
+
+        setData((current) => {
+          if (!current) {
+            return current;
+          }
+
+          return {
+            ...current,
+            embed: {
+              ...current.embed,
+              fields: current.embed.fields.map((field) =>
+                field.id === optimisticField.id ? createdField : field
+              )
+            }
+          };
+        });
+        setRecords((current) =>
+          current.map((record) => {
+            if (!(optimisticField.id in record.fields)) {
+              return record;
+            }
+
+            const nextFields = { ...record.fields };
+            nextFields[createdField.id] = nextFields[optimisticField.id];
+            delete nextFields[optimisticField.id];
+            return { ...record, fields: nextFields };
+          })
+        );
+        setStaleMessage('');
+      })
+      .catch((error) => {
+        setData((current) => {
+          if (!current) {
+            return current;
+          }
+
+          return {
+            ...current,
+            embed: {
+              ...current.embed,
+              fields: current.embed.fields.filter(
+                (field) => field.id !== optimisticField.id
+              )
+            }
+          };
+        });
+        setRecords((current) =>
+          current.map((record) => {
+            const nextFields = { ...record.fields };
+            delete nextFields[optimisticField.id];
+            return { ...record, fields: nextFields };
+          })
+        );
+        setStaleMessage(
+          error instanceof Error ? error.message : 'Не удалось создать столбец'
+        );
       });
-      await loadEmbed();
-    } catch (error) {
-      setStaleMessage(
-        error instanceof Error ? error.message : 'Не удалось создать столбец'
-      );
-    } finally {
-      setIsMutating(false);
-    }
   };
 
   const deleteRow = async (record: MwsRecord | null) => {
