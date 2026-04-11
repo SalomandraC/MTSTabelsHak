@@ -9,7 +9,6 @@ const defaultLayoutName = isColaPlugin ? 'cola' : 'cose';
 if (isColaPlugin) {
   cytoscape.use(colaPlugin);
 } else {
-  // eslint-disable-next-line no-console
   console.warn('Cytoscape cola plugin failed to load; falling back to cose layout.');
 }
 
@@ -90,7 +89,7 @@ function clampPan(cy: cytoscape.Core) {
   }
 }
 
-function updateSelection(cy: cytoscape.Core, activePageId: string | null) {
+function updateSelection(cy: cytoscape.Core, activePageId: string | null, edges: DocumentGraphEdge[]) {
   cy.batch(() => {
     cy.elements().removeClass(['selected-node', 'highlight-node', 'highlighted-edge']);
 
@@ -104,11 +103,32 @@ function updateSelection(cy: cytoscape.Core, activePageId: string | null) {
     }
 
     activeNode.addClass('selected-node');
-    const connectedEdges = activeNode.connectedEdges();
-    const connectedNodes = activeNode.connectedNodes().difference(activeNode);
 
-    connectedEdges.addClass('highlighted-edge');
+    const connectedPageIds = new Set<string>();
+    edges.forEach((edge) => {
+      if (edge.sourcePageId === activePageId) {
+        connectedPageIds.add(edge.targetPageId);
+      }
+      if (edge.targetPageId === activePageId) {
+        connectedPageIds.add(edge.sourcePageId);
+      }
+    });
+
+    const connectedNodes = cy.collection();
+    connectedPageIds.forEach((pageId) => {
+      const node = cy.$id(pageId);
+      if (node.nonempty()) {
+        connectedNodes.merge(node);
+      }
+    });
+
     connectedNodes.addClass('highlight-node');
+    cy.edges()
+      .filter((edge) => {
+        const data = edge.data();
+        return data.source === activePageId || data.target === activePageId;
+      })
+      .addClass('highlighted-edge');
   });
 }
 
@@ -183,16 +203,16 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
             height: 'data(size)',
             label: 'data(title)',
             'font-size': 10,
-            color: '#111827',
-            'text-valign': 'center',
+            color: '#6b7280',
+            'text-valign': 'top',
             'text-halign': 'center',
-            'text-margin-y': 0,
+            'text-margin-y': -10,
             'text-wrap': 'wrap',
             'text-max-width': 140,
-            'text-opacity': 0,
+            'text-opacity': 1,
             'text-background-color': '#ffffff',
-            'text-background-opacity': 0.85,
-            'text-background-padding': 5,
+            'text-background-opacity': 0.75,
+            'text-background-padding': 4,
             'text-background-shape': 'roundrectangle',
             'transition-property': 'background-color width height border-color text-opacity',
             'transition-duration': '250ms',
@@ -220,7 +240,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
             'text-valign': 'top',
             'text-margin-y': -12,
             'text-background-color': '#ffffff',
-            'text-background-opacity': 0.9,
+            'text-background-opacity': 0.95,
             'text-background-padding': 6,
           },
         },
@@ -266,9 +286,9 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
         edgeLengthVal: 80,
         componentSpacing: 30,
       } as ColaLayoutOptions,
-      minZoom: 0.82,
-      maxZoom: 1.4,
-      wheelSensitivity: 0.8,
+      minZoom: 0.5,
+      maxZoom: 1.8,
+      wheelSensitivity: 1,
       userZoomingEnabled: true,
       userPanningEnabled: true,
       boxSelectionEnabled: false,
@@ -310,7 +330,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
 
     initialLayout.run();
     cytoscapeRef.current = cy;
-    updateSelection(cy, activePageId);
+    updateSelection(cy, activePageId, edges);
 
     return () => {
       cy.destroy();
@@ -353,8 +373,8 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
       return;
     }
 
-    updateSelection(cy, activePageId);
-  }, [activePageId]);
+    updateSelection(cy, activePageId, edges);
+  }, [activePageId, edgesKey]);
 
   useEffect(() => {
     const cy = cytoscapeRef.current;
@@ -378,6 +398,44 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
       container.removeEventListener('mouseleave', onMouseLeave);
     };
   }, []);
+
+  const handleRefreshGraph = () => {
+    const cy = cytoscapeRef.current;
+    if (!cy) {
+      return;
+    }
+
+    updateGraphElements(cy, elements);
+    cy.layout({
+      name: defaultLayoutName,
+      animate: true,
+      refresh: 1,
+      maxSimulationTime: 4000,
+      ungrabifyWhileSimulating: false,
+      fit: false,
+      padding: 30,
+      nodeDimensionsIncludeLabels: false,
+      randomize: false,
+      avoidOverlap: true,
+      handleDisconnected: true,
+      convergenceThreshold: 0.01,
+      nodeSpacing: 18,
+      centerGraph: true,
+      edgeLengthVal: 80,
+      componentSpacing: 30,
+    } as ColaLayoutOptions).run();
+  };
+
+  const handleExpandGraph = () => {
+    const cy = cytoscapeRef.current;
+    if (!cy) {
+      return;
+    }
+
+    cy.fit(cy.elements(), 20);
+    const targetZoom = Math.min(cy.maxZoom(), cy.zoom() * 1.1);
+    cy.zoom(targetZoom);
+  };
 
   return (
     <section className="overflow-hidden rounded-2xl border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm">
