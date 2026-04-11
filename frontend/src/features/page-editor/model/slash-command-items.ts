@@ -1,3 +1,4 @@
+import React from 'react';
 import type { Editor } from '@tiptap/core';
 
 import type { SlashMenuItem } from '../../slash-menu';
@@ -5,6 +6,14 @@ import type { SlashMenuItem } from '../../slash-menu';
 export type PageEditorSlashCommandItem = SlashMenuItem & {
   run: (editor: Editor) => void;
 };
+
+import List from '../../../app/images/list.svg';
+import ListOrdered from '../../../app/images/list-ordered.svg';
+import ListChecks from '../../../app/images/list-checks.svg';
+import Quote from '../../../app/images/quote.svg';
+import AtSign from '../../../app/images/at-sign.svg';
+import Picture from '../../../app/images/Picture.svg';
+import Table from '../../../app/images/logo.svg';
 
 export const slashCommandItems: PageEditorSlashCommandItem[] = [
   {
@@ -32,7 +41,11 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     label: 'Страница',
     hint: 'Вставить ссылку на wiki-страницу',
     keywords: ['page', 'wiki', 'страница', 'вики', 'backlink', 'связь'],
-    icon: '@',
+    icon: React.createElement('img', {
+      src: AtSign,
+      alt: 'Собачка',
+      className: 'h-4 w-4',
+    }),
     run: () => {
       // Handled in PageEditor with page picker flow.
     },
@@ -42,7 +55,11 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     label: 'MWS таблица',
     hint: 'Вставить live embed существующей таблицы',
     keywords: ['table', 'mws', 'таблица', 'embed', 'live', 'datasheet'],
-    icon: 'Tbl',
+    icon: React.createElement('img', {
+      src: Table,
+      alt: 'Список с чекбоксами',
+      className: 'h-4 w-4',
+    }),
     run: () => {
       // Handled in PageEditor with table picker flow.
     },
@@ -62,7 +79,11 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     label: 'Чеклист',
     hint: 'Создать список задач с чекбоксами',
     keywords: ['checklist', 'task', 'todo', 'чеклист', 'задача', 'список задач', 'checkbox'],
-    icon: '[]',
+    icon: React.createElement('img', {
+      src: ListChecks,
+      alt: 'Список с чекбоксами',
+      className: 'h-4 w-4',
+    }),
     run: (editor) => {
       editor.chain().focus().toggleTaskList().run();
     },
@@ -72,7 +93,11 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     label: 'Изображение',
     hint: 'Загрузить изображение в документ',
     keywords: ['image', 'img', 'photo', 'картинка', 'изображение', 'фото', 'рисунок'],
-    icon: '🖼',
+    icon: React.createElement('img', {
+      src: Picture,
+      alt: 'Картинка',
+      className: 'h-4 w-4',
+    }),
     run: () => {
       // Handled in PageEditor with modal flow.
     },
@@ -104,7 +129,11 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     label: 'Маркированный список',
     hint: 'Создать список с маркерами',
     keywords: ['list', 'bullet', 'ul', 'unordered', 'маркированный', 'список'],
-    icon: 'UL',
+    icon: React.createElement('img', {
+      src: List,
+      alt: 'Список',
+      className: 'h-4 w-4',
+    }),
     run: (editor) => {
       editor.chain().focus().toggleBulletList().run();
     },
@@ -114,7 +143,11 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     label: 'Нумерованный список',
     hint: 'Создать список с номерами',
     keywords: ['list', 'numbered', 'ol', 'ordered', 'нумерованный', 'список'],
-    icon: 'OL',
+    icon: React.createElement('img', {
+      src: ListOrdered,
+      alt: 'Список нумерованный',
+      className: 'h-4 w-4',
+    }),
     run: (editor) => {
       editor.chain().focus().toggleOrderedList().run();
     },
@@ -124,7 +157,11 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     label: 'Цитата',
     hint: 'Вставить блок цитаты',
     keywords: ['quote', 'blockquote', 'цитата', 'цитирование'],
-    icon: '"',
+    icon: React.createElement('img', {
+      src: Quote,
+      alt: 'Цитата',
+      className: 'h-4 w-4',
+    }),
     run: (editor) => {
       editor.chain().focus().toggleBlockquote().run();
     },
