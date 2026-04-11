@@ -117,6 +117,50 @@ const RESOLVE_SELECT_TABLE_EMBED_MOCK: ResolveTableEmbedResponse = {
   }
 };
 
+const RESOLVE_ATTACHMENT_TABLE_EMBED_MOCK: ResolveTableEmbedResponse = {
+  embed: {
+    datasheetId: 'dst-attachment',
+    node: {
+      id: 'node-attachment',
+      name: 'Таблица вложений',
+      type: 'Datasheet',
+      datasheetId: 'dst-attachment'
+    },
+    view: {
+      id: 'view-main',
+      name: 'Все',
+      type: 'grid'
+    },
+    fields: [{ id: 'fld-files', name: 'Файлы', type: 'Attachment' }],
+    preview: {
+      items: [
+        {
+          recordId: 'rec-attachment-1',
+          fields: {
+            'fld-files': [
+              {
+                name: 'Скриншот.png',
+                token: 'file-token-1',
+                url: 'https://example.com/file-1'
+              }
+            ]
+          }
+        }
+      ],
+      pageNum: 1,
+      pageSize: 20,
+      total: 1
+    },
+    total: 1,
+    capabilities: {
+      canInlineEdit: true,
+      canCreateRecords: true,
+      canDeleteRecords: true
+    },
+    openInMwsUrl: 'https://tables.mws.ru/fusion/v1/mock'
+  }
+};
+
 describe('MwsTableEmbedComponent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -454,5 +498,112 @@ describe('MwsTableEmbedComponent', () => {
     expect(
       within(dialog).getByRole('button', { name: 'Закрыть' })
     ).toBeInTheDocument();
+  });
+
+  it('keeps fullscreen open when clicking inside the table dialog', async () => {
+    render(
+      <MwsTableEmbedComponent
+        node={
+          {
+            attrs: {
+              blockId: 'block-1',
+              title: 'Таблица 2',
+              spaceId: 'space-1',
+              nodeId: 'node-2',
+              datasheetId: 'dst-2',
+              viewId: 'view-1',
+              selectedFieldIds: ['fld-title'],
+              pageSize: 20,
+              allowInlineEdit: true,
+              displayMode: 'table'
+            }
+          } as never
+        }
+        selected={false}
+        editor={null as never}
+        getPos={null as never}
+        updateAttributes={vi.fn()}
+        deleteNode={vi.fn()}
+        decorations={[]}
+        extension={null as never}
+        HTMLAttributes={{}}
+        innerDecorations={null as never}
+        view={null as never}
+      />
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Раскрыть' }));
+    const dialog = screen.getByRole('dialog', {
+      name: /Полноэкранная таблица Таблица 2/i
+    });
+
+    fireEvent.click(within(dialog).getByText('Полноэкранный просмотр'));
+
+    expect(
+      screen.getByRole('dialog', { name: /Полноэкранная таблица Таблица 2/i })
+    ).toBeInTheDocument();
+  });
+
+  it('shows attachment widget near the selected cell and allows closing it', async () => {
+    vi.mocked(wikiliveApi.resolveTableEmbed).mockResolvedValueOnce(
+      RESOLVE_ATTACHMENT_TABLE_EMBED_MOCK
+    );
+
+    render(
+      <MwsTableEmbedComponent
+        node={
+          {
+            attrs: {
+              blockId: 'block-attachment-1',
+              title: 'Таблица вложений',
+              spaceId: 'space-1',
+              nodeId: 'node-attachment',
+              datasheetId: 'dst-attachment',
+              viewId: 'view-main',
+              selectedFieldIds: ['fld-files'],
+              pageSize: 20,
+              allowInlineEdit: true,
+              displayMode: 'table'
+            }
+          } as never
+        }
+        selected={false}
+        editor={null as never}
+        getPos={null as never}
+        updateAttributes={vi.fn()}
+        deleteNode={vi.fn()}
+        decorations={[]}
+        extension={null as never}
+        HTMLAttributes={{}}
+        innerDecorations={null as never}
+        view={null as never}
+      />
+    );
+
+    const canvas = await screen.findByTestId('mws_canvas_grid');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      width: 720,
+      height: 320,
+      top: 0,
+      left: 0,
+      right: 720,
+      bottom: 320,
+      toJSON: () => ({})
+    });
+
+    fireEvent.pointerDown(canvas, { clientX: 80, clientY: 60 });
+
+    const widget = await screen.findByTestId('mws_attachment_widget');
+    expect(within(widget).getByText('Скриншот.png')).toBeInTheDocument();
+
+    fireEvent.click(
+      within(widget).getByRole('button', { name: 'Закрыть виджет вложений' })
+    );
+
+    expect(
+      screen.queryByTestId('mws_attachment_widget')
+    ).not.toBeInTheDocument();
   });
 });

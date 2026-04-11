@@ -1,6 +1,6 @@
 import type { NodeViewProps } from '@tiptap/react';
 import { NodeViewWrapper } from '@tiptap/react';
-import { Download, ExternalLink, Paperclip } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { MwsTableActionBar } from './mws-table-action-bar';
@@ -37,6 +37,8 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     useState(false);
   const [isGroupRecordsModalOpen, setIsGroupRecordsModalOpen] = useState(false);
   const [isExpandedViewOpen, setIsExpandedViewOpen] = useState(false);
+  const [isAttachmentWidgetDismissed, setIsAttachmentWidgetDismissed] =
+    useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const selectEditorRef = useRef<HTMLDivElement | null>(null);
 
@@ -294,6 +296,10 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     controller.setEditingSelectCell
   ]);
 
+  useEffect(() => {
+    setIsAttachmentWidgetDismissed(false);
+  }, [controller.selectedRecord?.recordId, controller.selectedField?.id]);
+
   const canUploadToCell =
     controller.selectedRecord &&
     controller.selectedField?.type === 'Attachment';
@@ -306,13 +312,6 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     controller.setSelection(null);
     controller.setEditingCell(null);
     controller.setEditingSelectCell(null);
-  };
-
-  const downloadAllAttachments = async () => {
-    for (const attachment of controller.selectedAttachments) {
-      // Sequential downloads avoid browser popup throttling and preserve filename handling.
-      await controller.downloadAttachment(attachment);
-    }
   };
 
   return (
@@ -442,51 +441,6 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
           }}
         />
         <div className="flex min-h-0 flex-1 flex-col">
-          {controller.selectedField?.type === 'Attachment' ? (
-            <div className="m-4 mb-0 rounded-lg border border-editor-border-subtle bg-[#f8fafc] p-3">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-editor-text-tertiary">
-                  Вложения ячейки
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void downloadAllAttachments()}
-                  disabled={!canDownloadFromCell || controller.isMutating}
-                  className="inline-flex items-center gap-1 rounded-md border border-editor-border-control px-2 py-1 text-xs font-semibold text-editor-text-primary disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Скачать все
-                </button>
-              </div>
-              {controller.selectedAttachments.length > 0 ? (
-                <div className="mt-2 grid gap-2">
-                  {controller.selectedAttachments.map((item, index) => (
-                    <div
-                      key={`${item.name}-${index}`}
-                      className="flex items-center gap-2 rounded-md border border-editor-border-subtle bg-white px-2 py-1.5"
-                    >
-                      <Paperclip className="h-4 w-4 text-[#667085]" />
-                      <span className="min-w-0 flex-1 truncate text-sm text-editor-text-primary">
-                        {item.name}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => void controller.downloadAttachment(item)}
-                        className="inline-flex items-center gap-1 rounded-md border border-editor-border-control px-2 py-1 text-xs font-semibold text-editor-text-primary"
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                        Скачать
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-2 text-sm text-editor-text-tertiary">
-                  В этой ячейке нет вложений
-                </p>
-              )}
-            </div>
-          ) : null}
           {controller.isLoading && controller.records.length === 0 ? (
             <div className="m-4 rounded-lg bg-[#f3f6fb] p-4 text-sm text-editor-text-tertiary">
               Загружаем живую таблицу...
@@ -515,6 +469,10 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
             <TableGridCanvas
               controller={controller}
               selectColorToCss={selectColorToCss}
+              isAttachmentWidgetDismissed={isAttachmentWidgetDismissed}
+              onAttachmentWidgetClose={() =>
+                setIsAttachmentWidgetDismissed(true)
+              }
               onCanvasKeyDown={(
                 event: React.KeyboardEvent<HTMLCanvasElement>
               ) => {
@@ -618,6 +576,8 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         onDeleteRow={() => void controller.deleteRow(controller.selectedRecord)}
         canUploadToCell={Boolean(canUploadToCell)}
         canDownloadFromCell={canDownloadFromCell}
+        isAttachmentWidgetDismissed={isAttachmentWidgetDismissed}
+        onAttachmentWidgetClose={() => setIsAttachmentWidgetDismissed(true)}
         onCanvasKeyDown={(event: React.KeyboardEvent<HTMLCanvasElement>) => {
           if (
             !controller.selection ||

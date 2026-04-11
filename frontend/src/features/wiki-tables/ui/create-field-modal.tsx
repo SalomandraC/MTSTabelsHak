@@ -6,7 +6,7 @@ import {
   MWS_FIELD_TYPE_OPTIONS,
   type SelectOptionDraft,
   SELECT_OPTION_COLORS,
-  type SupportedMwsFieldType,
+  type SupportedMwsFieldType
 } from '../model/mws-field-types';
 
 type CreateFieldModalProps = {
@@ -24,11 +24,16 @@ function createEmptyOption(seed: number): SelectOptionDraft {
   return {
     id: `option-${seed}`,
     name: '',
-    color: SELECT_OPTION_COLORS[seed % SELECT_OPTION_COLORS.length] ?? 'blue',
+    color: SELECT_OPTION_COLORS[seed % SELECT_OPTION_COLORS.length] ?? 'blue'
   };
 }
 
-export function CreateFieldModal({ isOpen, isSubmitting, onClose, onSubmit }: CreateFieldModalProps) {
+export function CreateFieldModal({
+  isOpen,
+  isSubmitting,
+  onClose,
+  onSubmit
+}: CreateFieldModalProps) {
   const modalId = useId();
   const [name, setName] = useState('');
   const [type, setType] = useState<SupportedMwsFieldType>('SingleText');
@@ -42,11 +47,14 @@ export function CreateFieldModal({ isOpen, isSubmitting, onClose, onSubmit }: Cr
   const [checkboxIcon, setCheckboxIcon] = useState('check');
   const [selectOptions, setSelectOptions] = useState<SelectOptionDraft[]>([
     createEmptyOption(1),
-    createEmptyOption(2),
+    createEmptyOption(2)
   ]);
 
   const isSelectType = type === 'SingleSelect' || type === 'MultiSelect';
-  const canSubmit = name.trim().length > 0 && (!isSelectType || selectOptions.some((option) => option.name.trim().length > 0));
+  const canSubmit =
+    name.trim().length > 0 &&
+    (!isSelectType ||
+      selectOptions.some((option) => option.name.trim().length > 0));
 
   const property = useMemo(
     () =>
@@ -59,9 +67,20 @@ export function CreateFieldModal({ isOpen, isSubmitting, onClose, onSubmit }: Cr
         dateFormat,
         timeFormat,
         includeTime,
-        checkboxIcon,
+        checkboxIcon
       }),
-    [checkboxIcon, dateFormat, defaultValue, includeTime, precision, selectOptions, symbol, symbolAlign, timeFormat, type],
+    [
+      checkboxIcon,
+      dateFormat,
+      defaultValue,
+      includeTime,
+      precision,
+      selectOptions,
+      symbol,
+      symbolAlign,
+      timeFormat,
+      type
+    ]
   );
 
   if (!isOpen) {
@@ -74,13 +93,17 @@ export function CreateFieldModal({ isOpen, isSubmitting, onClose, onSubmit }: Cr
         role="dialog"
         aria-modal="true"
         aria-labelledby={modalId}
-        className="fixed left-1/2 top-1/2 flex max-h-[calc(100vh-2rem)] w-[min(34rem,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-editor-border-subtle bg-white shadow-[0_24px_70px_rgba(17,25,40,0.24)]"
+        className="fixed left-1/2 top-1/2 flex max-h-[calc(100vh-2rem)] w-[min(34rem,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-[#e8edf5] bg-white shadow-[0_24px_70px_rgba(17,25,40,0.18)]"
         onMouseDown={(event) => event.stopPropagation()}
         data-mws-stop-event="true"
       >
         <div className="border-b border-editor-border-subtle px-5 py-4">
-          <h3 id={modalId} className="font-wide text-xl font-semibold">Добавить столбец</h3>
-          <p className="mt-1 text-sm text-editor-text-tertiary">Только типы и настройки, которые поддерживаются Fusion API.</p>
+          <h3 id={modalId} className="font-wide text-xl font-semibold">
+            Добавить столбец
+          </h3>
+          <p className="mt-1 text-sm text-editor-text-tertiary">
+            Только типы и настройки, которые поддерживаются Fusion API.
+          </p>
         </div>
 
         <div className="grid gap-4 overflow-y-auto px-5 py-4">
@@ -98,7 +121,9 @@ export function CreateFieldModal({ isOpen, isSubmitting, onClose, onSubmit }: Cr
             Тип данных
             <select
               value={type}
-              onChange={(event) => setType(event.target.value as SupportedMwsFieldType)}
+              onChange={(event) =>
+                setType(event.target.value as SupportedMwsFieldType)
+              }
               className="mt-1 h-11 w-full rounded-lg border border-editor-border-control px-3 text-sm font-normal outline-none focus:border-[#7b67ee]"
             >
               {MWS_FIELD_TYPE_OPTIONS.map((option) => (
@@ -109,7 +134,10 @@ export function CreateFieldModal({ isOpen, isSubmitting, onClose, onSubmit }: Cr
             </select>
           </label>
 
-          {(type === 'SingleText' || type === 'Number' || type === 'Currency' || type === 'Percent') ? (
+          {type === 'SingleText' ||
+          type === 'Number' ||
+          type === 'Currency' ||
+          type === 'Percent' ? (
             <label className="text-sm font-semibold">
               Значение по умолчанию
               <input
@@ -120,7 +148,7 @@ export function CreateFieldModal({ isOpen, isSubmitting, onClose, onSubmit }: Cr
             </label>
           ) : null}
 
-          {(type === 'Number' || type === 'Currency' || type === 'Percent') ? (
+          {type === 'Number' || type === 'Currency' || type === 'Percent' ? (
             <label className="text-sm font-semibold">
               Точность
               <input
@@ -128,7 +156,9 @@ export function CreateFieldModal({ isOpen, isSubmitting, onClose, onSubmit }: Cr
                 min={0}
                 max={6}
                 value={precision}
-                onChange={(event) => setPrecision(Number(event.target.value) || 0)}
+                onChange={(event) =>
+                  setPrecision(Number(event.target.value) || 0)
+                }
                 className="mt-1 h-11 w-full rounded-lg border border-editor-border-control px-3 text-sm font-normal outline-none focus:border-[#7b67ee]"
               />
             </label>
@@ -161,7 +191,11 @@ export function CreateFieldModal({ isOpen, isSubmitting, onClose, onSubmit }: Cr
           {type === 'DateTime' ? (
             <div className="grid gap-3">
               <label className="inline-flex items-center gap-2 text-sm font-semibold">
-                <input type="checkbox" checked={includeTime} onChange={(event) => setIncludeTime(event.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={includeTime}
+                  onChange={(event) => setIncludeTime(event.target.checked)}
+                />
                 Включить время
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -211,7 +245,12 @@ export function CreateFieldModal({ isOpen, isSubmitting, onClose, onSubmit }: Cr
                 <p className="text-sm font-semibold">Опции</p>
                 <button
                   type="button"
-                  onClick={() => setSelectOptions((current) => [...current, createEmptyOption(current.length + 1)])}
+                  onClick={() =>
+                    setSelectOptions((current) => [
+                      ...current,
+                      createEmptyOption(current.length + 1)
+                    ])
+                  }
                   className="rounded-md border border-editor-border-control px-3 py-1.5 text-sm font-semibold text-editor-text-primary"
                 >
                   Добавить опцию
@@ -219,12 +258,19 @@ export function CreateFieldModal({ isOpen, isSubmitting, onClose, onSubmit }: Cr
               </div>
               <div className="grid gap-2">
                 {selectOptions.map((option, index) => (
-                  <div key={option.id} className="grid gap-2 rounded-lg border border-editor-border-subtle p-3 sm:grid-cols-[1fr_8rem_auto]">
+                  <div
+                    key={option.id}
+                    className="grid gap-2 rounded-lg border border-editor-border-subtle p-3 sm:grid-cols-[1fr_8rem_auto]"
+                  >
                     <input
                       value={option.name}
                       onChange={(event) =>
                         setSelectOptions((current) =>
-                          current.map((item) => (item.id === option.id ? { ...item, name: event.target.value } : item)),
+                          current.map((item) =>
+                            item.id === option.id
+                              ? { ...item, name: event.target.value }
+                              : item
+                          )
                         )
                       }
                       className="h-10 rounded-lg border border-editor-border-control px-3 text-sm outline-none focus:border-[#7b67ee]"
@@ -234,7 +280,11 @@ export function CreateFieldModal({ isOpen, isSubmitting, onClose, onSubmit }: Cr
                       value={option.color}
                       onChange={(event) =>
                         setSelectOptions((current) =>
-                          current.map((item) => (item.id === option.id ? { ...item, color: event.target.value } : item)),
+                          current.map((item) =>
+                            item.id === option.id
+                              ? { ...item, color: event.target.value }
+                              : item
+                          )
                         )
                       }
                       className="h-10 rounded-lg border border-editor-border-control px-3 text-sm outline-none focus:border-[#7b67ee]"
@@ -247,7 +297,11 @@ export function CreateFieldModal({ isOpen, isSubmitting, onClose, onSubmit }: Cr
                     </select>
                     <button
                       type="button"
-                      onClick={() => setSelectOptions((current) => current.filter((item) => item.id !== option.id))}
+                      onClick={() =>
+                        setSelectOptions((current) =>
+                          current.filter((item) => item.id !== option.id)
+                        )
+                      }
                       className="rounded-lg border border-[#ffd2d9] px-3 text-sm font-semibold text-[#b00025]"
                     >
                       Удалить
@@ -259,7 +313,8 @@ export function CreateFieldModal({ isOpen, isSubmitting, onClose, onSubmit }: Cr
           ) : null}
 
           <div className="rounded-lg bg-[#f8fafc] p-3 text-xs text-editor-text-tertiary">
-            В отправку уйдет `property`, собранный строго по текущему типу поля: {JSON.stringify(property)}
+            В отправку уйдет `property`, собранный строго по текущему типу поля:{' '}
+            {JSON.stringify(property)}
           </div>
         </div>
 

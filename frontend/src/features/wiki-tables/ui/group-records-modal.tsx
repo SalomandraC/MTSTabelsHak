@@ -19,18 +19,19 @@ export function GroupRecordsModal({
   fields,
   groupRule,
   onChangeGroupRule,
-  onClose,
+  onClose
 }: GroupRecordsModalProps) {
   const modalId = useId();
-  const [draftRule, setDraftRule] = useState<GroupRule | null>(groupRule ?? (fields.length > 0 ? { fieldId: fields[0].id, desc: false } : null));
+  const [draftRule, setDraftRule] = useState<GroupRule | null>(
+    groupRule ??
+      (fields.length > 0 ? { fieldId: fields[0].id, desc: false } : null)
+  );
 
   useEffect(() => {
     if (isOpen) {
       setDraftRule(
         groupRule ??
-          (fields.length > 0
-            ? { fieldId: fields[0].id, desc: false }
-            : null),
+          (fields.length > 0 ? { fieldId: fields[0].id, desc: false } : null)
       );
     }
   }, [fields, groupRule, isOpen]);
@@ -42,19 +43,23 @@ export function GroupRecordsModal({
   return (
     <div className="fixed inset-0 z-[95] bg-black/35" onMouseDown={onClose}>
       <section
-        className="fixed left-1/2 top-1/2 flex max-h-[calc(100vh-2rem)] w-[min(32rem,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-editor-border-subtle bg-white shadow-[0_24px_70px_rgba(17,25,40,0.24)]"
+        className="fixed left-1/2 top-1/2 flex max-h-[calc(100vh-2rem)] w-[min(32rem,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-[#e8edf5] bg-white shadow-[0_24px_70px_rgba(17,25,40,0.18)]"
         role="dialog"
         aria-modal="true"
         aria-labelledby={modalId}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="px-5 py-4">
-          <h3 id={modalId} className="font-wide text-xl font-semibold flex items-center gap-2">
+          <h3
+            id={modalId}
+            className="font-wide text-xl font-semibold flex items-center gap-2"
+          >
             <Group className="h-5 w-5" />
             Группировка по полю
           </h3>
           <p className="mt-1 text-sm text-editor-text-tertiary">
-            Записи будут сгруппированы по выбранному полю, сначала с общим количеством в заголовке группы.
+            Записи будут сгруппированы по выбранному полю, сначала с общим
+            количеством в заголовке группы.
           </p>
         </div>
 
@@ -67,7 +72,9 @@ export function GroupRecordsModal({
                   value={draftRule.fieldId}
                   onChange={(event) =>
                     setDraftRule((current) =>
-                      current ? { ...current, fieldId: event.target.value } : null,
+                      current
+                        ? { ...current, fieldId: event.target.value }
+                        : null
                     )
                   }
                   className="h-10 rounded-lg border border-editor-border-control px-3 text-sm font-normal outline-none focus:border-[#7b67ee]"
@@ -86,7 +93,9 @@ export function GroupRecordsModal({
                   value={draftRule.desc ? 'desc' : 'asc'}
                   onChange={(event) =>
                     setDraftRule((current) =>
-                      current ? { ...current, desc: event.target.value === 'desc' } : null,
+                      current
+                        ? { ...current, desc: event.target.value === 'desc' }
+                        : null
                     )
                   }
                   className="h-10 rounded-lg border border-editor-border-control px-3 text-sm font-normal outline-none focus:border-[#7b67ee]"
@@ -104,7 +113,11 @@ export function GroupRecordsModal({
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-editor-border-subtle px-5 py-4">
-          <ModalActionButton onClick={() => setDraftRule(null)} variant="secondary" disabled={!groupRule}>
+          <ModalActionButton
+            onClick={() => setDraftRule(null)}
+            variant="secondary"
+            disabled={!groupRule}
+          >
             <RotateCcw className="h-4 w-4" />
             Отключить группировку
           </ModalActionButton>

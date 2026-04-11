@@ -1,6 +1,12 @@
 import type { MwsTableEmbedController } from '../model/use-wiki-table-embed';
-import { COLUMN_WIDTH, fieldInputType } from '../model/use-wiki-table-embed';
-import { Check, ChevronsUpDown } from 'lucide-react';
+import {
+  COLUMN_WIDTH,
+  fieldInputType,
+  HEADER_HEIGHT,
+  INDEX_WIDTH,
+  ROW_HEIGHT
+} from '../model/use-wiki-table-embed';
+import { Check, ChevronsUpDown, Download, Paperclip, X } from 'lucide-react';
 import { resolveTableGridHeight } from './table-grid-layout';
 
 export type TableGridProps = {
@@ -14,13 +20,34 @@ export function TableGridCanvas({
   isExpanded = false,
   selectColorToCss,
   onCanvasKeyDown,
-  selectEditorRef
+  selectEditorRef,
+  isAttachmentWidgetDismissed = false,
+  onAttachmentWidgetClose
 }: TableGridProps & {
   onCanvasKeyDown: (event: React.KeyboardEvent<HTMLCanvasElement>) => void;
   selectEditorRef: React.RefObject<HTMLDivElement>;
-  canvasTestId?: string;
+  isAttachmentWidgetDismissed?: boolean;
+  onAttachmentWidgetClose?: () => void;
 }) {
   const gridHeight = resolveTableGridHeight(controller.gridHeight, isExpanded);
+  const selectedAttachmentCell =
+    controller.selection &&
+    controller.selectedField?.type === 'Attachment' &&
+    controller.selectedRecord
+      ? {
+          left:
+            INDEX_WIDTH +
+            controller.selection.fieldIndex * COLUMN_WIDTH -
+            controller.scrollOffset.left +
+            2,
+          top:
+            HEADER_HEIGHT +
+            controller.selection.rowIndex * ROW_HEIGHT -
+            controller.scrollOffset.top +
+            ROW_HEIGHT +
+            6
+        }
+      : null;
 
   return (
     <div
@@ -161,6 +188,72 @@ export function TableGridCanvas({
                 );
               })}
             </div>
+          </div>
+        ) : null}
+        {selectedAttachmentCell && !isAttachmentWidgetDismissed ? (
+          <div
+            data-testid="mws_attachment_widget"
+            className="absolute z-30 overflow-hidden rounded-xl border border-[#e6ebf3] bg-white shadow-[0_16px_40px_rgba(17,24,39,0.16)]"
+            style={{
+              left: Math.max(8, selectedAttachmentCell.left),
+              top: Math.max(HEADER_HEIGHT + 8, selectedAttachmentCell.top),
+              width: 320
+            }}
+          >
+            <div className="flex items-center justify-between border-b border-[#eef2f7] px-3 py-2">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-editor-text-tertiary">
+                  Вложения ячейки
+                </p>
+                <p className="truncate text-xs text-[#7b8190]">
+                  {controller.selectedAttachments.length > 0
+                    ? `${controller.selectedAttachments.length} файл(ов)`
+                    : 'Файлы не добавлены'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onAttachmentWidgetClose}
+                className="rounded-md p-1 text-[#667085] transition-colors hover:bg-[#f3f6fb]"
+                aria-label="Закрыть виджет вложений"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {controller.selectedAttachments.length > 0 ? (
+              <div className="max-h-56 overflow-y-auto p-2">
+                <div className="grid gap-2">
+                  {controller.selectedAttachments.map((item, index) => (
+                    <div
+                      key={`${item.name}-${index}`}
+                      className="flex items-center gap-2 rounded-lg border border-[#eef2f7] bg-[#fbfcfe] px-2.5 py-2"
+                    >
+                      <Paperclip className="h-4 w-4 shrink-0 text-[#667085]" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-editor-text-primary">
+                          {item.name}
+                        </p>
+                        <p className="text-xs text-editor-text-tertiary">
+                          Вложение из MWS Tables
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void controller.downloadAttachment(item)}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-editor-border-control px-2 py-1 text-xs font-semibold text-editor-text-primary"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Скачать
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="px-3 py-3 text-sm text-editor-text-tertiary">
+                В этой ячейке нет вложений.
+              </div>
+            )}
           </div>
         ) : null}
       </div>

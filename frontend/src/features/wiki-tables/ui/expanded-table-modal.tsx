@@ -22,6 +22,8 @@ export type ExpandedTableModalProps = {
   onDeleteRow: () => void;
   canUploadToCell: boolean;
   canDownloadFromCell: boolean;
+  isAttachmentWidgetDismissed?: boolean;
+  onAttachmentWidgetClose?: () => void;
   onCanvasKeyDown: (event: React.KeyboardEvent<HTMLCanvasElement>) => void;
 };
 
@@ -45,6 +47,8 @@ export function ExpandedTableModal({
   onDeleteRow,
   canUploadToCell,
   canDownloadFromCell,
+  isAttachmentWidgetDismissed = false,
+  onAttachmentWidgetClose,
   onCanvasKeyDown
 }: ExpandedTableModalProps) {
   if (!isOpen) {
@@ -63,6 +67,7 @@ export function ExpandedTableModal({
         aria-label={`Полноэкранная таблица ${tableTitle}`}
         className="flex h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="border-b border-editor-border-subtle bg-[#f8fafc] px-5 py-4">
           <div className="min-w-0">
@@ -114,6 +119,8 @@ export function ExpandedTableModal({
             controller={controller}
             isExpanded
             selectColorToCss={selectColorToCss}
+            isAttachmentWidgetDismissed={isAttachmentWidgetDismissed}
+            onAttachmentWidgetClose={onAttachmentWidgetClose}
             onCanvasKeyDown={onCanvasKeyDown}
             selectEditorRef={selectEditorRef}
           />
