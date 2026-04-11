@@ -4,6 +4,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './auth/auth.module';
 import { AppController } from './app.controller';
 import { CollabModule } from './collab/collab.module';
+import { CommentsModule } from './comments/comments.module';
 import { PrismaModule } from './infra/prisma/prisma.module';
 import { QueueModule } from './infra/queue/queue.module';
 import { RedisModule } from './infra/redis/redis.module';
@@ -43,6 +44,7 @@ import { WorkspaceTreeModule } from './workspace/workspace-tree.module';
     PagesModule,
     LinksModule,
     CollabModule,
+    CommentsModule,
     MwsModule,
     PluginsModule,
     WorkspaceTreeModule,

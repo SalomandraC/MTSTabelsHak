@@ -28,6 +28,11 @@ enum PluginScopeType {
   user
 }
 
+enum CommentThreadStatus {
+  open
+  resolved
+}
+
 model WikiNode {
   id          String       @id @default(uuid())
   spaceId     String       @map("space_id")
@@ -52,6 +57,7 @@ model WikiNode {
   targetLinks PageLink[]   @relation("TargetLinks")
   embeds      PageEmbed[]
   sessions    CollabSession[]
+  commentThreads PageCommentThread[]
 
   @@index([spaceId, parentId, position])
   @@index([spaceId, type, isArchived])
@@ -151,6 +157,39 @@ model PageEmbed {
   @@unique([pageId, blockId])
   @@index([pageId, provider])
   @@map("page_embeds")
+}
+
+model PageCommentThread {
+  id            String              @id
+  pageId        String              @map("page_id")
+  anchorText    String              @map("anchor_text")
+  status        CommentThreadStatus @default(open)
+  createdBy     String              @map("created_by")
+  createdByName String              @map("created_by_name")
+  resolvedBy    String?             @map("resolved_by")
+  resolvedAt    DateTime?           @map("resolved_at")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+  page          WikiNode            @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  messages      PageCommentMessage[]
+
+  @@index([pageId, status, updatedAt])
+  @@map("page_comment_threads")
+}
+
+model PageCommentMessage {
+  id            String            @id @default(uuid())
+  threadId      String            @map("thread_id")
+  body          String
+  createdBy     String            @map("created_by")
+  createdByName String            @map("created_by_name")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  deletedAt     DateTime?         @map("deleted_at")
+  thread        PageCommentThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+  @@map("page_comment_messages")
 }
 
 model CollabSession {

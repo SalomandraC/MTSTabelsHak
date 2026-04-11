@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 
 import { PageEditor } from '../../../features/page-editor';
+import { usePageComments, type CommentThreadView } from '../../../features/page-editor/model/use-page-comments';
+import { CommentsPanel } from '../../../features/page-editor/ui/comments-panel';
 import { PluginsModal, usePlugins } from '../../../features/plugins';
 import {
   DEFAULT_WIKILIVE_SPACE_ID,
@@ -487,6 +489,7 @@ export function WorkspacePage() {
     errorMessage: pluginsErrorMessage,
     pendingPluginId,
     togglePlugin,
+    isPluginEnabled,
     isWorkspaceSidebarEnabled,
   } = usePlugins();
   const initialRoute = useMemo(() => readWorkspaceRoute(), []);
@@ -501,6 +504,7 @@ export function WorkspacePage() {
   const [activePageId, setActivePageId] = useState<string | null>(null);
   const [selectedTableNode, setSelectedTableNode] = useState<WorkspaceTreeNode | null>(null);
   const [activePage, setActivePage] = useState<WikiPage | null>(null);
+  const [isPageLoading, setIsPageLoading] = useState(false);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [outgoingLinks, setOutgoingLinks] = useState<OutgoingLink[]>([]);
   const [graphEdges, setGraphEdges] = useState<DocumentGraphEdge[]>([]);
@@ -517,6 +521,19 @@ export function WorkspacePage() {
   const visibleTree = useMemo(() => filterWorkspaceTree(tree, searchQuery), [searchQuery, tree]);
   const hasSearch = searchQuery.trim().length > 0;
   const isDocumentGraphEnabled = isWorkspaceSidebarEnabled('document-graph');
+  const isCommentsEnabled = isPluginEnabled('comments');
+  const comments = usePageComments({
+    pageId: activePageId,
+    editor: activeEditor,
+    enabled: isCommentsEnabled && Boolean(activePage),
+  });
+  const editorCommentThreads = useMemo<CommentThreadView[]>(() => {
+    if (!comments.activeThread?.isDraft) {
+      return comments.openThreads;
+    }
+
+    return [comments.activeThread, ...comments.openThreads.filter((thread) => thread.id !== comments.activeThread?.id)];
+  }, [comments.activeThread, comments.openThreads]);
   const effectiveExpandedFolderIds = useMemo(
     () => (hasSearch ? new Set(collectWorkspaceFolderIds(visibleTree)) : expandedFolderIds),
     [expandedFolderIds, hasSearch, visibleTree],
@@ -628,6 +645,7 @@ export function WorkspacePage() {
 
     localStorage.setItem(SELECTED_SPACE_STORAGE_KEY, selectedSpaceId);
     setActivePage(null);
+    setIsPageLoading(false);
     setActivePageId(null);
     setSelectedTableNode(null);
     setBacklinks([]);
@@ -706,10 +724,14 @@ export function WorkspacePage() {
 
   useEffect(() => {
     if (!activePageId) {
+      setActivePage(null);
+      setIsPageLoading(false);
       return;
     }
 
     let cancelled = false;
+    setActivePage(null);
+    setIsPageLoading(true);
     setStatusMessage('Открываем страницу');
 
     void (async () => {
@@ -729,6 +751,7 @@ export function WorkspacePage() {
         }
       } finally {
         if (!cancelled) {
+          setIsPageLoading(false);
           setStatusMessage('');
         }
       }
@@ -741,6 +764,7 @@ export function WorkspacePage() {
 
   const handleSelectPage = (pageId: string) => {
     setSelectedTableNode(null);
+    setActivePage(null);
     setActivePageId(pageId);
     writeWorkspaceRoute(selectedSpaceId, pageId, 'push');
   };
@@ -1053,15 +1077,38 @@ export function WorkspacePage() {
         {statusMessage ? (
           <div className="border-b border-editor-border-subtle bg-white px-4 py-2 text-sm text-editor-text-tertiary">{statusMessage}</div>
         ) : null}
+        {isCommentsEnabled && comments.errorMessage && !comments.isPanelOpen ? (
+          <div className="border-b border-[#efe9ff] bg-[#f7f4ff] px-4 py-2 text-sm text-[#6d5dd3]">{comments.errorMessage}</div>
+        ) : null}
         <PageEditor
           spaceId={selectedSpaceId}
-          page={activePage}
+          page={isPageLoading ? null : activePage}
+          isLoading={isPageLoading}
           onRenamePage={handleRenamePage}
           onCheckpoint={handleCheckpoint}
           onEditorChange={setActiveEditor}
+          onCreateComment={isCommentsEnabled ? comments.startThreadFromSelection : undefined}
+          onOpenCommentThread={isCommentsEnabled ? comments.openThread : undefined}
+          commentThreads={editorCommentThreads}
+          activeCommentThreadId={comments.activeThreadId}
+          commentCount={comments.commentCount}
         />
       </section>
 
+      {isCommentsEnabled && comments.isPanelOpen ? (
+        <CommentsPanel
+          activeThread={comments.activeThread}
+          activeThreadId={comments.activeThreadId}
+          isLoading={comments.isLoading}
+          errorMessage={comments.errorMessage}
+          onRetry={() => void comments.refreshComments()}
+          onClose={comments.closePanel}
+          onSubmitMessage={comments.submitMessage}
+          onEditMessage={comments.editMessage}
+          onDeleteMessage={comments.deleteMessage}
+          onResolveThread={comments.resolveThread}
+        />
+      ) : (
       <aside className="hidden w-80 shrink-0 flex-col border-l border-editor-border-subtle bg-white/95 xl:flex">
         <div className="border-b border-editor-border-subtle p-4">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">Связи</p>
@@ -1149,6 +1196,7 @@ export function WorkspacePage() {
           </section>
         </div>
       </aside>
+      )}
 
       <PluginsModal
         isOpen={isPluginsModalOpen}

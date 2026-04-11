@@ -42,6 +42,7 @@ import { MwsTableEmbed } from '../../wiki-tables';
 // dedicated implementation is not present (avoids merge-time missing-file errors).
 const AIGhostTextExtension = Extension.create({ name: 'aiGhostText' });
 import { CodeBlockComponent } from '../ui/code-block-component.tsx';
+import { CommentAnchor } from './comment-anchor';
 import { ImageBlock } from './image-block';
 import { PageLink } from './page-link';
 import { RootBlock } from './root-block';
@@ -104,6 +105,7 @@ type PageEditorExtensionOptions = {
     name: string;
     color: string;
   };
+  onOpenCommentThread?: (threadId: string) => void;
 };
 
 export function createPageEditorExtensions(options: PageEditorExtensionOptions = {}) {
@@ -121,6 +123,9 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     RootBlock,
     ImageBlock,
     PageLink,
+    CommentAnchor.configure({
+      onOpenThread: options.onOpenCommentThread,
+    }),
     MwsTableEmbed,
     TaskList,
     TaskItem.configure({ nested: true }),

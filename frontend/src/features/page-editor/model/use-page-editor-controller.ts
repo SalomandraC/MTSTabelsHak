@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { HocuspocusProvider } from '@hocuspocus/provider';
+import type { Content } from '@tiptap/core';
 import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
 
@@ -47,6 +48,7 @@ type UsePageEditorControllerOptions = {
   page: WikiPage | null;
   onRenamePage: (title: string) => Promise<void>;
   onCheckpoint: () => Promise<void>;
+  onOpenCommentThread?: (threadId: string) => void;
 };
 
 const baseSlashState: SlashState = {
@@ -128,7 +130,7 @@ function getEditorMarkdown(editor: NonNullable<ReturnType<typeof useEditor>>): s
   return editor.getText();
 }
 
-export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpoint }: UsePageEditorControllerOptions) {
+export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpoint, onOpenCommentThread }: UsePageEditorControllerOptions) {
   const [slashState, setSlashState] = useState<SlashState>(baseSlashState);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [saveStatus, setSaveStatus] = useState('Ожидаем страницу');
@@ -290,8 +292,9 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
           name: userDisplayName,
           color: userColor,
         },
+        onOpenCommentThread,
       }),
-    [collabState?.provider, collabState?.ydoc, page?.title, userColor, userDisplayName, userId],
+    [collabState?.provider, collabState?.ydoc, onOpenCommentThread, page?.title, userColor, userDisplayName, userId],
   );
 
   const resetImageModalState = () => {
@@ -694,11 +697,11 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
         const generatedContent = response.document?.content;
 
         if (Array.isArray(generatedContent) && generatedContent.length > 0) {
-          editor.chain().focus().insertContent(generatedContent as any).run();
+          editor.chain().focus().insertContent(generatedContent as Content).run();
           return;
         }
 
-        editor.chain().focus().insertContent(response.document as any).run();
+        editor.chain().focus().insertContent(response.document as Content).run();
       }).catch((error) => {
         setSaveStatus(error instanceof Error ? `AI generate error: ${error.message}` : 'AI generate error');
       });
