@@ -9,6 +9,7 @@ import {
   WIKILIVE_SPACE_ID,
   wikiliveApi,
 } from '../../../shared/api/wikilive';
+import { DocumentLinkGraph } from './document-link-graph';
 
 function flattenPages(nodes: WikiTreeNode[]): WikiTreeNode[] {
   return nodes.flatMap((node) => [
@@ -274,6 +275,8 @@ export function WorkspacePage() {
           </section>
         </div>
       </aside>
+
+      <DocumentLinkGraph activePage={activePage} backlinks={backlinks} outgoingLinks={outgoingLinks} onSelectPage={setActivePageId} />
     </main>
   );
 }
