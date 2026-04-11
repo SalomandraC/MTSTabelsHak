@@ -59,7 +59,7 @@ export function PageEditor({ spaceId, page, onRenamePage, onCheckpoint, onEditor
 
   if (!page) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-editor-bg-page">
+      <main className="flex h-full min-h-0 items-center justify-center bg-editor-bg-page">
         <div className="rounded-2xl border border-editor-border-subtle bg-white p-8 text-center shadow-sm">
           <h2 className="font-wide text-xl font-semibold">Выберите страницу</h2>
           <p className="mt-2 text-sm text-editor-text-tertiary">Или создайте новую страницу в sidebar.</p>
@@ -69,8 +69,8 @@ export function PageEditor({ spaceId, page, onRenamePage, onCheckpoint, onEditor
   }
 
   return (
-    <main className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top_left,#f5f8ff_0%,#ffffff_32%,#ffffff_100%)] px-0 py-0">
-      <section className="flex w-full flex-1 flex-col bg-editor-bg-page">
+    <main className="flex h-full min-h-0 flex-col bg-editor-bg-page px-0 py-0">
+      <section className="flex min-h-0 w-full flex-1 flex-col bg-editor-bg-page">
         <PageEditorHeader
           title={controller.title}
           description={controller.description}
