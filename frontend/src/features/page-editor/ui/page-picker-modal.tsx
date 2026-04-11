@@ -4,12 +4,13 @@ import { type PageSummary, wikiliveApi } from '../../../shared/api/wikilive';
 
 type PagePickerModalProps = {
   isOpen: boolean;
+  spaceId: string;
   currentPageId?: string | null;
   onSelect: (page: PageSummary) => void;
   onClose: () => void;
 };
 
-export function PagePickerModal({ isOpen, currentPageId, onSelect, onClose }: PagePickerModalProps) {
+export function PagePickerModal({ isOpen, spaceId, currentPageId, onSelect, onClose }: PagePickerModalProps) {
   const [query, setQuery] = useState('');
   const [pages, setPages] = useState<PageSummary[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -26,7 +27,7 @@ export function PagePickerModal({ isOpen, currentPageId, onSelect, onClose }: Pa
 
     const timeoutId = window.setTimeout(() => {
       void wikiliveApi
-        .listPages(query)
+        .listPages(spaceId, query)
         .then((response) => {
           if (!cancelled) {
             setPages(response.items.filter((page) => page.id !== currentPageId));
@@ -48,7 +49,7 @@ export function PagePickerModal({ isOpen, currentPageId, onSelect, onClose }: Pa
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [currentPageId, isOpen, query]);
+  }, [currentPageId, isOpen, query, spaceId]);
 
   if (!isOpen) {
     return null;

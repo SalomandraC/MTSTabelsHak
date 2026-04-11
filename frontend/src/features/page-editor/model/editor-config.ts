@@ -94,6 +94,7 @@ type PageEditorExtensionOptions = {
   ydoc?: Y.Doc | null;
   provider?: HocuspocusProvider | null;
   user?: {
+    id?: string;
     name: string;
     color: string;
   };
@@ -155,6 +156,25 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
               name: 'Demo User',
               color: '#7b67ee',
             },
+            render: (user) => {
+              const cursor = document.createElement('span');
+              cursor.classList.add('collaboration-carets__caret');
+              cursor.style.setProperty('--collab-user-color', user.color ?? '#ff0037');
+              cursor.dataset.user = user.name ?? 'User';
+
+              const label = document.createElement('span');
+              label.classList.add('collaboration-carets__label');
+              label.textContent = user.name ?? 'User';
+
+              cursor.appendChild(label);
+              return cursor;
+            },
+            selectionRender: (user) => ({
+              nodeName: 'span',
+              class: 'collaboration-carets__selection',
+              style: `--collab-user-color: ${user.color ?? '#ff0037'};`,
+              'data-user': user.name ?? 'User',
+            }),
           }),
         ]
       : []),
