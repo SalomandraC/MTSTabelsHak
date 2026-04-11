@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Maximize2, RefreshCcw, ZoomIn } from 'lucide-react';
 import cytoscape from 'cytoscape';
 import cola from 'cytoscape-cola';
 
@@ -67,6 +68,9 @@ function buildElements(pages: DocumentGraphPage[], edges: DocumentGraphEdge[]) {
   return [...nodes, ...edgeElements];
 }
 
+const GRAPH_ZOOM_MIN = 0.35;
+const GRAPH_ZOOM_MAX = 2.4;
+
 function clampPan(cy: cytoscape.Core) {
   const pan = cy.pan();
   const zoom = cy.zoom();
@@ -81,11 +85,11 @@ function clampPan(cy: cytoscape.Core) {
     cy.pan(clamped);
   }
 
-  if (zoom < 0.82) {
-    cy.zoom(0.82);
+  if (zoom < GRAPH_ZOOM_MIN) {
+    cy.zoom(GRAPH_ZOOM_MIN);
   }
-  if (zoom > 1.4) {
-    cy.zoom(1.4);
+  if (zoom > GRAPH_ZOOM_MAX) {
+    cy.zoom(GRAPH_ZOOM_MAX);
   }
 }
 
@@ -171,7 +175,10 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cytoscapeRef = useRef<cytoscape.Core | null>(null);
   const onSelectPageRef = useRef(onSelectPage);
+  const dragStateRef = useRef<{ startX: number; startY: number; anchorX: number; anchorY: number } | null>(null);
   const [isHovered, setIsHovered] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalOffset, setModalOffset] = useState({ x: 80, y: 60 });
 
   useEffect(() => {
     onSelectPageRef.current = onSelectPage;
@@ -304,9 +311,9 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
         edgeLengthVal: 80,
         componentSpacing: 30,
       } as ColaLayoutOptions,
-      minZoom: 0.5,
-      maxZoom: 1.8,
-      wheelSensitivity: 1,
+      minZoom: 0.35,
+      maxZoom: 2.4,
+      wheelSensitivity: 0.9,
       userZoomingEnabled: true,
       userPanningEnabled: true,
       boxSelectionEnabled: false,
@@ -346,6 +353,22 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
       cytoscapeRef.current = null;
     };
   }, [pages.length]);
+
+  useEffect(() => {
+    if (!isModalOpen) {
+      return;
+    }
+
+    const cy = cytoscapeRef.current;
+    if (!cy) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      cy.resize();
+      cy.fit(cy.elements(), 25);
+    });
+  }, [isModalOpen]);
 
   useEffect(() => {
     const cy = cytoscapeRef.current;
@@ -436,6 +459,49 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
     cy.zoom(targetZoom);
   };
 
+  const handleOpenModal = () => {
+    setIsModalOpen(true);
+  };
+
+  const graphContainerStyle = {
+    touchAction: 'none',
+    cursor: isHovered ? 'grab' : 'default',
+  } as const;
+
+  const handleModalPointerDown = (event: any) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    dragStateRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      anchorX: modalOffset.x,
+      anchorY: modalOffset.y,
+    };
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleModalPointerMove = (event: any) => {
+    if (!dragStateRef.current) {
+      return;
+    }
+
+    const deltaX = event.clientX - dragStateRef.current.startX;
+    const deltaY = event.clientY - dragStateRef.current.startY;
+
+    setModalOffset({
+      x: Math.max(8, Math.min(window.innerWidth - 200, dragStateRef.current.anchorX + deltaX)),
+      y: Math.max(8, Math.min(window.innerHeight - 120, dragStateRef.current.anchorY + deltaY)),
+    });
+  };
+
+  const handleModalPointerUp = (event: any) => {
+    dragStateRef.current = null;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
   return (
     <section className="overflow-hidden rounded-2xl border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm">
       <div className="relative overflow-hidden border-b border-editor-border-subtle px-3 py-2.5">
@@ -445,9 +511,38 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-editor-text-tertiary">Graph View</p>
             <h3 className="mt-1 truncate font-wide text-sm font-semibold text-editor-text-primary">{activeTitle ?? 'Все документы'}</h3>
           </div>
-          <span className="shrink-0 rounded-full border border-editor-border-subtle bg-editor-bg-control px-2.5 py-1 text-xs font-semibold text-editor-text-secondary">
-            {pages.length}/{edges.length}
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleRefreshGraph}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
+              aria-label="Обновить граф"
+              title="Обновить граф"
+            >
+              <RefreshCcw size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={handleExpandGraph}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
+              aria-label="Приблизить граф"
+              title="Приблизить граф"
+            >
+              <ZoomIn size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenModal}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
+              aria-label="Открыть большой граф"
+              title="Открыть большой граф"
+            >
+              <Maximize2 size={14} />
+            </button>
+            <span className="shrink-0 rounded-full border border-editor-border-subtle bg-editor-bg-control px-2.5 py-1 text-xs font-semibold text-editor-text-secondary">
+              {pages.length}/{edges.length}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -456,7 +551,22 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
           <div
             ref={containerRef}
             className="h-full w-full"
-            style={{ touchAction: 'none', cursor: isHovered ? 'grab' : 'default' }}
+            style={{
+              ...graphContainerStyle,
+              ...(isModalOpen
+                ? {
+                    position: 'fixed' as const,
+                    top: modalOffset.y,
+                    left: modalOffset.x,
+                    width: 'min(84vw,820px)',
+                    height: 'min(76vh,640px)',
+                    zIndex: 1000,
+                    borderRadius: 24,
+                    backgroundColor: '#ffffff',
+                    boxShadow: '0 30px 80px rgba(17,25,40,0.25)',
+                  }
+                : {}),
+            }}
             aria-label="Graph canvas"
           />
         ) : (
@@ -466,6 +576,33 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
         {pages.length > 0 && edges.length === 0 ? (
           <div className="absolute inset-x-4 bottom-4 rounded-2xl border border-dashed border-editor-border-subtle bg-white/90 px-3 py-2.5 text-center text-xs text-editor-text-tertiary shadow-sm">
             Добавьте связь через /страница, и граф начнет оживать.
+          </div>
+        ) : null}
+
+        {isModalOpen ? (
+          <div className="fixed inset-0 z-40">
+            <div className="absolute inset-0 bg-black/30" onClick={() => setIsModalOpen(false)} />
+            <div
+              className="absolute z-50 flex flex-col overflow-hidden rounded-3xl bg-white shadow-[0_30px_80px_rgba(17,25,40,0.25)]"
+              style={{ left: modalOffset.x, top: modalOffset.y, width: 'min(84vw,820px)', height: 'min(76vh,640px)' }}
+            >
+              <div
+                className="flex h-10 items-center justify-between gap-3 bg-slate-200 px-3 text-sm font-semibold text-slate-900"
+                onPointerDown={handleModalPointerDown}
+                onPointerMove={handleModalPointerMove}
+                onPointerUp={handleModalPointerUp}
+              >
+                <span>Большой граф</span>
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
+                  aria-label="Закрыть модальное окно"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
           </div>
         ) : null}
       </div>

@@ -4,5 +4,5 @@ export type SlashMenuItem = {
   hint: string;
   keywords: string[];
   shortcut?: string;
-  icon: string;
+  icon: React.ReactNode;
 };
