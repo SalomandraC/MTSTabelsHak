@@ -8,6 +8,7 @@ import { PrismaModule } from './infra/prisma/prisma.module';
 import { QueueModule } from './infra/queue/queue.module';
 import { RedisModule } from './infra/redis/redis.module';
 import { LinksModule } from './links/links.module';
+import { AiToolsModule } from './ai-tools/ai-tools.module';
 import { MwsModule } from './mws/mws.module';
 import { PagesModule } from './pages/pages.module';
 import { PluginsModule } from './plugins/plugins.module';
@@ -45,6 +46,7 @@ import { WorkspaceTreeModule } from './workspace/workspace-tree.module';
     MwsModule,
     PluginsModule,
     WorkspaceTreeModule,
+    AiToolsModule,
   ],
   controllers: [AppController],
 })

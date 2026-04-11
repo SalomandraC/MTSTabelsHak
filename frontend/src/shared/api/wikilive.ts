@@ -291,6 +291,50 @@ export type ResolveTableEmbedResponse = {
   };
 };
 
+export type AiTransformType = 'professional' | 'shorten' | 'expand' | 'fix_grammar';
+
+export type AiAutocompletePayload = {
+  currentText: string;
+  pageTitle?: string;
+  pageSnapshot?: Record<string, unknown>;
+};
+
+export type AiGeneratePayload = {
+  prompt: string;
+  pageTitle?: string;
+  pageSnapshot?: Record<string, unknown>;
+};
+
+export type AiTransformPayload = {
+  text: string;
+  transformation: AiTransformType;
+  pageTitle?: string;
+  pageSnapshot?: Record<string, unknown>;
+};
+
+export type AiChatPayload = {
+  question: string;
+  pageId?: string;
+  datasheetId?: string;
+  viewId?: string;
+  pageTitle?: string;
+  pageSnapshot?: Record<string, unknown>;
+};
+
+export type AiGenerateResponse = {
+  document: {
+    type: 'doc';
+    content: unknown[];
+  };
+};
+
+export type AiChatResponse = {
+  answer: string;
+  usedTools?: Array<{ toolName: string; args: Record<string, unknown> }>;
+  contextMarkdown?: string;
+  references?: Array<Record<string, unknown>>;
+};
+
 function toQueryString(query: RequestOptions['query']) {
   const params = new URLSearchParams();
 
@@ -423,6 +467,17 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   return response.json() as Promise<T>;
+}
+
+async function requestWithAuth<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  if (!accessToken) {
+    await refreshAccessToken();
+  }
+
+  return request<T>(path, {
+    ...options,
+    authMode: 'required',
+  });
 }
 
 export const wikiliveApi = {
@@ -792,6 +847,30 @@ export const wikiliveApi = {
         datasheetId: payload.datasheetId ?? undefined,
         title: payload.title,
       }),
+    });
+  },
+  aiAutocomplete(payload: AiAutocompletePayload) {
+    return requestWithAuth<{ text: string }>('/api/v1/ai/autocomplete', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiGenerate(payload: AiGeneratePayload) {
+    return requestWithAuth<AiGenerateResponse>('/api/v1/ai/generate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiTransform(payload: AiTransformPayload) {
+    return requestWithAuth<{ text: string }>('/api/v1/ai/transform', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiChat(payload: AiChatPayload) {
+    return requestWithAuth<AiChatResponse>('/api/v1/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 };

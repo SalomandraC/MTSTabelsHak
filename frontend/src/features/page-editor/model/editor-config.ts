@@ -34,8 +34,13 @@ import { createLowlight } from 'lowlight';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import type { HocuspocusProvider } from '@hocuspocus/provider';
 import type * as Y from 'yjs';
+import { Markdown } from 'tiptap-markdown';
 
+<<<<<<< HEAD
 import { MwsTableEmbed } from '../../wiki-tables';
+=======
+import { AIGhostTextExtension } from './ai-ghost-text-extension';
+>>>>>>> 79a40f9605187ec2889ba1142bd1d6d834e81867
 import { CodeBlockComponent } from '../ui/code-block-component.tsx';
 import { ImageBlock } from './image-block';
 import { PageLink } from './page-link';
@@ -93,6 +98,7 @@ export const initialContent = `
 type PageEditorExtensionOptions = {
   ydoc?: Y.Doc | null;
   provider?: HocuspocusProvider | null;
+  requestAutocomplete?: (currentText: string) => Promise<string>;
   user?: {
     id?: string;
     name: string;
@@ -102,6 +108,7 @@ type PageEditorExtensionOptions = {
 
 export function createPageEditorExtensions(options: PageEditorExtensionOptions = {}) {
   return [
+    Markdown,
     TextStyle,
     Highlight,
     Typography,
@@ -140,6 +147,9 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     Placeholder.configure({
       emptyEditorClass: 'is-editor-empty',
       placeholder: 'Начните вводить содержимое или нажмите / чтобы использовать команды',
+    }),
+    AIGhostTextExtension.configure({
+      fetchCompletion: options.requestAutocomplete ?? (async () => ''),
     }),
     ...(options.ydoc
       ? [

@@ -1,7 +1,10 @@
 import {
-  BadGatewayException,
   BadRequestException,
+  BadGatewayException,
+  ForbiddenException,
   Injectable,
+  NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
@@ -217,15 +220,19 @@ export class MwsService {
   }
 
   async createRecords(datasheetId: string, dto: CreateMwsRecordsDto, user: UserContext) {
-    const data = await this.request(user, 'POST', `/datasheets/${datasheetId}/records`, dto);
-    await this.invalidateDatasheetCache(datasheetId);
-    return { items: this.readArray(this.unwrapPayload(data), ['records', 'items']) };
+    const data = await this.request(user, 'POST', `/datasheets/${datasheetId}/records`, {
+      ...dto,
+      fieldKey: 'id',
+    });
+    return { items: data.data?.records ?? [] };
   }
 
   async updateRecords(datasheetId: string, dto: UpdateMwsRecordsDto, user: UserContext) {
-    const data = await this.request(user, 'PATCH', `/datasheets/${datasheetId}/records`, dto);
-    await this.invalidateDatasheetCache(datasheetId);
-    return { items: this.readArray(this.unwrapPayload(data), ['records', 'items']) };
+    const data = await this.request(user, 'PATCH', `/datasheets/${datasheetId}/records`, {
+      ...dto,
+      fieldKey: 'id',
+    });
+    return { items: data.data?.records ?? [] };
   }
 
   async deleteRecords(datasheetId: string, recordIds: string[], user: UserContext) {
@@ -651,6 +658,15 @@ export class MwsService {
     ]);
   }
 
+  private resolveToken(user?: UserContext): string {
+    const token = user?.mwsToken ?? this.configService.get<string>('MWS_TABLES_API_TOKEN');
+    if (!token) {
+      throw new BadRequestException('MWS_TABLES_API_TOKEN is not configured');
+    }
+
+    return token;
+  }
+
   private async request(
     user: UserContext,
     method: HttpMethod,
@@ -685,14 +701,29 @@ export class MwsService {
     } catch (error: any) {
       const status = error?.response?.status;
       const message = error?.response?.data?.message ?? 'MWS Tables request failed';
-      throw new BadGatewayException({
+      const payload = {
         code: 'MWS_UPSTREAM_ERROR',
         message,
         upstream: 'MWS_TABLES',
         upstreamStatus: status ?? 502,
-      });
+      };
+
+      if (status === 403) {
+        throw new ForbiddenException(payload);
+      }
+
+      if (status === 404) {
+        throw new NotFoundException(payload);
+      }
+
+      if (status === 401) {
+        throw new UnauthorizedException(payload);
+      }
+
+      throw new BadGatewayException(payload);
     }
   }
+<<<<<<< HEAD
 
   private resolveToken(user: UserContext): string | undefined {
     const candidates = [
@@ -724,4 +755,6 @@ export class MwsService {
     const asciiMatch = value.match(/filename="?([^";]+)"?/i);
     return asciiMatch?.[1] ?? null;
   }
+=======
+>>>>>>> 79a40f9605187ec2889ba1142bd1d6d834e81867
 }

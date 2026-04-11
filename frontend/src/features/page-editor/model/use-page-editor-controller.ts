@@ -118,6 +118,16 @@ function getProviderUsers(provider: HocuspocusProvider): PresenceUser[] {
   return [...users.values()];
 }
 
+function getEditorMarkdown(editor: NonNullable<ReturnType<typeof useEditor>>): string {
+  const markdownStorage = (editor.storage as { markdown?: { getMarkdown?: () => string } }).markdown;
+
+  if (markdownStorage?.getMarkdown) {
+    return markdownStorage.getMarkdown();
+  }
+
+  return editor.getText();
+}
+
 export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpoint }: UsePageEditorControllerOptions) {
   const [slashState, setSlashState] = useState<SlashState>(baseSlashState);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -264,13 +274,24 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
       createPageEditorExtensions({
         ydoc: collabState?.ydoc,
         provider: collabState?.provider,
+        requestAutocomplete: async (currentText: string) => {
+          const response = await wikiliveApi.aiAutocomplete({
+            currentText,
+            pageTitle: page?.title,
+            pageSnapshot: {
+              markdown: currentText,
+            },
+          });
+
+          return response.text;
+        },
         user: {
           id: userId,
           name: userDisplayName,
           color: userColor,
         },
       }),
-    [collabState?.provider, collabState?.ydoc, userColor, userDisplayName, userId],
+    [collabState?.provider, collabState?.ydoc, page?.title, userColor, userDisplayName, userId],
   );
 
   const resetImageModalState = () => {
@@ -652,6 +673,36 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
     if (item.id === 'mws-table') {
       setSlashState(baseSlashState);
       setIsTablePickerOpen(true);
+      return;
+    }
+
+    if (item.id === 'ai-generate') {
+      setSlashState(baseSlashState);
+
+      const prompt = window.prompt('Введите запрос для AI генерации', 'Сформулируй краткий план текущей секции')?.trim();
+      if (!prompt) {
+        return;
+      }
+
+      void wikiliveApi.aiGenerate({
+        prompt,
+        pageTitle: page?.title,
+        pageSnapshot: {
+          markdown: editor ? getEditorMarkdown(editor) : page?.plainTextPreview ?? '',
+        },
+      }).then((response) => {
+        const generatedContent = response.document?.content;
+
+        if (Array.isArray(generatedContent) && generatedContent.length > 0) {
+          editor.chain().focus().insertContent(generatedContent as any).run();
+          return;
+        }
+
+        editor.chain().focus().insertContent(response.document as any).run();
+      }).catch((error) => {
+        setSaveStatus(error instanceof Error ? `AI generate error: ${error.message}` : 'AI generate error');
+      });
+
       return;
     }
 

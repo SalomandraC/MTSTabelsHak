@@ -203,6 +203,14 @@
     text-underline-offset: 2px;
   }
 
+  .tiptap .ai-ghost-text-hint {
+    color: #9aa0ab;
+    font-style: italic;
+    pointer-events: none;
+    user-select: none;
+    white-space: pre;
+  }
+
   .tiptap .page-link-chip {
     display: inline-flex;
     align-items: center;
