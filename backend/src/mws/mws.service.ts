@@ -658,14 +658,6 @@ export class MwsService {
     ]);
   }
 
-  private resolveToken(user?: UserContext): string {
-    const token = user?.mwsToken ?? this.configService.get<string>('MWS_TABLES_API_TOKEN');
-    if (!token) {
-      throw new BadRequestException('MWS_TABLES_API_TOKEN is not configured');
-    }
-
-    return token;
-  }
 
   private async request(
     user: UserContext,
@@ -723,7 +715,6 @@ export class MwsService {
       throw new BadGatewayException(payload);
     }
   }
-<<<<<<< HEAD
 
   private resolveToken(user: UserContext): string | undefined {
     const candidates = [
@@ -755,6 +746,4 @@ export class MwsService {
     const asciiMatch = value.match(/filename="?([^";]+)"?/i);
     return asciiMatch?.[1] ?? null;
   }
-=======
->>>>>>> 79a40f9605187ec2889ba1142bd1d6d834e81867
 }

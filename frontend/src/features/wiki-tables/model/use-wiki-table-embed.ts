@@ -741,7 +741,9 @@ export function useWikiTableEmbed(
           setEditingCell(null);
           setEditingSelectCell(null);
         }
-        setLastSyncedAt(Date.now());
+        const now = Date.now();
+        setLastSyncedAt(now);
+        setNowTs(now);
         setStaleMessage('');
         hasLoadedDataRef.current = true;
       } catch (error) {

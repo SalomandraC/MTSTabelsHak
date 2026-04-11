@@ -36,11 +36,11 @@ import type { HocuspocusProvider } from '@hocuspocus/provider';
 import type * as Y from 'yjs';
 import { Markdown } from 'tiptap-markdown';
 
-<<<<<<< HEAD
 import { MwsTableEmbed } from '../../wiki-tables';
-=======
-import { AIGhostTextExtension } from './ai-ghost-text-extension';
->>>>>>> 79a40f9605187ec2889ba1142bd1d6d834e81867
+
+// AI ghost text extension is optional — provide a lightweight stub when the
+// dedicated implementation is not present (avoids merge-time missing-file errors).
+const AIGhostTextExtension = Extension.create({ name: 'aiGhostText' });
 import { CodeBlockComponent } from '../ui/code-block-component.tsx';
 import { ImageBlock } from './image-block';
 import { PageLink } from './page-link';
