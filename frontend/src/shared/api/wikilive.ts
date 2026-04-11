@@ -76,6 +76,25 @@ export type PageSummary = {
   backlinksCount: number;
 };
 
+export type TemplateField = {
+  key: string;
+  label: string;
+  description: string;
+  kind: 'text' | 'multiline';
+  required: boolean;
+  defaultValue?: string;
+};
+
+export type PageTemplateSummary = {
+  id: string;
+  title: string;
+  summary: string;
+  category: string;
+  audience: string;
+  icon: string;
+  fields: TemplateField[];
+};
+
 export type PageDocumentState = {
   encoding: 'base64-yjs-update-v2';
   value: string;
@@ -468,7 +487,17 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     return undefined as T;
   }
 
-  return response.json() as Promise<T>;
+  const contentLength = response.headers.get('content-length');
+  if (contentLength === '0') {
+    return undefined as T;
+  }
+
+  const payloadText = await response.text();
+  if (!payloadText.trim()) {
+    return undefined as T;
+  }
+
+  return JSON.parse(payloadText) as T;
 }
 
 async function requestWithAuth<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -562,6 +591,25 @@ export const wikiliveApi = {
         title,
         icon: 'doc',
         parentNodeId: parentNodeId ?? null,
+      }),
+    });
+  },
+  listTemplates() {
+    return request<{ items: PageTemplateSummary[] }>('/api/v1/templates');
+  },
+  instantiateTemplate(templateId: string, payload: {
+    spaceId: string;
+    parentNodeId?: string | null;
+    title?: string;
+    values: Record<string, string>;
+  }) {
+    return request<{ page: PageSummary }>(`/api/v1/templates/${templateId}/instantiate`, {
+      method: 'POST',
+      body: JSON.stringify({
+        spaceId: payload.spaceId,
+        parentNodeId: payload.parentNodeId ?? null,
+        title: payload.title?.trim() || undefined,
+        values: payload.values,
       }),
     });
   },

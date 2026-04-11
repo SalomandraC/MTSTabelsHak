@@ -75,6 +75,16 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     },
   },
   {
+    id: 'template-variable',
+    label: 'Параметр шаблона',
+    hint: 'Вставить placeholder для будущего шаблона',
+    keywords: ['template', 'variable', 'placeholder', 'шаблон', 'параметр', 'placeholder'],
+    icon: '{{$}}',
+    run: () => {
+      // Handled in PageEditor controller with prompt flow.
+    },
+  },
+  {
     id: 'task-list',
     label: 'Чеклист',
     hint: 'Создать список задач с чекбоксами',

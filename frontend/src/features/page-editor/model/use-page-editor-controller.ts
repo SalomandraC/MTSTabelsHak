@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { HocuspocusProvider } from '@hocuspocus/provider';
+import type { JSONContent } from '@tiptap/core';
 import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
 
@@ -126,6 +127,15 @@ function getEditorMarkdown(editor: NonNullable<ReturnType<typeof useEditor>>): s
   }
 
   return editor.getText();
+}
+
+function normalizeTemplateKey(label: string): string {
+  return label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-zа-я0-9]+/gi, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40) || `template_${Math.random().toString(16).slice(2, 8)}`;
 }
 
 export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpoint }: UsePageEditorControllerOptions) {
@@ -694,15 +704,32 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
         const generatedContent = response.document?.content;
 
         if (Array.isArray(generatedContent) && generatedContent.length > 0) {
-          editor.chain().focus().insertContent(generatedContent as any).run();
+          editor.chain().focus().insertContent(generatedContent as JSONContent[]).run();
           return;
         }
 
-        editor.chain().focus().insertContent(response.document as any).run();
+        editor.chain().focus().insertContent(response.document as JSONContent).run();
       }).catch((error) => {
         setSaveStatus(error instanceof Error ? `AI generate error: ${error.message}` : 'AI generate error');
       });
 
+      return;
+    }
+
+    if (item.id === 'template-variable') {
+      setSlashState(baseSlashState);
+
+      const label = window.prompt('Название параметра шаблона', 'Название компании')?.trim();
+      if (!label) {
+        return;
+      }
+
+      const description = window.prompt('Подсказка для этого параметра', 'Что пользователь должен сюда подставить')?.trim() ?? '';
+      editor.chain().focus().insertTemplateVariable({
+        key: normalizeTemplateKey(label),
+        label,
+        description,
+      }).run();
       return;
     }
 

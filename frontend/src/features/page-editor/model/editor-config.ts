@@ -45,6 +45,7 @@ import { CodeBlockComponent } from '../ui/code-block-component.tsx';
 import { ImageBlock } from './image-block';
 import { PageLink } from './page-link';
 import { RootBlock } from './root-block';
+import { TemplateVariable } from './template-variable';
 
 const lowlight = createLowlight();
 lowlight.register('bash', bash);
@@ -120,6 +121,7 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     RootDocument,
     RootBlock,
     ImageBlock,
+    TemplateVariable,
     PageLink,
     MwsTableEmbed,
     TaskList,

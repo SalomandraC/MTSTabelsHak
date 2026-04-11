@@ -251,6 +251,27 @@
     outline-offset: 2px;
   }
 
+  .tiptap .template-variable-chip {
+    display: inline-flex;
+    align-items: center;
+    max-width: 20rem;
+    border: 1px dashed #f3a0b2;
+    border-radius: 0.7rem;
+    background: #fff3f6;
+    color: #b00025;
+    font-size: 0.92em;
+    font-weight: 700;
+    line-height: 1.35;
+    padding: 0.08rem 0.5rem;
+    vertical-align: baseline;
+    white-space: nowrap;
+  }
+
+  .tiptap .template-variable-chip.ProseMirror-selectednode {
+    outline: 2px solid #d70032;
+    outline-offset: 2px;
+  }
+
   .tiptap img {
     display: block;
     max-width: min(100%, 42rem);

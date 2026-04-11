@@ -27,11 +27,13 @@ import {
   type Backlink,
   type MwsSpace,
   type OutgoingLink,
+  type PageTemplateSummary,
   type WikiPage,
   type WorkspaceTreeNode,
   wikiliveApi,
 } from '../../../shared/api/wikilive';
 import { DocumentLinkGraph, type DocumentGraphEdge, type DocumentGraphPage } from './document-link-graph';
+import { PageTemplateMarketplaceModal } from './page-template-marketplace-modal';
 import {
   LEFT_SIDEBAR_MAX_WIDTH,
   LEFT_SIDEBAR_MIN_WIDTH,
@@ -589,6 +591,10 @@ export function WorkspacePage() {
   const [activeEditor, setActiveEditor] = useState<Editor | null>(null);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [templates, setTemplates] = useState<PageTemplateSummary[]>([]);
+  const [isTemplatesLoading, setIsTemplatesLoading] = useState(true);
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+  const [isInstantiatingTemplate, setIsInstantiatingTemplate] = useState(false);
   const leftSidebar = useResizableSidebar({
     defaultWidth: LEFT_SIDEBAR_MIN_WIDTH,
     minWidth: LEFT_SIDEBAR_MIN_WIDTH,
@@ -706,6 +712,34 @@ export function WorkspacePage() {
       cancelled = true;
     };
   }, [initialRoute.spaceId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setIsTemplatesLoading(true);
+
+    void wikiliveApi
+      .listTemplates()
+      .then((response) => {
+        if (!cancelled) {
+          setTemplates(response.items);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить шаблоны');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsTemplatesLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -882,6 +916,33 @@ export function WorkspacePage() {
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Не удалось создать страницу');
     } finally {
+      setStatusMessage('');
+    }
+  };
+
+  const handleInstantiateTemplate = async (payload: {
+    templateId: string;
+    title?: string;
+    values: Record<string, string>;
+  }) => {
+    setIsInstantiatingTemplate(true);
+    setStatusMessage('Создаем страницу по шаблону');
+    setErrorMessage('');
+
+    try {
+      const created = await wikiliveApi.instantiateTemplate(payload.templateId, {
+        spaceId: selectedSpaceId,
+        title: payload.title,
+        values: payload.values,
+      });
+      await refreshTree(selectedSpaceId, created.page.id);
+      setActivePageId(created.page.id);
+      writeWorkspaceRoute(selectedSpaceId, created.page.id, 'push');
+      setIsTemplateModalOpen(false);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Не удалось создать страницу из шаблона');
+    } finally {
+      setIsInstantiatingTemplate(false);
       setStatusMessage('');
     }
   };
@@ -1096,6 +1157,18 @@ export function WorkspacePage() {
             >
               <Plus size={16} strokeWidth={2.4} />
               Создать страницу
+            </button>
+          </div>
+
+          <div className="mt-2 px-3">
+            <button
+              type="button"
+              onClick={() => setIsTemplateModalOpen(true)}
+              disabled={isTemplatesLoading}
+              className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-editor-border-subtle bg-white px-3 text-sm font-semibold text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa] disabled:cursor-wait disabled:opacity-60"
+            >
+              <Sparkles size={16} strokeWidth={2.2} />
+              {isTemplatesLoading ? 'Загружаем шаблоны...' : 'Создать из шаблона'}
             </button>
           </div>
 
@@ -1376,6 +1449,17 @@ export function WorkspacePage() {
           }}
         />
       ) : null}
+      <PageTemplateMarketplaceModal
+        isOpen={isTemplateModalOpen}
+        templates={templates}
+        isSubmitting={isInstantiatingTemplate}
+        onClose={() => {
+          if (!isInstantiatingTemplate) {
+            setIsTemplateModalOpen(false);
+          }
+        }}
+        onSubmit={handleInstantiateTemplate}
+      />
     </main>
   );
 }

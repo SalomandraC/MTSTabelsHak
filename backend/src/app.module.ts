@@ -13,6 +13,7 @@ import { MwsModule } from './mws/mws.module';
 import { PagesModule } from './pages/pages.module';
 import { PluginsModule } from './plugins/plugins.module';
 import { SearchModule } from './search/search.module';
+import { TemplatesModule } from './templates/templates.module';
 import { WikiTreeModule } from './wiki-tree/wiki-tree.module';
 import { WorkspaceTreeModule } from './workspace/workspace-tree.module';
 
@@ -45,6 +46,7 @@ import { WorkspaceTreeModule } from './workspace/workspace-tree.module';
     CollabModule,
     MwsModule,
     PluginsModule,
+    TemplatesModule,
     WorkspaceTreeModule,
     AiToolsModule,
   ],
