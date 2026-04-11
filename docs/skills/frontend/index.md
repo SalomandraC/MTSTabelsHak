@@ -13,6 +13,7 @@ Canonical frontend skills for this project.
 - `frontend/responsive-a11y` -> `responsive-a11y.skill.md`
 - `frontend/quality-gate` -> `quality-gate.skill.md`
 - `frontend/tiptap-extension` -> `tiptap-extension.skill.md`
+- `frontend/plugin-module-catalog` -> `plugin-module-catalog.skill.md`
 
 ## Skill Selection Guide
 
@@ -21,4 +22,5 @@ Canonical frontend skills for this project.
 - Title/description/content save flow: use `page-metadata` + `autosave-sync`.
 - Realtime updates: (skill not present) consider `collaboration-yjs` when available.
 - Table embeds: (skill not present) consider `table-embed` when available.
+- Plugin/module integration into catalog: use `plugin-module-catalog` + `architecture-guard` + `responsive-a11y`.
 - Styling/UI cleanup: use `tailwind-consistency` + `responsive-a11y`.

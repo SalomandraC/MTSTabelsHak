@@ -17,15 +17,20 @@ import {
   CreateMwsDatasheetDto,
   CreateMwsFieldDto,
   CreateMwsRecordsDto,
+  CreateMwsTablePageDto,
   CreateMwsViewDto,
   ResolveTableEmbedDto,
   UpdateMwsRecordsDto,
 } from './dto/mws.dto';
+import { MwsTablePagesService } from './mws-table-pages.service';
 import { MwsService } from './mws.service';
 
 @Controller('/api/v1/mws')
 export class MwsController {
-  constructor(private readonly mwsService: MwsService) {}
+  constructor(
+    private readonly mwsService: MwsService,
+    private readonly tablePagesService: MwsTablePagesService,
+  ) {}
 
   @Get('spaces')
   async listSpaces(@CurrentUser() user: UserContext) {
@@ -126,9 +131,23 @@ export class MwsController {
     return this.mwsService.deleteRecords(datasheetId, recordIds.split(','), user);
   }
 
+  @Delete('spaces/:spaceId/datasheets/:datasheetId')
+  async deleteDatasheet(
+    @Param('spaceId') spaceId: string,
+    @Param('datasheetId') datasheetId: string,
+    @CurrentUser() user: UserContext,
+  ) {
+    return this.mwsService.deleteDatasheet(spaceId, datasheetId, user);
+  }
+
   @Post('table-embeds/resolve')
   async resolveEmbed(@Body() dto: ResolveTableEmbedDto, @CurrentUser() user: UserContext) {
     return this.mwsService.resolveTableEmbed(dto, user);
+  }
+
+  @Post('table-pages')
+  async createTablePage(@Body() dto: CreateMwsTablePageDto, @CurrentUser() user: UserContext) {
+    return this.tablePagesService.createOrOpenTablePage(dto, user);
   }
 
   @Post('datasheets/:datasheetId/attachments')

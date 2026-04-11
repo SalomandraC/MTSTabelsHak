@@ -59,7 +59,10 @@ describe('MwsService', () => {
 
     expect(httpService.request).toHaveBeenCalledWith(
       expect.objectContaining({
-        params: undefined,
+        params: {
+          includeChildren: true,
+          type: 'datasheet',
+        },
       }),
     );
     expect(response.items).toHaveLength(1);
@@ -68,6 +71,80 @@ describe('MwsService', () => {
         id: 'node-1',
         datasheetId: 'dst-1',
         path: ['Folder', 'Nested table'],
+      }),
+    );
+  });
+
+  it('hydrates folder children recursively from node details', async () => {
+    const { service, httpService } = createService((url) => {
+      if (url.endsWith('/spaces/space-1/nodes')) {
+        return {
+          data: {
+            nodes: [
+              {
+                id: 'folder-1',
+                name: 'Трекер задач',
+                type: 'Folder',
+              },
+            ],
+          },
+        };
+      }
+
+      if (url.endsWith('/nodes/folder-1')) {
+        return {
+          data: {
+            id: 'folder-1',
+            name: 'Трекер задач',
+            type: 'Folder',
+            children: [
+              {
+                id: 'folder-2',
+                name: 'Задачи',
+                type: 'Folder',
+              },
+            ],
+          },
+        };
+      }
+
+      if (url.endsWith('/nodes/folder-2')) {
+        return {
+          data: {
+            id: 'folder-2',
+            name: 'Задачи',
+            type: 'Folder',
+            children: [
+              {
+                id: 'mirror-1',
+                name: 'Все задачи',
+                type: 'Mirror',
+              },
+            ],
+          },
+        };
+      }
+
+      return { data: {} };
+    });
+
+    const response = await service.listNodes('space-1', undefined, true, user);
+
+    expect(httpService.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'https://tables.example/fusion/v1/nodes/folder-1',
+      }),
+    );
+    expect(httpService.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'https://tables.example/fusion/v1/nodes/folder-2',
+      }),
+    );
+    expect(response.items[0].children[0].children[0]).toEqual(
+      expect.objectContaining({
+        id: 'mirror-1',
+        parentId: 'folder-2',
+        path: ['Трекер задач', 'Задачи', 'Все задачи'],
       }),
     );
   });
@@ -174,5 +251,25 @@ describe('MwsService', () => {
     expect(redisService.delByPattern).toHaveBeenCalledWith('mws:embed:*');
     expect(redisService.delByPattern).toHaveBeenCalledWith('mws:fields:dst-1:*');
     expect(redisService.del).toHaveBeenCalledWith('mws:views:dst-1');
+  });
+
+  it('deletes MWS datasheets through the space-scoped upstream endpoint', async () => {
+    const { service, httpService, redisService } = createService(() => ({
+      data: {
+        success: true,
+      },
+    }));
+
+    const response = await service.deleteDatasheet('space-1', 'dst-1', user);
+
+    expect(response.deleted).toBe(true);
+    expect(httpService.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'DELETE',
+        url: 'https://tables.example/fusion/v1/spaces/space-1/datasheet/dst-1',
+      }),
+    );
+    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:nodes:space-1:*');
+    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:records:dst-1:*');
   });
 });

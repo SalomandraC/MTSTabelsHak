@@ -1,4 +1,5 @@
 import { useId, useRef } from 'react';
+import { ModalActionButton } from '../../../shared/ui';
 
 type PageImageModalProps = {
   isOpen: boolean;
@@ -105,17 +106,17 @@ export function PageImageModal({
         ) : null}
 
         <div className="grid w-full grid-cols-2 gap-2">
-          <button type="button" onClick={onClose} className="modal-action-secondary h-10 rounded-md px-2 text-sm font-semibold">
+          <ModalActionButton onClick={onClose} variant="secondary" className="w-full">
             Отменить
-          </button>
-          <button
-            type="button"
+          </ModalActionButton>
+          <ModalActionButton
             onClick={onConfirm}
             disabled={isConfirmDisabled}
-            className="modal-action-primary h-10 rounded-md px-2 text-sm font-semibold"
+            variant="primary"
+            className="w-full"
           >
             Подтвердить
-          </button>
+          </ModalActionButton>
         </div>
       </div>
     </div>

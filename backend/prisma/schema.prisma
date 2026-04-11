@@ -24,6 +24,10 @@ enum CheckpointTrigger {
   collab_store
 }
 
+enum PluginScopeType {
+  user
+}
+
 model WikiNode {
   id          String       @id @default(uuid())
   spaceId     String       @map("space_id")
@@ -33,6 +37,10 @@ model WikiNode {
   icon        String?
   position    Int          @default(0)
   isArchived  Boolean      @default(false) @map("is_archived")
+  mwsSpaceId  String?      @map("mws_space_id")
+  mwsParentNodeId String?  @map("mws_parent_node_id")
+  mwsSourceNodeId String?  @map("mws_source_node_id")
+  mwsDatasheetId  String?  @map("mws_datasheet_id")
   createdBy   String       @map("created_by")
   updatedBy   String       @map("updated_by")
   createdAt   DateTime     @default(now()) @map("created_at")
@@ -47,6 +55,8 @@ model WikiNode {
 
   @@index([spaceId, parentId, position])
   @@index([spaceId, type, isArchived])
+  @@index([spaceId, mwsParentNodeId])
+  @@index([spaceId, mwsSourceNodeId])
   @@map("wiki_nodes")
 }
 
@@ -159,4 +169,18 @@ model CollabSession {
   @@index([pageId, connectedAt])
   @@index([userId, connectedAt])
   @@map("collab_sessions")
+}
+
+model PluginActivation {
+  id        String          @id @default(uuid())
+  pluginId  String          @map("plugin_id")
+  scopeType PluginScopeType @default(user) @map("scope_type")
+  userId    String          @map("user_id")
+  isEnabled Boolean         @default(true) @map("is_enabled")
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
+
+  @@unique([pluginId, scopeType, userId])
+  @@index([userId, scopeType])
+  @@map("plugin_activations")
 }

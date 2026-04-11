@@ -19,6 +19,32 @@ export type MeResponse = {
   };
 };
 
+export type PluginPlan = {
+  id: 'free' | 'pro' | 'enterprise';
+  title: string;
+  description: string;
+};
+
+export type PluginCatalogItem = {
+  id: string;
+  title: string;
+  description: string;
+  category: 'core' | 'insights' | 'assistant' | 'collaboration';
+  kind: 'core' | 'optional';
+  placement: string[];
+  requiredPlans: string[];
+  implemented: boolean;
+  enabled: boolean;
+  canToggle: boolean;
+  status: 'core' | 'enabled' | 'available' | 'locked' | 'comingSoon';
+  lockedReason: string | null;
+};
+
+export type PluginCatalogResponse = {
+  plan: PluginPlan;
+  items: PluginCatalogItem[];
+};
+
 let accessToken: string | null = null;
 let activeUser: MeResponse['user'] | null = null;
 let refreshInFlight: Promise<string | null> | null = null;
@@ -142,10 +168,12 @@ export type MwsNode = {
   id: string;
   name: string;
   type: string;
+  spaceId?: string | null;
   parentId?: string | null;
   path?: string[];
   datasheetId?: string | null;
   dstId?: string | null;
+  openInMwsUrl?: string | null;
   icon?: string | null;
   isFav?: boolean | null;
   permission?: number | null;
@@ -156,6 +184,20 @@ export type MwsNode = {
     canDeleteRecords?: boolean;
   };
   children?: MwsNode[];
+};
+
+export type WorkspaceTreeNode = {
+  id: string;
+  kind: 'mwsFolder' | 'mwsTable' | 'mwsNode' | 'wikiPage';
+  title: string;
+  spaceId: string;
+  parentId: string | null;
+  children: WorkspaceTreeNode[];
+  mwsNode?: MwsNode;
+  wikiPage?: PageSummary;
+  datasheetId?: string | null;
+  linkedPageId?: string | null;
+  openInMwsUrl?: string | null;
 };
 
 export type MwsField = {
@@ -403,6 +445,19 @@ export const wikiliveApi = {
     const me = await this.getMe();
     return me.user;
   },
+  listPlugins() {
+    return request<PluginCatalogResponse>('/api/v1/plugins/catalog');
+  },
+  activatePlugin(pluginId: string) {
+    return request<PluginCatalogResponse>(`/api/v1/plugins/${pluginId}/activate`, {
+      method: 'POST',
+    });
+  },
+  deactivatePlugin(pluginId: string) {
+    return request<PluginCatalogResponse>(`/api/v1/plugins/${pluginId}/deactivate`, {
+      method: 'POST',
+    });
+  },
   listPages(spaceId: string, query = '') {
     return request<{ items: PageSummary[] }>('/api/v1/pages', {
       query: { spaceId, query, limit: 30 },
@@ -410,6 +465,9 @@ export const wikiliveApi = {
   },
   getWikiTree(spaceId: string) {
     return request<{ items: WikiTreeNode[] }>(`/api/v1/spaces/${spaceId}/wiki/tree`);
+  },
+  getWorkspaceTree(spaceId: string) {
+    return request<{ items: WorkspaceTreeNode[] }>(`/api/v1/spaces/${spaceId}/workspace/tree`);
   },
   createPage(spaceId: string, title: string, parentNodeId?: string | null) {
     return request<{ page: PageSummary }>('/api/v1/pages', {
@@ -566,10 +624,26 @@ export const wikiliveApi = {
       query: { recordIds: recordIds.join(',') },
     });
   },
+  deleteMwsDatasheet(spaceId: string, datasheetId: string) {
+    return request<{ deleted: boolean }>(`/api/v1/mws/spaces/${spaceId}/datasheets/${datasheetId}`, {
+      method: 'DELETE',
+    });
+  },
   resolveTableEmbed(payload: ResolveTableEmbedRequest) {
     return request<ResolveTableEmbedResponse>('/api/v1/mws/table-embeds/resolve', {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  },
+  createMwsTablePage(payload: { spaceId: string; nodeId: string; datasheetId?: string | null; title?: string }) {
+    return request<{ page: PageSummary; node: MwsNode; created: boolean; openInMwsUrl: string | null }>('/api/v1/mws/table-pages', {
+      method: 'POST',
+      body: JSON.stringify({
+        spaceId: payload.spaceId,
+        nodeId: payload.nodeId,
+        datasheetId: payload.datasheetId ?? undefined,
+        title: payload.title,
+      }),
     });
   },
 };
