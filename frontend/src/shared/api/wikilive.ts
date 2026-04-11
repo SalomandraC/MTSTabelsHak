@@ -208,6 +208,19 @@ export type MwsField = {
   property?: Record<string, unknown>;
 };
 
+export type CreateMwsFieldPayload = {
+  spaceId: string;
+  name: string;
+  type: string;
+  property?: Record<string, unknown>;
+};
+
+export type UploadMwsAttachmentPayload = {
+  file: File;
+  recordId?: string | null;
+  fieldId?: string | null;
+};
+
 export type MwsView = {
   id: string;
   name: string;
@@ -584,6 +597,29 @@ export const wikiliveApi = {
       query: { viewId },
     });
   },
+  createMwsField(datasheetId: string, payload: CreateMwsFieldPayload) {
+    return request<{ field: MwsField }>(`/api/v1/mws/datasheets/${datasheetId}/fields`, {
+      method: 'POST',
+      query: { spaceId: payload.spaceId },
+      body: JSON.stringify({
+        name: payload.name,
+        type: payload.type,
+        property: payload.property,
+      }),
+    });
+  },
+  deleteMwsField(datasheetId: string, fieldId: string, spaceId: string) {
+    return request<{ deleted: boolean }>(`/api/v1/mws/datasheets/${datasheetId}/fields/${fieldId}`, {
+      method: 'DELETE',
+      query: { spaceId },
+    });
+  },
+  moveMwsField(datasheetId: string, viewId: string, fieldId: string, index: number) {
+    return request<{ moved: boolean }>(`/api/v1/mws/datasheets/${datasheetId}/views/${viewId}/fields/${fieldId}/index`, {
+      method: 'PATCH',
+      body: JSON.stringify({ index }),
+    });
+  },
   listMwsViews(datasheetId: string) {
     return request<{ items: MwsView[] }>(`/api/v1/mws/datasheets/${datasheetId}/views`);
   },
@@ -628,6 +664,63 @@ export const wikiliveApi = {
     return request<{ deleted: boolean }>(`/api/v1/mws/spaces/${spaceId}/datasheets/${datasheetId}`, {
       method: 'DELETE',
     });
+  },
+  async uploadMwsAttachment(
+    datasheetId: string,
+    payload: UploadMwsAttachmentPayload,
+  ): Promise<{
+    attachment: {
+      token?: string;
+      name?: string;
+      mimeType?: string;
+      size?: number;
+      url?: string;
+    };
+  }> {
+    const demoUser = getDemoUserFromUrl();
+    const formData = new FormData();
+    formData.append('file', payload.file);
+
+    const headers = new Headers();
+    if (accessToken) {
+      headers.set('Authorization', `Bearer ${accessToken}`);
+    } else if (demoUser) {
+      headers.set('x-user-id', demoUser.userId);
+      headers.set('x-user-name', demoUser.displayName);
+    }
+
+    const response = await fetch(
+      `${API_BASE_URL}/api/v1/mws/datasheets/${datasheetId}/attachments${toQueryString({
+        recordId: payload.recordId,
+        fieldId: payload.fieldId,
+      })}`,
+      {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+        headers,
+      },
+    );
+
+    if (response.status === 401) {
+      const token = await refreshAccessToken();
+      if (token) {
+        return this.uploadMwsAttachment(datasheetId, payload);
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(await parseErrorMessage(response));
+    }
+    return response.json() as Promise<{
+      attachment: {
+        token?: string;
+        name?: string;
+        mimeType?: string;
+        size?: number;
+        url?: string;
+      };
+    }>;
   },
   resolveTableEmbed(payload: ResolveTableEmbedRequest) {
     return request<ResolveTableEmbedResponse>('/api/v1/mws/table-embeds/resolve', {

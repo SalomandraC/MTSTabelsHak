@@ -349,4 +349,45 @@ describe('MwsService', () => {
     expect(redisService.delByPattern).toHaveBeenCalledWith('mws:nodes:space-1:*');
     expect(redisService.delByPattern).toHaveBeenCalledWith('mws:records:dst-1:*');
   });
+
+  it('deletes MWS fields through the space-scoped upstream endpoint', async () => {
+    const { service, httpService, redisService } = createService(() => ({
+      data: {
+        success: true,
+      },
+    }));
+
+    const response = await service.deleteField('space-1', 'dst-1', 'fld-1', user);
+
+    expect(response.deleted).toBe(true);
+    expect(httpService.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'DELETE',
+        url: 'https://tables.example/fusion/v1/spaces/space-1/datasheets/dst-1/fields/fld-1',
+      }),
+    );
+    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:records:dst-1:*');
+    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:fields:dst-1:*');
+  });
+
+  it('moves fields in a view through the upstream field index endpoint', async () => {
+    const { service, httpService, redisService } = createService(() => ({
+      data: {
+        success: true,
+      },
+    }));
+
+    const response = await service.moveField('dst-1', 'viw-1', 'fld-1', 2, user);
+
+    expect(response.moved).toBe(true);
+    expect(httpService.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'PATCH',
+        url: 'https://tables.example/fusion/v1/datasheets/dst-1/views/viw-1/fields/fld-1',
+        data: { index: 2 },
+      }),
+    );
+    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:records:dst-1:*');
+    expect(redisService.del).toHaveBeenCalledWith('mws:views:dst-1');
+  });
 });

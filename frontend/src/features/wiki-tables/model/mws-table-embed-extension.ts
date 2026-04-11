@@ -59,6 +59,25 @@ export const MwsTableEmbed = Node.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(MwsTableEmbedComponent);
+    return ReactNodeViewRenderer(MwsTableEmbedComponent, {
+      stopEvent: ({ event }) => {
+        if (!(event.target instanceof HTMLElement)) {
+          return false;
+        }
+
+        const interactiveSelector = [
+          'button',
+          'input',
+          'select',
+          'textarea',
+          'label',
+          'a',
+          '[data-testid="mws_canvas_grid"]',
+          '[data-mws-stop-event="true"]',
+        ].join(', ');
+
+        return Boolean(event.target.closest(interactiveSelector));
+      },
+    });
   },
 });

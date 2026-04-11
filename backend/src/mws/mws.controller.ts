@@ -19,6 +19,7 @@ import {
   CreateMwsRecordsDto,
   CreateMwsTablePageDto,
   CreateMwsViewDto,
+  MoveMwsFieldDto,
   ResolveTableEmbedDto,
   UpdateMwsRecordsDto,
 } from './dto/mws.dto';
@@ -78,6 +79,27 @@ export class MwsController {
     @CurrentUser() user: UserContext,
   ) {
     return this.mwsService.createField(spaceId, datasheetId, dto, user);
+  }
+
+  @Delete('datasheets/:datasheetId/fields/:fieldId')
+  async deleteField(
+    @Param('datasheetId') datasheetId: string,
+    @Param('fieldId') fieldId: string,
+    @Query('spaceId') spaceId: string,
+    @CurrentUser() user: UserContext,
+  ) {
+    return this.mwsService.deleteField(spaceId, datasheetId, fieldId, user);
+  }
+
+  @Patch('datasheets/:datasheetId/views/:viewId/fields/:fieldId/index')
+  async moveField(
+    @Param('datasheetId') datasheetId: string,
+    @Param('viewId') viewId: string,
+    @Param('fieldId') fieldId: string,
+    @Body() dto: MoveMwsFieldDto,
+    @CurrentUser() user: UserContext,
+  ) {
+    return this.mwsService.moveField(datasheetId, viewId, fieldId, dto.index, user);
   }
 
   @Get('datasheets/:datasheetId/views')

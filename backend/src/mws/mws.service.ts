@@ -150,6 +150,31 @@ export class MwsService {
     return { field: this.unwrapPayload(data) };
   }
 
+  async deleteField(spaceId: string, datasheetId: string, fieldId: string, user: UserContext) {
+    const data = await this.request(
+      user,
+      'DELETE',
+      `/spaces/${spaceId}/datasheets/${datasheetId}/fields/${fieldId}`,
+    );
+    await this.invalidateDatasheetCache(datasheetId);
+    return {
+      deleted: Boolean(this.unwrapPayload(data) ?? true),
+    };
+  }
+
+  async moveField(datasheetId: string, viewId: string, fieldId: string, index: number, user: UserContext) {
+    const data = await this.request(
+      user,
+      'PATCH',
+      `/datasheets/${datasheetId}/views/${viewId}/fields/${fieldId}`,
+      { index },
+    );
+    await this.invalidateDatasheetCache(datasheetId);
+    return {
+      moved: Boolean(this.unwrapPayload(data) ?? true),
+    };
+  }
+
   async listViews(datasheetId: string, user: UserContext) {
     const cacheKey = `mws:views:${datasheetId}`;
     return this.withCache(cacheKey, 300, async () => {

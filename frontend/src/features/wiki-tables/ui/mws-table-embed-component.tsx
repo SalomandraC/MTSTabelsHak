@@ -1,7 +1,10 @@
 import type { NodeViewProps } from '@tiptap/react';
 import { NodeViewWrapper } from '@tiptap/react';
 import {
+  Check,
+  Paperclip,
   Columns3,
+  ChevronsUpDown,
   ExternalLink,
   EyeOff,
   Filter,
@@ -15,8 +18,9 @@ import {
   SortAsc,
   Trash2,
 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
+import { CreateFieldModal } from './create-field-modal';
 import {
   clampText,
   COLUMN_WIDTH,
@@ -55,8 +59,30 @@ function ToolbarButton({
   );
 }
 
+function isDirectEditKey(event: React.KeyboardEvent<HTMLElement>) {
+  return event.key.length === 1 && !event.altKey && !event.ctrlKey && !event.metaKey;
+}
+
 export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
   const controller = useWikiTableEmbed(node.attrs);
+  const [isCreateFieldModalOpen, setIsCreateFieldModalOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const selectEditorRef = useRef<HTMLDivElement | null>(null);
+
+  const selectColorToCss = (color: string) => {
+    const palette: Record<string, string> = {
+      red: '#ef4444',
+      orange: '#f97316',
+      yellow: '#f59e0b',
+      green: '#22c55e',
+      teal: '#14b8a6',
+      blue: '#3b82f6',
+      purple: '#8b5cf6',
+      gray: '#6b7280',
+    };
+
+    return palette[color.toLowerCase()] ?? color;
+  };
 
   useEffect(() => {
     const canvas = controller.canvasRef.current;
@@ -193,6 +219,40 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     }
   }, [controller.canvasRef, controller.fields, controller.scrollOffset.left, controller.scrollOffset.top, controller.selection, controller.viewport.height, controller.viewport.width, controller.visibleRecords]);
 
+  useEffect(() => {
+    if (!controller.selection || controller.editingCell || controller.editingSelectCell || !controller.canvasRef.current) {
+      return;
+    }
+
+    controller.canvasRef.current.focus();
+  }, [controller.canvasRef, controller.editingCell, controller.editingSelectCell, controller.selection]);
+
+  useEffect(() => {
+    if (!controller.editingSelectCell) {
+      return;
+    }
+
+    const handlePointerDownOutside = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) {
+        return;
+      }
+
+      if (selectEditorRef.current?.contains(target) || controller.canvasRef.current?.contains(target)) {
+        return;
+      }
+
+      controller.setEditingSelectCell(null);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDownOutside);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDownOutside);
+    };
+  }, [controller.canvasRef, controller.editingSelectCell, controller.setEditingSelectCell]);
+
+  const canUploadToCell = controller.selectedRecord && controller.selectedField?.type === 'Attachment';
+
   return (
     <NodeViewWrapper
       className={[
@@ -201,10 +261,21 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       ].join(' ')}
       data-type="mws-table-embed"
       contentEditable={false}
+      onKeyDownCapture={(event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (!controller.selection || controller.editingCell || controller.editingSelectCell || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) {
+          return;
+        }
+
+        if (isDirectEditKey(event)) {
+          event.preventDefault();
+          event.stopPropagation();
+          controller.canvasRef.current?.focus();
+          controller.beginEdit(controller.selection, { replaceValue: event.key });
+        }
+      }}
     >
       <div className="flex items-start justify-between gap-3 border-b border-editor-border-subtle bg-[#f8fafc] px-4 py-3">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-editor-text-tertiary">Live MWS Tables</p>
           <h3 className="truncate font-wide text-base font-semibold text-editor-text-primary">
             {controller.embed?.node.name ?? controller.attrs.title ?? controller.attrs.datasheetId ?? 'Таблица'}
           </h3>
@@ -230,6 +301,8 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         <ToolbarButton label="" icon={<RotateCw className="h-4 w-4" />} disabled />
         <div className="mx-1 h-6 w-px bg-[#dfe3ea]" />
         <ToolbarButton label="Вставить запись" icon={<PlusCircle className="h-4 w-4" />} onClick={() => void controller.createRow()} disabled={!controller.capabilities.canCreateRecords || controller.isMutating || controller.fields.length === 0} />
+        <ToolbarButton label="Столбец" icon={<Columns3 className="h-4 w-4" />} onClick={() => setIsCreateFieldModalOpen(true)} disabled={controller.isMutating} />
+        <ToolbarButton label="Файл" icon={<Paperclip className="h-4 w-4" />} onClick={() => fileInputRef.current?.click()} disabled={!canUploadToCell || controller.isMutating} />
         <ToolbarButton label="Скрыть поля" icon={<EyeOff className="h-4 w-4" />} disabled />
         <ToolbarButton label="Фильтр" icon={<Filter className="h-4 w-4" />} disabled />
         <ToolbarButton label="Группа" icon={<Group className="h-4 w-4" />} disabled />
@@ -244,13 +317,26 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
               controller.setSearchQuery(event.target.value);
               controller.setSelection(null);
               controller.setEditingCell(null);
+              controller.setEditingSelectCell(null);
             }}
             placeholder="Найти"
             className="h-7 w-28 border-0 bg-transparent text-sm outline-none"
           />
         </div>
-        <ToolbarButton label="Структура" icon={<Columns3 className="h-4 w-4" />} disabled />
         <ToolbarButton label="Дополнительно" icon={<Settings className="h-4 w-4" />} disabled />
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+            const file = event.target.files?.[0];
+            if (file && controller.selectedRecord && controller.selectedField) {
+              void controller.uploadAttachment(controller.selectedRecord, controller.selectedField, file);
+            }
+
+            event.currentTarget.value = '';
+          }}
+        />
       </div>
 
       <div className="p-4">
@@ -283,14 +369,47 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
                   transform: `translate(${controller.scrollOffset.left}px, ${controller.scrollOffset.top}px)`,
                 }}
                 onPointerDown={(event) => {
+                  event.currentTarget.focus();
                   const nextSelection = controller.hitTest(event);
                   controller.setSelection(nextSelection);
                   controller.setEditingCell(null);
+                  controller.setEditingSelectCell(null);
+                  controller.beginEdit(nextSelection, { fromSingleClick: true });
                 }}
                 onDoubleClick={(event) => controller.beginEdit(controller.hitTest(event))}
                 onKeyDown={(event) => {
+                  if (!controller.selection) {
+                    return;
+                  }
+
+                  if (isDirectEditKey(event)) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    controller.beginEdit(controller.selection, { replaceValue: event.key });
+                    return;
+                  }
+
                   if (event.key === 'Enter') {
+                    event.preventDefault();
+                    event.stopPropagation();
                     controller.beginEdit(controller.selection);
+                    return;
+                  }
+
+                  if (event.key === 'Backspace' || event.key === 'Delete') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (controller.editingSelectCell) {
+                      controller.clearSelectValue();
+                      return;
+                    }
+                    controller.beginEdit(controller.selection, { replaceValue: '' });
+                  }
+
+                  if (event.key === 'Escape' && controller.editingSelectCell) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    controller.setEditingSelectCell(null);
                   }
                 }}
                 tabIndex={0}
@@ -322,6 +441,50 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
                   }}
                 />
               ) : null}
+              {controller.editingSelectCell ? (
+                <div
+                  ref={selectEditorRef}
+                  data-testid="mws_select_editor"
+                  className="absolute z-30 overflow-hidden rounded-lg border border-[#d9deea] bg-white shadow-[0_10px_28px_rgba(17,24,39,0.18)]"
+                  style={{
+                    left: controller.editingSelectCell.left + 2,
+                    top: controller.editingSelectCell.top + 2,
+                    width: Math.max(controller.editingSelectCell.width - 4, 220),
+                  }}
+                >
+                  <div className="flex items-center justify-between border-b border-editor-border-subtle px-2 py-1.5 text-xs text-editor-text-tertiary">
+                    <span>{controller.editingSelectCell.multiple ? 'Множественный выбор' : 'Одиночный выбор'}</span>
+                    <button
+                      type="button"
+                      onClick={() => controller.clearSelectValue()}
+                      className="rounded px-1.5 py-0.5 text-[#667085] hover:bg-[#f3f4f6]"
+                    >
+                      Очистить
+                    </button>
+                  </div>
+                  <div className="max-h-56 overflow-y-auto p-1.5">
+                    {controller.editingSelectCell.options.map((option) => {
+                      const isSelected = controller.editingSelectCell?.values.includes(option.name);
+
+                      return (
+                        <button
+                          key={option.name}
+                          type="button"
+                          onClick={() => controller.applySelectValue(option.name)}
+                          className={[
+                            'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                            isSelected ? 'bg-[#eef2ff] text-[#1f2a44]' : 'text-editor-text-primary hover:bg-[#f4f6fb]',
+                          ].join(' ')}
+                        >
+                          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: selectColorToCss(option.color) }} />
+                          <span className="min-w-0 flex-1 truncate">{option.name}</span>
+                          {isSelected ? <Check className="h-3.5 w-3.5 text-[#4f46e5]" /> : <ChevronsUpDown className="h-3.5 w-3.5 text-[#98a2b3]" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -336,6 +499,14 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
           </button>
         ) : null}
       </div>
+      <CreateFieldModal
+        isOpen={isCreateFieldModalOpen}
+        isSubmitting={controller.isMutating}
+        onClose={() => setIsCreateFieldModalOpen(false)}
+        onSubmit={(payload) => {
+          void controller.createField(payload).then(() => setIsCreateFieldModalOpen(false));
+        }}
+      />
     </NodeViewWrapper>
   );
 }

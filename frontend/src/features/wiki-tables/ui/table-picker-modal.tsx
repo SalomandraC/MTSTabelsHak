@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import type { MwsNode } from '../../../shared/api/wikilive';
 import { ModalActionButton } from '../../../shared/ui';
+import { getMwsFieldTypeLabel } from '../model/mws-field-types';
 import { getDatasheetId, isFolderNode, isTableNode, nodePath, useTablePickerController } from '../model/use-table-picker-controller';
 import type { WikiTableSelection } from '../model/wiki-table-embed';
 
@@ -210,7 +211,7 @@ export function WikiTablePickerModal({ isOpen, initialSpaceId, onSelect, onClose
                         }}
                       />
                       <span className="min-w-0 flex-1 truncate">{field.name}</span>
-                      <span className="text-xs text-editor-text-tertiary">{field.type}</span>
+                      <span className="text-xs text-editor-text-tertiary">{getMwsFieldTypeLabel(field.type)}</span>
                     </label>
                   ))}
                 </div>

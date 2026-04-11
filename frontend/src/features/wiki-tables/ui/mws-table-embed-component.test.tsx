@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ResolveTableEmbedResponse } from '../../../shared/api/wikilive';
@@ -41,6 +41,57 @@ const RESOLVE_TABLE_EMBED_MOCK: ResolveTableEmbedResponse = {
           recordId: 'rec-1',
           fields: {
             'fld-title': 'Запуск MVP',
+          },
+        },
+      ],
+      pageNum: 1,
+      pageSize: 20,
+      total: 1,
+    },
+    total: 1,
+    capabilities: {
+      canInlineEdit: true,
+      canCreateRecords: true,
+      canDeleteRecords: true,
+    },
+    openInMwsUrl: 'https://tables.mws.ru/fusion/v1/mock',
+  },
+};
+
+const RESOLVE_SELECT_TABLE_EMBED_MOCK: ResolveTableEmbedResponse = {
+  embed: {
+    datasheetId: 'dst-select',
+    node: {
+      id: 'node-select',
+      name: 'Таблица статусов',
+      type: 'Datasheet',
+      datasheetId: 'dst-select',
+    },
+    view: {
+      id: 'view-main',
+      name: 'Все',
+      type: 'grid',
+    },
+    fields: [
+      {
+        id: 'fld-status',
+        name: 'Статус',
+        type: 'SingleSelect',
+        property: {
+          options: [
+            { name: 'Новая', color: 'blue' },
+            { name: 'В работе', color: 'orange' },
+            { name: 'Готово', color: 'green' },
+          ],
+        },
+      },
+    ],
+    preview: {
+      items: [
+        {
+          recordId: 'rec-status-1',
+          fields: {
+            'fld-status': 'Новая',
           },
         },
       ],
@@ -105,5 +156,115 @@ describe('MwsTableEmbedComponent', () => {
       'href',
       'https://tables.mws.ru/fusion/v1/mock',
     );
+  });
+
+  it('starts inline editing on the first typed key after a cell is selected', async () => {
+    render(
+      <MwsTableEmbedComponent
+        node={{
+          attrs: {
+            blockId: 'block-1',
+            title: 'Таблица 2',
+            spaceId: 'space-1',
+            nodeId: 'node-2',
+            datasheetId: 'dst-2',
+            viewId: 'view-1',
+            selectedFieldIds: ['fld-title'],
+            pageSize: 20,
+            allowInlineEdit: true,
+            displayMode: 'table',
+          },
+        } as never}
+        selected={false}
+        editor={null as never}
+        getPos={null as never}
+        updateAttributes={vi.fn()}
+        deleteNode={vi.fn()}
+        decorations={[]}
+        extension={null as never}
+        HTMLAttributes={{}}
+        innerDecorations={null as never}
+        view={null as never}
+      />,
+    );
+
+    const canvas = await screen.findByTestId('mws_canvas_grid');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      width: 720,
+      height: 320,
+      top: 0,
+      left: 0,
+      right: 720,
+      bottom: 320,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.pointerDown(canvas, { clientX: 80, clientY: 60 });
+    fireEvent.keyDown(canvas, { key: 'A' });
+
+    const editorInput = await screen.findByDisplayValue('A');
+    expect(editorInput).toBeInTheDocument();
+  });
+
+  it('opens select dropdown on cell click and updates record when option is chosen', async () => {
+    vi.mocked(wikiliveApi.resolveTableEmbed).mockResolvedValueOnce(RESOLVE_SELECT_TABLE_EMBED_MOCK);
+    vi.mocked(wikiliveApi.updateMwsRecords).mockResolvedValue({ items: [] });
+
+    render(
+      <MwsTableEmbedComponent
+        node={{
+          attrs: {
+            blockId: 'block-select-1',
+            title: 'Таблица статусов',
+            spaceId: 'space-1',
+            nodeId: 'node-select',
+            datasheetId: 'dst-select',
+            viewId: 'view-main',
+            selectedFieldIds: ['fld-status'],
+            pageSize: 20,
+            allowInlineEdit: true,
+            displayMode: 'table',
+          },
+        } as never}
+        selected={false}
+        editor={null as never}
+        getPos={null as never}
+        updateAttributes={vi.fn()}
+        deleteNode={vi.fn()}
+        decorations={[]}
+        extension={null as never}
+        HTMLAttributes={{}}
+        innerDecorations={null as never}
+        view={null as never}
+      />,
+    );
+
+    const canvas = await screen.findByTestId('mws_canvas_grid');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      width: 720,
+      height: 320,
+      top: 0,
+      left: 0,
+      right: 720,
+      bottom: 320,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.pointerDown(canvas, { clientX: 80, clientY: 60 });
+
+    expect(await screen.findByTestId('mws_select_editor')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /В работе/i }));
+
+    await waitFor(() => {
+      expect(wikiliveApi.updateMwsRecords).toHaveBeenCalledWith('dst-select', {
+        fieldKey: 'id',
+        records: [{ recordId: 'rec-status-1', fields: { 'fld-status': 'В работе' } }],
+      });
+    });
   });
 });
