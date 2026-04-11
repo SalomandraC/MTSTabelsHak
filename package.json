@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "@use-gesture/react": "^10.3.1",
+    "cytoscape": "^3.33.2",
+    "cytoscape-cola": "^2.5.1"
+  }
+}
