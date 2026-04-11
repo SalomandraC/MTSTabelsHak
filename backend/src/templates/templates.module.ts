@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
+import { PrismaModule } from 'src/infra/prisma/prisma.module';
 
 import { PagesModule } from 'src/pages/pages.module';
 import { TemplatesController } from './templates.controller';
 import { TemplatesService } from './templates.service';
 
 @Module({
-  imports: [PagesModule],
+  imports: [PagesModule, PrismaModule],
   controllers: [TemplatesController],
   providers: [TemplatesService],
   exports: [TemplatesService],

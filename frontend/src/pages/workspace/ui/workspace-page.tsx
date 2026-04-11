@@ -33,6 +33,7 @@ import {
   wikiliveApi,
 } from '../../../shared/api/wikilive';
 import { DocumentLinkGraph, type DocumentGraphEdge, type DocumentGraphPage } from './document-link-graph';
+import { CreateTemplateFromPageModal } from './create-template-from-page-modal';
 import { PageTemplateMarketplaceModal } from './page-template-marketplace-modal';
 import {
   LEFT_SIDEBAR_MAX_WIDTH,
@@ -594,7 +595,9 @@ export function WorkspacePage() {
   const [templates, setTemplates] = useState<PageTemplateSummary[]>([]);
   const [isTemplatesLoading, setIsTemplatesLoading] = useState(true);
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+  const [isCreateTemplateModalOpen, setIsCreateTemplateModalOpen] = useState(false);
   const [isInstantiatingTemplate, setIsInstantiatingTemplate] = useState(false);
+  const [isCreatingTemplate, setIsCreatingTemplate] = useState(false);
   const leftSidebar = useResizableSidebar({
     defaultWidth: LEFT_SIDEBAR_MIN_WIDTH,
     minWidth: LEFT_SIDEBAR_MIN_WIDTH,
@@ -713,33 +716,28 @@ export function WorkspacePage() {
     };
   }, [initialRoute.spaceId]);
 
+  const refreshTemplates = useCallback(async (spaceId: string) => {
+    setIsTemplatesLoading(true);
+
+    try {
+      const response = await wikiliveApi.listTemplates(spaceId);
+      setTemplates(response.items);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить шаблоны');
+    } finally {
+      setIsTemplatesLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
-    setIsTemplatesLoading(true);
-
-    void wikiliveApi
-      .listTemplates()
-      .then((response) => {
-        if (!cancelled) {
-          setTemplates(response.items);
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить шаблоны');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsTemplatesLoading(false);
-        }
-      });
+    void refreshTemplates(selectedSpaceId);
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshTemplates, selectedSpaceId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -943,6 +941,41 @@ export function WorkspacePage() {
       setErrorMessage(error instanceof Error ? error.message : 'Не удалось создать страницу из шаблона');
     } finally {
       setIsInstantiatingTemplate(false);
+      setStatusMessage('');
+    }
+  };
+
+  const handleCreateTemplateFromPage = async (payload: {
+    title: string;
+    summary: string;
+    category: string;
+    accessLevel: 'private' | 'space' | 'public';
+    document: Record<string, unknown>;
+  }) => {
+    if (!activeEditor) {
+      return;
+    }
+
+    setIsCreatingTemplate(true);
+    setStatusMessage('Сохраняем шаблон');
+    setErrorMessage('');
+
+    try {
+      await wikiliveApi.createTemplate({
+        spaceId: selectedSpaceId,
+        title: payload.title,
+        summary: payload.summary,
+        category: payload.category,
+        accessLevel: payload.accessLevel,
+        document: payload.document,
+      });
+
+      await refreshTemplates(selectedSpaceId);
+      setIsCreateTemplateModalOpen(false);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Не удалось создать шаблон');
+    } finally {
+      setIsCreatingTemplate(false);
       setStatusMessage('');
     }
   };
@@ -1169,6 +1202,18 @@ export function WorkspacePage() {
             >
               <Sparkles size={16} strokeWidth={2.2} />
               {isTemplatesLoading ? 'Загружаем шаблоны...' : 'Создать из шаблона'}
+            </button>
+          </div>
+
+          <div className="mt-2 px-3">
+            <button
+              type="button"
+              onClick={() => setIsCreateTemplateModalOpen(true)}
+              disabled={!activeEditor}
+              className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-editor-border-subtle bg-white px-3 text-sm font-semibold text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Sparkles size={16} strokeWidth={2.2} />
+              Сохранить как шаблон
             </button>
           </div>
 
@@ -1459,6 +1504,14 @@ export function WorkspacePage() {
           }
         }}
         onSubmit={handleInstantiateTemplate}
+      />
+      <CreateTemplateFromPageModal
+        isOpen={isCreateTemplateModalOpen}
+        sourcePageTitle={activePage?.title ?? 'Новая страница'}
+        isSubmitting={isCreatingTemplate}
+        document={activeEditor?.getJSON() as Record<string, unknown> | null}
+        onClose={() => setIsCreateTemplateModalOpen(false)}
+        onSubmit={handleCreateTemplateFromPage}
       />
     </main>
   );

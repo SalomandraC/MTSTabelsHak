@@ -28,6 +28,12 @@ enum PluginScopeType {
   user
 }
 
+enum TemplateAccessLevel {
+  private
+  space
+  public
+}
+
 model WikiNode {
   id          String       @id @default(uuid())
   spaceId     String       @map("space_id")
@@ -183,4 +189,24 @@ model PluginActivation {
   @@unique([pluginId, scopeType, userId])
   @@index([userId, scopeType])
   @@map("plugin_activations")
+}
+
+model PageTemplate {
+  id                String              @id @default(uuid())
+  spaceId           String              @map("space_id")
+  ownerUserId       String              @map("owner_user_id")
+  title             String
+  summary           String
+  category          String
+  icon              String              @default("sparkles")
+  accessLevel       TemplateAccessLevel  @default(private) @map("access_level")
+  pageTitleTemplate String              @map("page_title_template")
+  fields            Json                @map("fields")
+  document          Json                @map("document")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  @@index([spaceId, accessLevel])
+  @@index([ownerUserId, accessLevel])
+  @@map("page_templates")
 }

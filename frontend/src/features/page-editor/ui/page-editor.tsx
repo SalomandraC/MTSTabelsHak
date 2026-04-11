@@ -12,6 +12,7 @@ import { PageImageModal } from './page-image-modal';
 import { PageLinkModal } from './page-link-modal';
 import { PageEditorToolbar } from './page-editor-toolbar';
 import { PagePickerModal } from './page-picker-modal';
+import { TemplateVariableModal } from './template-variable-modal';
 
 type PageEditorProps = {
   spaceId: string;
@@ -108,6 +109,7 @@ export function PageEditor({ spaceId, page, onRenamePage, onCheckpoint, onEditor
           <PageLinkModal {...controller.linkModal} />
           <PageImageModal {...controller.imageModal} />
           <PagePickerModal {...controller.pagePicker} />
+          <TemplateVariableModal {...controller.templateVariableModal} />
           <WikiTablePickerModal {...controller.tablePicker} />
         </div>
       </section>

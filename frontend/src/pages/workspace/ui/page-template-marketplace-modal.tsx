@@ -4,6 +4,23 @@ import { Search, Sparkles, X } from 'lucide-react';
 import { ScrollArea } from '../../../shared/ui';
 import type { PageTemplateSummary } from '../../../shared/api/wikilive';
 
+function getAccessBadge(template: PageTemplateSummary) {
+  if (template.source === 'builtIn') {
+    return 'Демо';
+  }
+
+  switch (template.accessLevel) {
+    case 'private':
+      return 'Только мне';
+    case 'space':
+      return 'В пространстве';
+    case 'public':
+      return 'Всем';
+    default:
+      return 'Шаблон';
+  }
+}
+
 type PageTemplateMarketplaceModalProps = {
   isOpen: boolean;
   templates: PageTemplateSummary[];
@@ -141,6 +158,9 @@ export function PageTemplateMarketplaceModal({
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="rounded-full bg-[#f2f3f5] px-2 py-1 text-[11px] font-semibold text-[#676d76]">
                             {template.category}
+                          </span>
+                          <span className="rounded-full bg-[#eef3ff] px-2 py-1 text-[11px] font-semibold text-[#2f4d86]">
+                            {getAccessBadge(template)}
                           </span>
                         </div>
                         <h3 className="mt-2 text-sm font-semibold text-[#1f1f1f]">{template.title}</h3>

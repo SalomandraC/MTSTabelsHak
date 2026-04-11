@@ -85,6 +85,9 @@ export type TemplateField = {
   defaultValue?: string;
 };
 
+export type TemplateAccessLevel = 'private' | 'space' | 'public';
+export type TemplateSource = 'builtIn' | 'custom';
+
 export type PageTemplateSummary = {
   id: string;
   title: string;
@@ -93,6 +96,19 @@ export type PageTemplateSummary = {
   audience: string;
   icon: string;
   fields: TemplateField[];
+  accessLevel: TemplateAccessLevel;
+  source: TemplateSource;
+};
+
+export type CreateTemplatePayload = {
+  spaceId: string;
+  title: string;
+  summary?: string;
+  category?: string;
+  icon?: string;
+  accessLevel: TemplateAccessLevel;
+  pageTitleTemplate?: string;
+  document: Record<string, unknown>;
 };
 
 export type PageDocumentState = {
@@ -594,8 +610,25 @@ export const wikiliveApi = {
       }),
     });
   },
-  listTemplates() {
-    return request<{ items: PageTemplateSummary[] }>('/api/v1/templates');
+  listTemplates(spaceId?: string | null) {
+    return request<{ items: PageTemplateSummary[] }>('/api/v1/templates', {
+      query: spaceId ? { spaceId } : undefined,
+    });
+  },
+  createTemplate(payload: CreateTemplatePayload) {
+    return request<{ template: PageTemplateSummary }>('/api/v1/templates', {
+      method: 'POST',
+      body: JSON.stringify({
+        spaceId: payload.spaceId,
+        title: payload.title,
+        summary: payload.summary,
+        category: payload.category,
+        icon: payload.icon,
+        accessLevel: payload.accessLevel,
+        pageTitleTemplate: payload.pageTitleTemplate,
+        document: payload.document,
+      }),
+    });
   },
   instantiateTemplate(templateId: string, payload: {
     spaceId: string;

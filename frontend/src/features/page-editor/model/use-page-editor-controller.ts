@@ -161,6 +161,9 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
 
   const [isPagePickerOpen, setIsPagePickerOpen] = useState(false);
   const [isTablePickerOpen, setIsTablePickerOpen] = useState(false);
+  const [isTemplateVariableModalOpen, setIsTemplateVariableModalOpen] = useState(false);
+  const [templateVariableLabel, setTemplateVariableLabel] = useState('');
+  const [templateVariableDescription, setTemplateVariableDescription] = useState('');
   const [collabState, setCollabState] = useState<CollabState | null>(null);
 
   const slashStateRef = useRef(baseSlashState);
@@ -648,6 +651,35 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
     closeImageModal();
   };
 
+  const openTemplateVariableModal = (defaultLabel = '', defaultDescription = '') => {
+    setTemplateVariableLabel(defaultLabel);
+    setTemplateVariableDescription(defaultDescription);
+    setIsTemplateVariableModalOpen(true);
+  };
+
+  const closeTemplateVariableModal = () => {
+    setIsTemplateVariableModalOpen(false);
+  };
+
+  const handleInsertTemplateVariable = () => {
+    if (!editor) {
+      return;
+    }
+
+    const label = templateVariableLabel.trim();
+    if (!label) {
+      return;
+    }
+
+    editor.chain().focus().insertTemplateVariable({
+      key: normalizeTemplateKey(label),
+      label,
+      description: templateVariableDescription.trim(),
+    }).run();
+
+    closeTemplateVariableModal();
+  };
+
   const deleteSlashRange = () => {
     if (!editor || !slashStateRef.current.isOpen) {
       return;
@@ -718,18 +750,7 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
 
     if (item.id === 'template-variable') {
       setSlashState(baseSlashState);
-
-      const label = window.prompt('Название параметра шаблона', 'Название компании')?.trim();
-      if (!label) {
-        return;
-      }
-
-      const description = window.prompt('Подсказка для этого параметра', 'Что пользователь должен сюда подставить')?.trim() ?? '';
-      editor.chain().focus().insertTemplateVariable({
-        key: normalizeTemplateKey(label),
-        label,
-        description,
-      }).run();
+      openTemplateVariableModal('', '');
       return;
     }
 
@@ -804,6 +825,12 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
         return;
       }
 
+      if (isTemplateVariableModalOpen && event.key === 'Escape') {
+        event.preventDefault();
+        closeTemplateVariableModal();
+        return;
+      }
+
       if (!slashStateRef.current.isOpen || !editor) {
         return;
       }
@@ -865,7 +892,7 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [closeImageModal, editor, isImageModalOpen, isLinkModalOpen]);
+  }, [closeImageModal, editor, isImageModalOpen, isLinkModalOpen, isTemplateVariableModalOpen]);
 
   return {
     editor,
@@ -920,6 +947,16 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
       onClose: closeImageModal,
       onFileSelect: handleSelectImageFile,
       onConfirm: handleConfirmImageInsert,
+    },
+    templateVariableModal: {
+      isOpen: isTemplateVariableModalOpen,
+      label: templateVariableLabel,
+      description: templateVariableDescription,
+      isSubmitDisabled: templateVariableLabel.trim().length === 0,
+      onLabelChange: setTemplateVariableLabel,
+      onDescriptionChange: setTemplateVariableDescription,
+      onSubmit: handleInsertTemplateVariable,
+      onClose: closeTemplateVariableModal,
     },
   };
 }
