@@ -460,6 +460,13 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
   };
 
   const handleOpenModal = () => {
+    const modalWidth = Math.min(window.innerWidth * 0.84, 820);
+    const modalHeight = Math.min(window.innerHeight * 0.76, 640);
+
+    setModalOffset({
+      x: Math.round((window.innerWidth - modalWidth) / 2),
+      y: Math.round((window.innerHeight - modalHeight) / 2),
+    });
     setIsModalOpen(true);
   };
 
@@ -548,27 +555,42 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
 
       <div className="relative h-[214px] bg-[radial-gradient(circle_at_center,rgba(255,0,55,0.055),transparent_44%)]">
         {pages.length > 0 ? (
-          <div
-            ref={containerRef}
-            className="h-full w-full"
-            style={{
-              ...graphContainerStyle,
-              ...(isModalOpen
-                ? {
-                    position: 'fixed' as const,
-                    top: modalOffset.y,
-                    left: modalOffset.x,
-                    width: 'min(84vw,820px)',
-                    height: 'min(76vh,640px)',
-                    zIndex: 1000,
-                    borderRadius: 24,
-                    backgroundColor: '#ffffff',
-                    boxShadow: '0 30px 80px rgba(17,25,40,0.25)',
-                  }
-                : {}),
-            }}
-            aria-label="Graph canvas"
-          />
+          <>
+            {isModalOpen && (
+              <div className="fixed inset-0 z-40">
+                <div className="absolute inset-0 bg-black/30" onClick={() => setIsModalOpen(false)} />
+                <div
+                  className="absolute z-50 flex h-10 cursor-grab items-center justify-between gap-3 rounded-t-3xl bg-slate-200 px-3 text-sm font-semibold text-slate-900"
+                  style={{ left: modalOffset.x, top: modalOffset.y, width: 'min(84vw,820px)' }}
+                  onPointerDown={handleModalPointerDown}
+                  onPointerMove={handleModalPointerMove}
+                  onPointerUp={handleModalPointerUp}
+                >
+                </div>
+              </div>
+            )}
+
+            <div
+              ref={containerRef}
+              className={isModalOpen ? 'absolute rounded-b-3xl bg-white shadow-[0_30px_80px_rgba(17,25,40,0.25)]' : 'h-full w-full'}
+              style={{
+                ...graphContainerStyle,
+                ...(isModalOpen
+                  ? {
+                      position: 'fixed' as const,
+                      top: modalOffset.y + 40,
+                      left: modalOffset.x,
+                      width: 'min(84vw,820px)',
+                      height: 'calc(min(76vh,640px) - 40px)',
+                      zIndex: 1000,
+                      borderRadius: '0 0 24px 24px',
+                      backgroundColor: '#ffffff',
+                    }
+                  : {}),
+              }}
+              aria-label="Graph canvas"
+            />
+          </>
         ) : (
           <div className="flex h-full items-center justify-center px-8 text-center text-sm text-editor-text-tertiary">Создайте страницы, чтобы увидеть граф связей.</div>
         )}
@@ -576,33 +598,6 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
         {pages.length > 0 && edges.length === 0 ? (
           <div className="absolute inset-x-4 bottom-4 rounded-2xl border border-dashed border-editor-border-subtle bg-white/90 px-3 py-2.5 text-center text-xs text-editor-text-tertiary shadow-sm">
             Добавьте связь через /страница, и граф начнет оживать.
-          </div>
-        ) : null}
-
-        {isModalOpen ? (
-          <div className="fixed inset-0 z-40">
-            <div className="absolute inset-0 bg-black/30" onClick={() => setIsModalOpen(false)} />
-            <div
-              className="absolute z-50 flex flex-col overflow-hidden rounded-3xl bg-white shadow-[0_30px_80px_rgba(17,25,40,0.25)]"
-              style={{ left: modalOffset.x, top: modalOffset.y, width: 'min(84vw,820px)', height: 'min(76vh,640px)' }}
-            >
-              <div
-                className="flex h-10 items-center justify-between gap-3 bg-slate-200 px-3 text-sm font-semibold text-slate-900"
-                onPointerDown={handleModalPointerDown}
-                onPointerMove={handleModalPointerMove}
-                onPointerUp={handleModalPointerUp}
-              >
-                <span>Большой граф</span>
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
-                  aria-label="Закрыть модальное окно"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
           </div>
         ) : null}
       </div>

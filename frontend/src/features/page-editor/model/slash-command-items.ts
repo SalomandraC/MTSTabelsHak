@@ -13,6 +13,7 @@ import ListChecks from '../../../app/images/list-checks.svg';
 import Quote from '../../../app/images/quote.svg';
 import AtSign from '../../../app/images/at-sign.svg';
 import Picture from '../../../app/images/Picture.svg';
+import Table from '../../../app/images/logo.svg';
 
 export const slashCommandItems: PageEditorSlashCommandItem[] = [
   {
@@ -54,7 +55,11 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     label: 'MWS таблица',
     hint: 'Вставить live embed существующей таблицы',
     keywords: ['table', 'mws', 'таблица', 'embed', 'live', 'datasheet'],
-    icon: 'Tbl',
+    icon: React.createElement('img', {
+      src: Table,
+      alt: 'Список с чекбоксами',
+      className: 'h-4 w-4',
+    }),
     run: () => {
       // Handled in PageEditor with table picker flow.
     },
