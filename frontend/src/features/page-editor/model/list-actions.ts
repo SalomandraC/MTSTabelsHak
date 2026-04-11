@@ -128,7 +128,7 @@ function unwrapSelectionFromList(editor: Editor, listTypeName: ListTypeName): bo
 /** Convert selection to list. */
 function convertSelectionToList(editor: Editor, listTypeName: ListTypeName): boolean {
   const { state, view } = editor;
-  const { selection, schema, doc } = state;
+  const { selection, schema } = state;
 
   if (selection.empty) {
     return false;

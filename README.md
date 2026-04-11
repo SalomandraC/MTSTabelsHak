@@ -1,11 +1,10 @@
-Вот перевод на русский язык:
-
 # WikiLive
 
 WikiLive — это совместный вики-модуль для кейса хакатона `WikiLive: живые таблицы внутри текста`.
 
 Текущее состояние репозитория:
 - `backend/` содержит каркас бэкенда на NestJS с Prisma, PostgreSQL, Redis, BullMQ и Hocuspocus
+- `frontend/` содержит React + Tiptap workspace с wiki-навигацией, live embeds, backlinks и collaboration-подключением
 - `docs/openapi.yaml` содержит HTTP/WebSocket контракт
 - `docs/MWS_TABLES_API_ANALYSIS.md` описывает, как сущности MWS Tables встраиваются в редактор
 
@@ -33,6 +32,13 @@ docker compose up --build
 - `redis` на порту `6379`
 - HTTP API бэкенда на порту `8080`
 - сервер совместной работы на порту `8081`
+- frontend Vite dev server на порту `5173`
+
+Откройте приложение по адресу:
+
+```bash
+http://localhost:5173
+```
 
 ## Локальная разработка
 
@@ -61,9 +67,18 @@ npx prisma migrate dev
 npm run start:dev
 ```
 
+Запуск фронтенда:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
 ## Окружение
 
 Базовый пример конфигурации находится в [backend/.env.example](/Users/nikitababicenko/PhpstormProjects/truetecharena/backend/.env.example).
+Базовый пример frontend-конфигурации находится в [frontend/.env.example](/Users/nikitababicenko/PhpstormProjects/truetecharena/frontend/.env.example).
 
 Важные переменные:
 - `DATABASE_URL`
@@ -74,6 +89,10 @@ npm run start:dev
 - `MWS_TABLES_BASE_URL`
 - `MWS_TABLES_API_TOKEN`
 - `AUTH_REQUIRED`
+- `VITE_API_BASE_URL`
+- `VITE_WIKILIVE_SPACE_ID`
+- `VITE_DEMO_USER_ID`
+- `VITE_DEMO_USER_NAME`
 
 Для интеграции с MWS Tables вы можете либо:
 - передавать токен пользователя через `Authorization`
@@ -121,5 +140,13 @@ npm test -- --runInBand
 
 ```bash
 cd backend
+npm run build
+```
+
+Проверка фронтенда:
+
+```bash
+cd frontend
+npm run lint
 npm run build
 ```

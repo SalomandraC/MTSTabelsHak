@@ -15,9 +15,6 @@ import H3 from '../../../app/images/H3.svg';
 import T from '../../../app/images/T.svg';
 import T1 from '../../../app/images/T1.svg';
 import U from '../../../app/images/U.svg';
-import AlignLeft from '../../../app/images/AlignLeft.svg';
-import AlignCenter from '../../../app/images/AlignCenter.svg';
-import AlignRight from '../../../app/images/AlignRight.svg';
 
 import {
   List,
@@ -470,7 +467,7 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
               style={{ color: 'rgba(80, 87, 98, 1)' }} 
             />
           }
-          onClick={() => editor.chain().focus().toggleTaskList().run()}
+          onClick={() => handleListAction(editor, 'taskList')}
           pressed={state.isTaskList}
           disabled={!state.canTaskList}
           isFirst={false}
