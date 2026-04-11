@@ -182,10 +182,27 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
   const elements = useMemo(() => buildElements(pages, edges), [pagesKey, edgesKey]);
   const activeTitle = pages.find((page) => page.id === activePageId)?.title;
 
-  const hasFittedGraphRef = useRef(false);
+  const layoutOptions: ColaLayoutOptions = {
+    name: defaultLayoutName,
+    animate: true,
+    refresh: 1,
+    maxSimulationTime: 4000,
+    ungrabifyWhileSimulating: false,
+    fit: false,
+    padding: 30,
+    nodeDimensionsIncludeLabels: false,
+    randomize: false,
+    avoidOverlap: true,
+    handleDisconnected: true,
+    convergenceThreshold: 0.01,
+    nodeSpacing: 18,
+    centerGraph: true,
+    edgeLengthVal: 80,
+    componentSpacing: 30,
+  };
 
   useEffect(() => {
-    if (!containerRef.current) {
+    if (!containerRef.current || cytoscapeRef.current || pages.length === 0) {
       return;
     }
 
@@ -236,6 +253,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
             'border-color': '#ff7b96',
             'text-opacity': 1,
             color: '#111827',
+            'font-size': 12,
             'font-weight': '700',
             'text-valign': 'top',
             'text-margin-y': -12,
@@ -302,70 +320,32 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
 
     cy.on('pan zoom', () => clampPan(cy));
 
-    const initialLayout = cy.layout({
-      name: defaultLayoutName,
-      animate: true,
-      refresh: 1,
-      maxSimulationTime: 4000,
-      ungrabifyWhileSimulating: false,
-      fit: false,
-      padding: 30,
-      nodeDimensionsIncludeLabels: false,
-      randomize: false,
-      avoidOverlap: true,
-      handleDisconnected: true,
-      convergenceThreshold: 0.01,
-      nodeSpacing: 18,
-      centerGraph: true,
-      edgeLengthVal: 80,
-      componentSpacing: 30,
-    } as ColaLayoutOptions);
+    const scheduleLayout = () => {
+      window.requestAnimationFrame(() => {
+        cy.resize();
+        const layout = cy.layout(layoutOptions);
+        layout.on('layoutstop', () => {
+          if (cy.elements().nonempty()) {
+            cy.fit(cy.elements(), 25);
+          }
+        });
+        layout.run();
+      });
+    };
 
-    initialLayout.on('layoutstop', () => {
-      if (!hasFittedGraphRef.current) {
-        cy.fit(cy.elements(), 25);
-        hasFittedGraphRef.current = true;
-      }
-    });
+    const resizeObserver = new ResizeObserver(() => scheduleLayout());
+    resizeObserver.observe(containerRef.current);
 
-    initialLayout.run();
+    scheduleLayout();
     cytoscapeRef.current = cy;
     updateSelection(cy, activePageId, edges);
 
     return () => {
+      resizeObserver.disconnect();
       cy.destroy();
       cytoscapeRef.current = null;
     };
-  }, []);
-
-  useEffect(() => {
-    const cy = cytoscapeRef.current;
-    if (!cy) {
-      return;
-    }
-
-    updateGraphElements(cy, elements);
-    const layout = cy.layout({
-      name: defaultLayoutName,
-      animate: true,
-      refresh: 1,
-      maxSimulationTime: 4000,
-      ungrabifyWhileSimulating: false,
-      fit: false,
-      padding: 30,
-      nodeDimensionsIncludeLabels: false,
-      randomize: false,
-      avoidOverlap: true,
-      handleDisconnected: true,
-      convergenceThreshold: 0.01,
-      nodeSpacing: 18,
-      centerGraph: true,
-      edgeLengthVal: 80,
-      componentSpacing: 30,
-    } as ColaLayoutOptions);
-
-    layout.run();
-  }, [elements]);
+  }, [pages.length]);
 
   useEffect(() => {
     const cy = cytoscapeRef.current;
@@ -398,6 +378,25 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
       container.removeEventListener('mouseleave', onMouseLeave);
     };
   }, []);
+
+  useEffect(() => {
+    const cy = cytoscapeRef.current;
+    if (!cy || pages.length === 0) {
+      return;
+    }
+
+    updateGraphElements(cy, elements);
+    window.requestAnimationFrame(() => {
+      cy.resize();
+      const layout = cy.layout(layoutOptions);
+      layout.on('layoutstop', () => {
+        if (cy.elements().nonempty()) {
+          cy.fit(cy.elements(), 25);
+        }
+      });
+      layout.run();
+    });
+  }, [elements, pages.length]);
 
   const handleRefreshGraph = () => {
     const cy = cytoscapeRef.current;
