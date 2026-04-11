@@ -36,6 +36,7 @@ import type { HocuspocusProvider } from '@hocuspocus/provider';
 import type * as Y from 'yjs';
 import { Markdown } from 'tiptap-markdown';
 
+import { MwsTableEmbed } from '../../wiki-tables';
 import { AIGhostTextExtension } from '../../plugins/ai-assistant';
 import { CodeBlockComponent } from '../ui/code-block-component.tsx';
 import { ImageBlock } from './image-block';
