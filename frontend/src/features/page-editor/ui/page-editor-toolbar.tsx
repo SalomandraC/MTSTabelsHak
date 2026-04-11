@@ -294,7 +294,7 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
     }
 
     const { state, view } = editor;
-    const { selection, schema, doc } = state;
+    const { selection, schema } = state;
 
     if (selection.empty) {
       return false;

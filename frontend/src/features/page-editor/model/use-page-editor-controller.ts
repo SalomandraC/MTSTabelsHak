@@ -1,12 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { HocuspocusProvider } from '@hocuspocus/provider';
 import { useEditor } from '@tiptap/react';
+import * as Y from 'yjs';
 
+import { type PageSummary, type PresenceUser, type WikiPage, wikiliveApi } from '../../../shared/api/wikilive';
 import type { SlashMenuItem } from '../../slash-menu';
 import { createPageEditorExtensions, initialContent } from './editor-config';
 import { formatFileSize, readFileAsDataUrl, validateImageFile } from './image-utils';
 import type { PageEditorSlashCommandItem } from './slash-command-items';
 import { slashCommandItems } from './slash-command-items';
+import { base64ToBytes, bytesToBase64, readStoredDraft, writeStoredDraft } from './yjs-utils';
 
 type SlashState = {
   isOpen: boolean;
@@ -22,6 +26,21 @@ type ModalPosition = {
   left: number;
 };
 
+type CollabState = {
+  pageId: string;
+  ydoc: Y.Doc;
+  provider: HocuspocusProvider;
+  shouldSeedContent: boolean;
+  recoveryMessage: string;
+  activeUsers: PresenceUser[];
+};
+
+type UsePageEditorControllerOptions = {
+  page: WikiPage | null;
+  onRenamePage: (title: string) => Promise<void>;
+  onCheckpoint: () => Promise<void>;
+};
+
 const baseSlashState: SlashState = {
   isOpen: false,
   query: '',
@@ -35,11 +54,29 @@ function isQueryValid(query: string) {
   return /^[\p{L}\p{N}_-]*$/u.test(query);
 }
 
-export function usePageEditorController() {
+function getPersistentId(key: string, fallbackPrefix: string) {
+  try {
+    const existing = localStorage.getItem(key);
+
+    if (existing) {
+      return existing;
+    }
+
+    const created = `${fallbackPrefix}-${crypto.randomUUID()}`;
+    localStorage.setItem(key, created);
+    return created;
+  } catch {
+    return `${fallbackPrefix}-${Math.random().toString(16).slice(2)}`;
+  }
+}
+
+export function usePageEditorController({ page, onRenamePage, onCheckpoint }: UsePageEditorControllerOptions) {
   const [slashState, setSlashState] = useState<SlashState>(baseSlashState);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [title, setTitle] = useState('Новая страница');
-  const [description, setDescription] = useState('Добавить описание');
+  const [saveStatus, setSaveStatus] = useState('Ожидаем страницу');
+  const [connectionStatus, setConnectionStatus] = useState('offline');
+  const [recoveryMessage, setRecoveryMessage] = useState('');
+  const [activeUsers, setActiveUsers] = useState<PresenceUser[]>([]);
 
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
   const [linkText, setLinkText] = useState('');
@@ -54,10 +91,121 @@ export function usePageEditorController() {
   const [imageFileSizeLabel, setImageFileSizeLabel] = useState('');
   const [imagePreviewSrc, setImagePreviewSrc] = useState('');
 
+  const [isPagePickerOpen, setIsPagePickerOpen] = useState(false);
+  const [isTablePickerOpen, setIsTablePickerOpen] = useState(false);
+  const [collabState, setCollabState] = useState<CollabState | null>(null);
+
   const slashStateRef = useRef(baseSlashState);
   const selectedIndexRef = useRef(0);
 
-  const extensions = useMemo(() => createPageEditorExtensions(), []);
+  const userDisplayName = import.meta.env.VITE_DEMO_USER_NAME ?? 'Demo User';
+
+  useEffect(() => {
+    if (!page) {
+      setCollabState(null);
+      setSaveStatus('Ожидаем страницу');
+      setConnectionStatus('offline');
+      setRecoveryMessage('');
+      setActiveUsers([]);
+      return;
+    }
+
+    let cancelled = false;
+    let provider: HocuspocusProvider | null = null;
+    let ydoc: Y.Doc | null = null;
+
+    setSaveStatus('Открываем collaboration session');
+    setConnectionStatus('connecting');
+    setRecoveryMessage('');
+
+    void (async () => {
+      const draft = readStoredDraft(page.id);
+      const session = await wikiliveApi.openCollabSession(page.id, {
+        clientId: getPersistentId('wikilive:client-id', 'client'),
+        deviceId: getPersistentId('wikilive:device-id', 'device'),
+        userDisplayName,
+        localDraftAvailable: Boolean(draft),
+        lastCheckpointId: page.documentState?.checkpointId ?? null,
+        knownServerVersion: page.documentState?.serverVersion ?? null,
+      });
+
+      if (cancelled) {
+        return;
+      }
+
+      ydoc = new Y.Doc();
+      const serverState = session.documentState ?? page.documentState;
+
+      if (serverState?.value) {
+        Y.applyUpdate(ydoc, base64ToBytes(serverState.value));
+      }
+
+      const serverPersistedAt = serverState?.persistedAt ? new Date(serverState.persistedAt).getTime() : 0;
+      let restoredDraft = '';
+
+      if (draft && new Date(draft.updatedAt).getTime() > serverPersistedAt) {
+        Y.applyUpdate(ydoc, base64ToBytes(draft.value));
+        restoredDraft = 'Восстановлен локальный черновик из браузера';
+      }
+
+      provider = new HocuspocusProvider({
+        url: session.websocket.url,
+        name: session.websocket.documentName ?? page.id,
+        token: session.websocket.token,
+        document: ydoc,
+      });
+
+      if (cancelled) {
+        provider.destroy();
+        ydoc.destroy();
+        return;
+      }
+
+      provider.on('status', ({ status }: { status: string }) => {
+        if (!cancelled) {
+          setConnectionStatus(status === 'connected' ? 'online' : status);
+        }
+      });
+
+      setCollabState({
+        pageId: page.id,
+        ydoc,
+        provider,
+        shouldSeedContent: !serverState?.serverVersion && !draft,
+        recoveryMessage: restoredDraft,
+        activeUsers: session.awareness?.activeUsers ?? [],
+      });
+      setRecoveryMessage(restoredDraft);
+      setActiveUsers(session.awareness?.activeUsers ?? []);
+      setSaveStatus('Документ подключен');
+    })().catch((error) => {
+      if (!cancelled) {
+        setSaveStatus(error instanceof Error ? error.message : 'Не удалось подключить collaboration session');
+        setConnectionStatus('error');
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      provider?.destroy();
+      ydoc?.destroy();
+    };
+    // Recreate the provider only when the active page identity changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page?.id, userDisplayName]);
+
+  const extensions = useMemo(
+    () =>
+      createPageEditorExtensions({
+        ydoc: collabState?.ydoc,
+        provider: collabState?.provider,
+        user: {
+          name: userDisplayName,
+          color: '#ff0037',
+        },
+      }),
+    [collabState?.provider, collabState?.ydoc, userDisplayName],
+  );
 
   const resetImageModalState = () => {
     setImageErrorMessage('');
@@ -66,151 +214,189 @@ export function usePageEditorController() {
     setImagePreviewSrc('');
   };
 
-  const openImageModal = (position?: ModalPosition, initialError = '') => {
+  const openImageModal = (_position?: ModalPosition, initialError = '') => {
     resetImageModalState();
     setImageErrorMessage(initialError);
     setIsImageModalOpen(true);
   };
 
-  const closeImageModal = () => {
+  const closeImageModal = useCallback(() => {
     setIsImageModalOpen(false);
-    resetImageModalState();
-  };
-
-  const editor = useEditor({
-    extensions,
-    content: initialContent,
-    editorProps: {
-      attributes: {
-        class: 'tiptap h-full min-h-full',
-      },
-      handleDrop: (view, event, _slice, moved) => {
-        if (moved) {
-          return false;
-        }
-
-        const file = event.dataTransfer?.files?.[0];
-        if (!file || !file.type.startsWith('image/')) {
-          return false;
-        }
-
-        event.preventDefault();
-
-        const error = validateImageFile(file);
-        if (error) {
-            openImageModal(undefined, error);
-          return true;
-        }
-
-        void (async () => {
-          const src = await readFileAsDataUrl(file);
-          const target = view.posAtCoords({ left: event.clientX, top: event.clientY });
-          const insertPos = target?.pos ?? view.state.selection.from;
-          const imageNode = view.state.schema.nodes.image?.create({ src, alt: file.name, title: file.name });
-
-          if (!imageNode) {
-            return;
-          }
-
-          view.dispatch(view.state.tr.insert(insertPos, imageNode));
-        })();
-
-        return true;
-      },
-      handlePaste: (view, event) => {
-        const items = Array.from(event.clipboardData?.items ?? []);
-        const imageItem = items.find((item) => item.type.startsWith('image/'));
-        const file = imageItem?.getAsFile();
-
-        if (!file) {
-          return false;
-        }
-
-        event.preventDefault();
-
-        const error = validateImageFile(file);
-        if (error) {
-            openImageModal(undefined, error);
-          return true;
-        }
-
-        void (async () => {
-          const src = await readFileAsDataUrl(file);
-          const imageNode = view.state.schema.nodes.image?.create({ src, alt: file.name, title: file.name });
-
-          if (!imageNode) {
-            return;
-          }
-
-          view.dispatch(view.state.tr.replaceSelectionWith(imageNode));
-        })();
-
-        return true;
-      },
-    },
-    onUpdate: ({ editor: currentEditor }) => {
-      const selection = currentEditor.state.selection;
-      const { from } = selection;
-      const textBefore = currentEditor.state.doc.textBetween(selection.$from.start(), from, '\n', '\0');
-
-      const slashIndex = textBefore.lastIndexOf('/');
-
-      if (slashIndex < 0) {
-        setSlashState(baseSlashState);
-        return;
-      }
-
-      const query = textBefore.slice(slashIndex + 1);
-
-      if (!isQueryValid(query)) {
-        setSlashState(baseSlashState);
-        return;
-      }
-
-      const start = from - query.length - 1;
-      const coords = currentEditor.view.coordsAtPos(from);
-      const menuWidth = 304;
-      const menuHeight = 288;
-      const left = Math.min(coords.left, Math.max(12, window.innerWidth - menuWidth - 12));
-      const top = Math.min(coords.bottom + 8, Math.max(12, window.innerHeight - menuHeight - 12));
-
-      setSlashState({
-        isOpen: true,
-        query,
-        from: start,
-        to: from,
-        top,
-        left,
-      });
-    },
-    onSelectionUpdate: ({ editor: currentEditor }) => {
-      if (!currentEditor.isFocused) {
-        setSlashState(baseSlashState);
-      }
-    },
-  });
-
-  useEffect(() => {
-    try {
-      const storedTitle = localStorage.getItem('page:meta:title');
-      const storedDesc = localStorage.getItem('page:meta:description');
-
-      if (storedTitle) setTitle(storedTitle);
-      if (storedDesc) setDescription(storedDesc);
-    } catch {
-      // ignore storage errors
-    }
+    setImageErrorMessage('');
+    setImageFileName('');
+    setImageFileSizeLabel('');
+    setImagePreviewSrc('');
   }, []);
 
-  const handleSaveMeta = (newTitle: string, newDescription: string) => {
-    setTitle(newTitle);
-    setDescription(newDescription);
-    try {
-      localStorage.setItem('page:meta:title', newTitle);
-      localStorage.setItem('page:meta:description', newDescription);
-    } catch {
-      // ignore
+  const editor = useEditor(
+    {
+      extensions,
+      content: collabState ? undefined : initialContent,
+      editorProps: {
+        attributes: {
+          class: 'tiptap h-full min-h-full',
+        },
+        handleDrop: (view, event, _slice, moved) => {
+          if (moved) {
+            return false;
+          }
+
+          const file = event.dataTransfer?.files?.[0];
+          if (!file || !file.type.startsWith('image/')) {
+            return false;
+          }
+
+          event.preventDefault();
+
+          const error = validateImageFile(file);
+          if (error) {
+            openImageModal(undefined, error);
+            return true;
+          }
+
+          void (async () => {
+            const src = await readFileAsDataUrl(file);
+            const target = view.posAtCoords({ left: event.clientX, top: event.clientY });
+            const insertPos = target?.pos ?? view.state.selection.from;
+            const imageNode = view.state.schema.nodes.image?.create({ src, alt: file.name, title: file.name });
+
+            if (!imageNode) {
+              return;
+            }
+
+            view.dispatch(view.state.tr.insert(insertPos, imageNode));
+          })();
+
+          return true;
+        },
+        handlePaste: (view, event) => {
+          const items = Array.from(event.clipboardData?.items ?? []);
+          const imageItem = items.find((item) => item.type.startsWith('image/'));
+          const file = imageItem?.getAsFile();
+
+          if (!file) {
+            return false;
+          }
+
+          event.preventDefault();
+
+          const error = validateImageFile(file);
+          if (error) {
+            openImageModal(undefined, error);
+            return true;
+          }
+
+          void (async () => {
+            const src = await readFileAsDataUrl(file);
+            const imageNode = view.state.schema.nodes.image?.create({ src, alt: file.name, title: file.name });
+
+            if (!imageNode) {
+              return;
+            }
+
+            view.dispatch(view.state.tr.replaceSelectionWith(imageNode));
+          })();
+
+          return true;
+        },
+      },
+      onCreate: ({ editor: currentEditor }) => {
+        if (collabState?.shouldSeedContent && currentEditor.isEmpty) {
+          currentEditor.commands.setContent(initialContent);
+        }
+      },
+      onUpdate: ({ editor: currentEditor }) => {
+        const selection = currentEditor.state.selection;
+        const { from } = selection;
+        const textBefore = currentEditor.state.doc.textBetween(selection.$from.start(), from, '\n', '\0');
+
+        const slashIndex = textBefore.lastIndexOf('/');
+
+        if (slashIndex < 0) {
+          setSlashState(baseSlashState);
+          return;
+        }
+
+        const query = textBefore.slice(slashIndex + 1);
+
+        if (!isQueryValid(query)) {
+          setSlashState(baseSlashState);
+          return;
+        }
+
+        const start = from - query.length - 1;
+        const coords = currentEditor.view.coordsAtPos(from);
+        const menuWidth = 304;
+        const menuHeight = 288;
+        const left = Math.min(coords.left, Math.max(12, window.innerWidth - menuWidth - 12));
+        const top = Math.min(coords.bottom + 8, Math.max(12, window.innerHeight - menuHeight - 12));
+
+        setSlashState({
+          isOpen: true,
+          query,
+          from: start,
+          to: from,
+          top,
+          left,
+        });
+      },
+      onSelectionUpdate: ({ editor: currentEditor }) => {
+        if (!currentEditor.isFocused) {
+          setSlashState(baseSlashState);
+        }
+      },
+    },
+    [extensions, collabState?.pageId],
+  );
+
+  useEffect(() => {
+    if (!collabState) {
+      return;
     }
+
+    let checkpointTimer: number | null = null;
+
+    const writeDraftAndScheduleCheckpoint = () => {
+      const value = bytesToBase64(Y.encodeStateAsUpdate(collabState.ydoc));
+      writeStoredDraft(collabState.pageId, {
+        value,
+        updatedAt: new Date().toISOString(),
+        checkpointId: page?.documentState?.checkpointId ?? null,
+        serverVersion: page?.documentState?.serverVersion ?? 0,
+      });
+      setSaveStatus('Черновик сохранен локально');
+
+      if (checkpointTimer) {
+        window.clearTimeout(checkpointTimer);
+      }
+
+      checkpointTimer = window.setTimeout(() => {
+        void wikiliveApi
+          .createCheckpoint(collabState.pageId, value, 'editor-idle')
+          .then(async () => {
+            setSaveStatus('Синхронизировано с backend');
+            await onCheckpoint();
+          })
+          .catch((error) => {
+            setSaveStatus(error instanceof Error ? `Backend sync error: ${error.message}` : 'Backend sync error');
+          });
+      }, 1800);
+    };
+
+    collabState.ydoc.on('update', writeDraftAndScheduleCheckpoint);
+
+    return () => {
+      collabState.ydoc.off('update', writeDraftAndScheduleCheckpoint);
+      if (checkpointTimer) {
+        window.clearTimeout(checkpointTimer);
+      }
+    };
+  }, [collabState, onCheckpoint, page?.documentState?.checkpointId, page?.documentState?.serverVersion]);
+
+  const handleSaveMeta = (newTitle: string) => {
+    void onRenamePage(newTitle).catch((error) => {
+      setSaveStatus(error instanceof Error ? error.message : 'Не удалось переименовать страницу');
+    });
   };
 
   const filteredItems = useMemo(() => {
@@ -365,17 +551,41 @@ export function usePageEditorController() {
     closeImageModal();
   };
 
+  const deleteSlashRange = () => {
+    if (!editor || !slashStateRef.current.isOpen) {
+      return;
+    }
+
+    editor
+      .chain()
+      .focus()
+      .deleteRange({ from: slashStateRef.current.from, to: slashStateRef.current.to })
+      .run();
+  };
+
   const applySlashItem = (item: PageEditorSlashCommandItem | SlashMenuItem) => {
     if (!editor || !('run' in item)) {
       return;
     }
 
-    editor.chain().focus().deleteRange({ from: slashState.from, to: slashState.to }).run();
+    deleteSlashRange();
 
     if (item.id === 'link') {
       const modalAnchor = { top: slashState.top, left: slashState.left };
       setSlashState(baseSlashState);
       openLinkModal(modalAnchor);
+      return;
+    }
+
+    if (item.id === 'page-link') {
+      setSlashState(baseSlashState);
+      setIsPagePickerOpen(true);
+      return;
+    }
+
+    if (item.id === 'mws-table') {
+      setSlashState(baseSlashState);
+      setIsTablePickerOpen(true);
       return;
     }
 
@@ -389,11 +599,50 @@ export function usePageEditorController() {
     setSlashState(baseSlashState);
   };
 
+  const handleSelectPage = (selectedPage: PageSummary) => {
+    if (!editor) {
+      return;
+    }
+
+    editor.chain().focus().insertPageLink({ pageId: selectedPage.id, title: selectedPage.title }).run();
+    setIsPagePickerOpen(false);
+  };
+
+  const handleSelectTable = (table: { spaceId: string; nodeId: string; datasheetId: string; title: string }) => {
+    if (!editor) {
+      return;
+    }
+
+    const attrs = {
+      blockId: crypto.randomUUID(),
+      spaceId: table.spaceId,
+      nodeId: table.nodeId,
+      datasheetId: table.datasheetId,
+      viewId: null,
+      displayMode: 'table',
+      selectedFieldIds: [],
+      filterByFormula: null,
+      pageSize: 10,
+      allowInlineEdit: false,
+    };
+
+    const inserted = editor.commands.insertMwsTableEmbed(attrs);
+
+    if (!inserted) {
+      editor.commands.insertContent({
+        type: 'rootblock',
+        content: [{ type: 'mwsTableEmbed', attrs }],
+      });
+    }
+
+    setIsTablePickerOpen(false);
+  };
+
   const applySlashItemRef = useRef(applySlashItem);
 
   useEffect(() => {
     applySlashItemRef.current = applySlashItem;
-  }, [applySlashItem]);
+  });
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -474,8 +723,12 @@ export function usePageEditorController() {
 
   return {
     editor,
-    title,
-    description,
+    title: page?.title ?? 'Новая страница',
+    description: page?.plainTextPreview || recoveryMessage || saveStatus,
+    saveStatus,
+    connectionStatus,
+    recoveryMessage,
+    activeUsers,
     handleSaveMeta,
     slashState,
     selectedIndex,
@@ -484,6 +737,17 @@ export function usePageEditorController() {
     applySlashItem,
     openLinkModal,
     openImageModal,
+    pagePicker: {
+      isOpen: isPagePickerOpen,
+      currentPageId: page?.id,
+      onSelect: handleSelectPage,
+      onClose: () => setIsPagePickerOpen(false),
+    },
+    tablePicker: {
+      isOpen: isTablePickerOpen,
+      onSelect: handleSelectTable,
+      onClose: () => setIsTablePickerOpen(false),
+    },
     linkModal: {
       isOpen: isLinkModalOpen,
       position: linkModalPosition,

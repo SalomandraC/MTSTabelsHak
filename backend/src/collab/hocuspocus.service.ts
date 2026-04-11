@@ -45,7 +45,7 @@ export class HocuspocusService implements OnModuleInit, OnModuleDestroy {
         return this.persistenceService.loadDocument(data.documentName);
       },
       onConnect: async (data: any) => {
-        const context = data.connection.readOnly ? undefined : data.context;
+        const context = data.connection?.readOnly ? undefined : data.context;
         if (context?.userId) {
           await this.redisService.sadd(
             this.collabService.presenceKey(data.documentName),
