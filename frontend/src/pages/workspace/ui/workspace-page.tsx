@@ -21,6 +21,7 @@ import {
 import { useAuthSessionContext } from '../../../features/auth';
 import { PageEditor } from '../../../features/page-editor';
 import { PluginsModal, usePlugins } from '../../../features/plugins';
+import { ScrollArea } from '../../../shared/ui';
 import {
   DEFAULT_WIKILIVE_SPACE_ID,
   type Backlink,
@@ -1212,7 +1213,7 @@ export function WorkspacePage() {
         {statusMessage ? (
           <div className="border-b border-editor-border-subtle bg-white px-4 py-2 text-sm text-editor-text-tertiary">{statusMessage}</div>
         ) : null}
-        <div className="min-h-0 flex-1 overflow-y-auto bg-editor-bg-page">
+        <ScrollArea className="min-h-0 flex-1 overflow-y-auto bg-editor-bg-page">
           <PageEditor
             spaceId={selectedSpaceId}
             page={activePage}
@@ -1220,7 +1221,7 @@ export function WorkspacePage() {
             onCheckpoint={handleCheckpoint}
             onEditorChange={setActiveEditor}
           />
-        </div>
+        </ScrollArea>
       </section>
 
       {!rightSidebar.isCollapsed ? (

@@ -385,6 +385,45 @@
 }
 
 @layer components {
+  .scroll-area {
+    scrollbar-width: thin;
+    scrollbar-color: #d3d3d8 transparent;
+  }
+
+  .scroll-area::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .scroll-area::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 999px;
+  }
+
+  .scroll-area::-webkit-scrollbar-thumb {
+    background: #d3d3d8;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 999px;
+  }
+
+  .scroll-area::-webkit-scrollbar-thumb:hover {
+    background: #c6c6cc;
+    background-clip: padding-box;
+  }
+
+  .scroll-area::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  .scroll-area--page {
+    scrollbar-color: #d3d3d8 transparent;
+  }
+
+  .scroll-area--table {
+    scrollbar-color: #d3d3d8 transparent;
+  }
+
   .slash-menu-scroll {
     scrollbar-width: thin;
     scrollbar-color: #c4cedf #eef2f8;
