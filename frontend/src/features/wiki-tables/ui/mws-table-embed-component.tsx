@@ -1,15 +1,14 @@
 import type { NodeViewProps } from '@tiptap/react';
 import { NodeViewWrapper } from '@tiptap/react';
 import {
-  Check,
   Paperclip,
   Columns3,
-  ChevronsUpDown,
   Download,
   ExternalLink,
   EyeOff,
   Filter,
   Group,
+  Maximize2,
   PlusCircle,
   RefreshCw,
   RotateCcw,
@@ -18,16 +17,20 @@ import {
   Settings,
   SortAsc,
   Trash2,
+  X,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { CreateFieldModal } from './create-field-modal';
+import { ExpandedTableModal } from './expanded-table-modal';
+import { FilterRecordsModal } from './filter-records-modal';
+import { GroupRecordsModal } from './group-records-modal';
 import { HideFieldsModal } from './hide-fields-modal';
 import { SortFieldsModal } from './sort-fields-modal';
+import { TableGridCanvas } from './table-grid-canvas';
 import {
   clampText,
   COLUMN_WIDTH,
-  fieldInputType,
   getFieldValue,
   HEADER_HEIGHT,
   INDEX_WIDTH,
@@ -71,6 +74,9 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
   const [isCreateFieldModalOpen, setIsCreateFieldModalOpen] = useState(false);
   const [isHideFieldsModalOpen, setIsHideFieldsModalOpen] = useState(false);
   const [isSortFieldsModalOpen, setIsSortFieldsModalOpen] = useState(false);
+  const [isFilterRecordsModalOpen, setIsFilterRecordsModalOpen] = useState(false);
+  const [isGroupRecordsModalOpen, setIsGroupRecordsModalOpen] = useState(false);
+  const [isExpandedViewOpen, setIsExpandedViewOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const selectEditorRef = useRef<HTMLDivElement | null>(null);
 
@@ -159,13 +165,13 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
 
     const firstRow = Math.max(0, Math.floor((controller.scrollOffset.top - HEADER_HEIGHT) / ROW_HEIGHT));
     const lastRow = Math.min(
-      controller.visibleRecords.length - 1,
+      controller.visibleRows.length - 1,
       Math.ceil((controller.scrollOffset.top + height - HEADER_HEIGHT) / ROW_HEIGHT),
     );
 
     for (let rowIndex = firstRow; rowIndex <= lastRow; rowIndex += 1) {
-      const record = controller.visibleRecords[rowIndex];
-      if (!record) {
+      const row = controller.visibleRows[rowIndex];
+      if (!row) {
         continue;
       }
 
@@ -180,27 +186,37 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       ctx.fillStyle = '#555b66';
       ctx.fillText(String(rowIndex + 1), 22, y + ROW_HEIGHT / 2);
 
-      controller.visibleFields.forEach((field, fieldIndex) => {
-        const x = INDEX_WIDTH + fieldIndex * COLUMN_WIDTH - controller.scrollOffset.left;
-        if (x + COLUMN_WIDTH < INDEX_WIDTH || x > width) {
-          return;
-        }
+      if (row.kind === 'group') {
+        ctx.fillStyle = '#f3f4f6';
+        ctx.fillRect(INDEX_WIDTH, y, width - INDEX_WIDTH, ROW_HEIGHT);
+        ctx.fillStyle = '#6b7280';
+        ctx.font = '600 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        ctx.fillText(`${row.label} (${row.count})`, INDEX_WIDTH + 12, y + ROW_HEIGHT / 2);
+        ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+      } else {
+        const record = row.record;
+        controller.visibleFields.forEach((field, fieldIndex) => {
+          const x = INDEX_WIDTH + fieldIndex * COLUMN_WIDTH - controller.scrollOffset.left;
+          if (x + COLUMN_WIDTH < INDEX_WIDTH || x > width) {
+            return;
+          }
 
-        const isSelected = controller.selection?.rowIndex === rowIndex && controller.selection.fieldIndex === fieldIndex;
-        ctx.strokeStyle = '#e5e8ef';
-        ctx.strokeRect(x - 0.5, y - 0.5, COLUMN_WIDTH, ROW_HEIGHT);
+          const isSelected = controller.selection?.rowIndex === rowIndex && controller.selection.fieldIndex === fieldIndex;
+          ctx.strokeStyle = '#e5e8ef';
+          ctx.strokeRect(x - 0.5, y - 0.5, COLUMN_WIDTH, ROW_HEIGHT);
 
-        if (isSelected) {
-          ctx.strokeStyle = '#7b67ee';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(x + 1, y + 1, COLUMN_WIDTH - 2, ROW_HEIGHT - 2);
-          ctx.lineWidth = 1;
-        }
+          if (isSelected) {
+            ctx.strokeStyle = '#7b67ee';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x + 1, y + 1, COLUMN_WIDTH - 2, ROW_HEIGHT - 2);
+            ctx.lineWidth = 1;
+          }
 
-        const value = renderCell(getFieldValue(record, field), field);
-        ctx.fillStyle = value ? '#1f2937' : '#a1a7b3';
-        ctx.fillText(clampText(ctx, value || '-', COLUMN_WIDTH - 24), x + 12, y + ROW_HEIGHT / 2);
-      });
+          const value = renderCell(getFieldValue(record, field), field);
+          ctx.fillStyle = value ? '#1f2937' : '#a1a7b3';
+          ctx.fillText(clampText(ctx, value || '-', COLUMN_WIDTH - 24), x + 12, y + ROW_HEIGHT / 2);
+        });
+      }
 
       ctx.strokeStyle = '#e5e8ef';
       ctx.beginPath();
@@ -218,11 +234,11 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     ctx.fillStyle = '#6b7280';
     ctx.fillText('#', 20, HEADER_HEIGHT / 2);
 
-    if (controller.visibleRecords.length === 0) {
+    if (controller.visibleRows.length === 0) {
       ctx.fillStyle = '#7b8190';
       ctx.fillText('Нет строк для отображения', INDEX_WIDTH + 16, HEADER_HEIGHT + ROW_HEIGHT / 2);
     }
-  }, [controller.canvasRef, controller.scrollOffset.left, controller.scrollOffset.top, controller.selection, controller.viewport.height, controller.viewport.width, controller.visibleFields, controller.visibleRecords]);
+  }, [controller.canvasRef, controller.scrollOffset.left, controller.scrollOffset.top, controller.selection, controller.viewport.height, controller.viewport.width, controller.visibleFields, controller.visibleRows]);
 
   useEffect(() => {
     if (!controller.selection || controller.editingCell || controller.editingSelectCell || !controller.canvasRef.current) {
@@ -331,10 +347,11 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
           disabled={!canDownloadFromCell || controller.isMutating}
         />
         <ToolbarButton label="Скрыть поля" icon={<EyeOff className="h-4 w-4" />} onClick={() => setIsHideFieldsModalOpen(true)} disabled={controller.fields.length === 0} />
-        <ToolbarButton label="Фильтр" icon={<Filter className="h-4 w-4" />} disabled />
-        <ToolbarButton label="Группа" icon={<Group className="h-4 w-4" />} disabled />
+        <ToolbarButton label="Фильтр" icon={<Filter className="h-4 w-4" />} onClick={() => setIsFilterRecordsModalOpen(true)} disabled={controller.fields.length === 0} />
+        <ToolbarButton label="Группа" icon={<Group className="h-4 w-4" />} onClick={() => setIsGroupRecordsModalOpen(true)} disabled={controller.fields.length === 0} />
         <ToolbarButton label="Сортировка" icon={<SortAsc className="h-4 w-4" />} onClick={() => setIsSortFieldsModalOpen(true)} disabled={controller.fields.length === 0} />
         <ToolbarButton label="Удалить строку" icon={<Trash2 className="h-4 w-4" />} onClick={() => void controller.deleteRow(controller.selectedRecord)} disabled={!controller.selectedRecord || !controller.capabilities.canDeleteRecords || controller.isMutating} />
+        <ToolbarButton label="Раскрыть" icon={<Maximize2 className="h-4 w-4" />} onClick={() => setIsExpandedViewOpen(true)} disabled={controller.records.length === 0} />
         <ToolbarButton label="Обновить" icon={<RefreshCw className="h-4 w-4" />} onClick={() => void controller.loadEmbed()} disabled={controller.isLoading} />
         <div className="flex h-8 shrink-0 items-center gap-1 rounded-md border border-[#dfe3ea] bg-white px-2">
           <Search className="h-4 w-4 text-[#626a75]" />
@@ -416,140 +433,23 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
           <div className="rounded-lg bg-[#f3f6fb] p-4 text-sm text-editor-text-tertiary">В выбранном view пока нет строк</div>
         ) : null}
         {!controller.errorMessage && controller.records.length > 0 ? (
-          <div
-            ref={controller.scrollRef}
-            onScroll={controller.handleCanvasScroll}
-            className="relative overflow-auto rounded-lg border border-editor-border-subtle bg-white"
-            style={{ height: Math.min(MAX_GRID_HEIGHT, Math.max(MIN_GRID_HEIGHT, controller.gridHeight)) }}
-          >
-            <div className="relative" style={{ width: Math.max(controller.gridWidth, controller.viewport.width), height: Math.max(controller.gridHeight, controller.viewport.height) }}>
-              <div style={{ width: Math.max(controller.gridWidth, controller.viewport.width), height: Math.max(controller.gridHeight, controller.viewport.height) }} />
-              <canvas
-                ref={controller.canvasRef}
-                data-testid="mws_canvas_grid"
-                className="absolute left-0 top-0 block cursor-cell bg-transparent"
-                style={{
-                  transform: `translate(${controller.scrollOffset.left}px, ${controller.scrollOffset.top}px)`,
-                }}
-                onPointerDown={(event) => {
-                  event.currentTarget.focus();
-                  const nextSelection = controller.hitTest(event);
-                  controller.setSelection(nextSelection);
-                  controller.setEditingCell(null);
-                  controller.setEditingSelectCell(null);
-                  controller.beginEdit(nextSelection, { fromSingleClick: true });
-                }}
-                onDoubleClick={(event) => controller.beginEdit(controller.hitTest(event))}
-                onKeyDown={(event) => {
-                  if (!controller.selection) {
-                    return;
-                  }
+          <TableGridCanvas
+            controller={controller}
+            selectColorToCss={selectColorToCss}
+            onCanvasKeyDown={(event: React.KeyboardEvent<HTMLCanvasElement>) => {
+              if (!controller.selection || controller.editingCell || controller.editingSelectCell || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) {
+                return;
+              }
 
-                  if (isDirectEditKey(event)) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    controller.beginEdit(controller.selection, { replaceValue: event.key });
-                    return;
-                  }
-
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    controller.beginEdit(controller.selection);
-                    return;
-                  }
-
-                  if (event.key === 'Backspace' || event.key === 'Delete') {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    if (controller.editingSelectCell) {
-                      controller.clearSelectValue();
-                      return;
-                    }
-                    controller.beginEdit(controller.selection, { replaceValue: '' });
-                  }
-
-                  if (event.key === 'Escape' && controller.editingSelectCell) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    controller.setEditingSelectCell(null);
-                  }
-                }}
-                tabIndex={0}
-              />
-              {controller.editingCell ? (
-                <input
-                  autoFocus
-                  value={controller.editingCell.value}
-                  type={fieldInputType(controller.visibleFields[controller.editingCell.fieldIndex])}
-                  onChange={(event) => controller.setEditingCell((current) => (current ? { ...current, value: event.target.value } : current))}
-                  onBlur={controller.commitEdit}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      controller.commitEdit();
-                    }
-
-                    if (event.key === 'Escape') {
-                      event.preventDefault();
-                      controller.setEditingCell(null);
-                    }
-                  }}
-                  className="absolute z-20 rounded border border-[#7b67ee] bg-white px-2 text-sm outline-none shadow-sm"
-                  style={{
-                    left: controller.editingCell.left + 2,
-                    top: controller.editingCell.top + 2,
-                    width: controller.editingCell.width - 4,
-                    height: controller.editingCell.height - 4,
-                  }}
-                />
-              ) : null}
-              {controller.editingSelectCell ? (
-                <div
-                  ref={selectEditorRef}
-                  data-testid="mws_select_editor"
-                  className="absolute z-30 overflow-hidden rounded-lg border border-[#d9deea] bg-white shadow-[0_10px_28px_rgba(17,24,39,0.18)]"
-                  style={{
-                    left: controller.editingSelectCell.left + 2,
-                    top: controller.editingSelectCell.top + 2,
-                    width: Math.max(controller.editingSelectCell.width - 4, 220),
-                  }}
-                >
-                  <div className="flex items-center justify-between border-b border-editor-border-subtle px-2 py-1.5 text-xs text-editor-text-tertiary">
-                    <span>{controller.editingSelectCell.multiple ? 'Множественный выбор' : 'Одиночный выбор'}</span>
-                    <button
-                      type="button"
-                      onClick={() => controller.clearSelectValue()}
-                      className="rounded px-1.5 py-0.5 text-[#667085] hover:bg-[#f3f4f6]"
-                    >
-                      Очистить
-                    </button>
-                  </div>
-                  <div className="max-h-56 overflow-y-auto p-1.5">
-                    {controller.editingSelectCell.options.map((option) => {
-                      const isSelected = controller.editingSelectCell?.values.includes(option.name);
-
-                      return (
-                        <button
-                          key={option.name}
-                          type="button"
-                          onClick={() => controller.applySelectValue(option.name)}
-                          className={[
-                            'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-                            isSelected ? 'bg-[#eef2ff] text-[#1f2a44]' : 'text-editor-text-primary hover:bg-[#f4f6fb]',
-                          ].join(' ')}
-                        >
-                          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: selectColorToCss(option.color) }} />
-                          <span className="min-w-0 flex-1 truncate">{option.name}</span>
-                          {isSelected ? <Check className="h-3.5 w-3.5 text-[#4f46e5]" /> : <ChevronsUpDown className="h-3.5 w-3.5 text-[#98a2b3]" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </div>
+              if (isDirectEditKey(event)) {
+                event.preventDefault();
+                event.stopPropagation();
+                controller.canvasRef.current?.focus();
+                controller.beginEdit(controller.selection, { replaceValue: event.key });
+              }
+            }}
+            selectEditorRef={selectEditorRef}
+          />
         ) : null}
         {controller.hasMore ? (
           <button
@@ -583,6 +483,40 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         sortRules={controller.sortRules}
         onChangeSortRules={controller.setSortRules}
         onClose={() => setIsSortFieldsModalOpen(false)}
+      />
+      <FilterRecordsModal
+        isOpen={isFilterRecordsModalOpen}
+        fields={controller.fields}
+        filterRules={controller.filterRules}
+        onChangeFilterRules={controller.setFilterRules}
+        onClose={() => setIsFilterRecordsModalOpen(false)}
+      />
+      <GroupRecordsModal
+        isOpen={isGroupRecordsModalOpen}
+        fields={controller.fields}
+        groupRule={controller.groupRule}
+        onChangeGroupRule={controller.setGroupRule}
+        onClose={() => setIsGroupRecordsModalOpen(false)}
+      />
+      <ExpandedTableModal
+        isOpen={isExpandedViewOpen}
+        controller={controller}
+        tableTitle={controller.embed?.node.name ?? controller.attrs.title ?? 'Таблица'}
+        selectColorToCss={selectColorToCss}
+        selectEditorRef={selectEditorRef}
+        onClose={() => setIsExpandedViewOpen(false)}
+        onCanvasKeyDown={(event: React.KeyboardEvent<HTMLCanvasElement>) => {
+          if (!controller.selection || controller.editingCell || controller.editingSelectCell || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) {
+            return;
+          }
+
+          if (isDirectEditKey(event)) {
+            event.preventDefault();
+            event.stopPropagation();
+            controller.canvasRef.current?.focus();
+            controller.beginEdit(controller.selection, { replaceValue: event.key });
+          }
+        }}
       />
     </NodeViewWrapper>
   );

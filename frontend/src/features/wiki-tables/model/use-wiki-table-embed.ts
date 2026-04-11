@@ -67,6 +67,32 @@ export type SortRulePayload = {
   desc: boolean;
 };
 
+export type FilterOperator = 'equals' | 'notEquals' | 'contains' | 'notContains' | 'empty' | 'notEmpty' | 'duplicates';
+
+export type FilterRule = {
+  id: string;
+  fieldId: string;
+  operator: FilterOperator;
+  value: string;
+};
+
+export type GroupRule = {
+  fieldId: string;
+  desc: boolean;
+};
+
+export type TableRow =
+  | {
+      kind: 'group';
+      key: string;
+      label: string;
+      count: number;
+    }
+  | {
+      kind: 'record';
+      record: MwsRecord;
+    };
+
 export type EditingSelectCell = CanvasSelection & {
   left: number;
   top: number;
@@ -83,6 +109,10 @@ type BeginEditOptions = {
 
 function createSortRuleId(seed: number) {
   return `sort-rule-${seed}`;
+}
+
+function createFilterRuleId(seed: number) {
+  return `filter-rule-${seed}`;
 }
 
 function readAttachmentName(value: unknown): string {
@@ -184,6 +214,119 @@ function sortRecords(records: MwsRecord[], fields: MwsField[], sortRules: SortRu
 
     return 0;
   });
+}
+
+function normalizeFilterValue(rawValue: unknown, field: MwsField): string {
+  return renderCell(rawValue, field).trim().toLowerCase();
+}
+
+function matchesFilterRule(record: MwsRecord, field: MwsField, rule: FilterRule, duplicateValues: Set<string>) {
+  const value = renderCell(getFieldValue(record, field), field).trim();
+  const normalized = value.toLowerCase();
+  const comparison = rule.value.trim().toLowerCase();
+
+  switch (rule.operator) {
+    case 'equals':
+      return normalized === comparison;
+    case 'notEquals':
+      return normalized !== comparison;
+    case 'contains':
+      return normalized.includes(comparison);
+    case 'notContains':
+      return !normalized.includes(comparison);
+    case 'empty':
+      return value.length === 0;
+    case 'notEmpty':
+      return value.length > 0;
+    case 'duplicates':
+      return duplicateValues.has(normalized);
+    default:
+      return true;
+  }
+}
+
+function filterRecords(records: MwsRecord[], fields: MwsField[], filterRules: FilterRule[]) {
+  if (filterRules.length === 0 || fields.length === 0) {
+    return records;
+  }
+
+  const fieldMap = new Map(fields.map((field) => [field.id, field] as const));
+  const duplicateKeys = new Map<string, number>();
+
+  for (const rule of filterRules) {
+    if (rule.operator !== 'duplicates') {
+      continue;
+    }
+
+    const field = fieldMap.get(rule.fieldId);
+    if (!field) {
+      continue;
+    }
+
+    records.forEach((record) => {
+      const normalized = normalizeFilterValue(getFieldValue(record, field), field);
+      if (!normalized) {
+        return;
+      }
+
+      duplicateKeys.set(`${field.id}:${normalized}`, (duplicateKeys.get(`${field.id}:${normalized}`) ?? 0) + 1);
+    });
+  }
+
+  return records.filter((record) =>
+    filterRules.every((rule) => {
+      const field = fieldMap.get(rule.fieldId);
+      if (!field) {
+        return true;
+      }
+
+      const duplicateValues = new Set(
+        [...duplicateKeys.entries()]
+          .filter(([key, count]) => key.startsWith(`${field.id}:`) && count > 1)
+          .map(([key]) => key.slice(field.id.length + 1)),
+      );
+
+      return matchesFilterRule(record, field, rule, duplicateValues);
+    }),
+  );
+}
+
+function buildGroupedRows(records: MwsRecord[], field: MwsField) {
+  const rows: TableRow[] = [];
+  let currentGroupKey: string | null = null;
+  let currentGroupLabel = '';
+  let currentGroupCount = 0;
+
+  const flushGroup = () => {
+    if (!currentGroupKey) {
+      return;
+    }
+
+    rows.push({
+      kind: 'group',
+      key: currentGroupKey,
+      label: currentGroupLabel || 'Без значения',
+      count: currentGroupCount,
+    });
+  };
+
+  for (const record of records) {
+    const groupLabel = renderCell(getFieldValue(record, field), field).trim() || 'Без значения';
+    const groupKey = groupLabel.toLowerCase();
+
+    if (currentGroupKey !== groupKey) {
+      flushGroup();
+      currentGroupKey = groupKey;
+      currentGroupLabel = groupLabel;
+      currentGroupCount = 0;
+    }
+
+    currentGroupCount += 1;
+    rows.push({ kind: 'record', record });
+  }
+
+  flushGroup();
+  return rows;
 }
 
 export function readAttachments(value: unknown): AttachmentItem[] {
@@ -369,6 +512,8 @@ export function clampText(ctx: CanvasRenderingContext2D, value: string, maxWidth
   return `${next}...`;
 }
 
+export type MwsTableEmbedController = ReturnType<typeof useWikiTableEmbed>;
+
 export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null | undefined) {
   const attrs = useMemo(() => WikiTableEmbed.fromNodeAttrs(rawAttrs).toJSON(), [rawAttrs]);
   const [data, setData] = useState<ResolveTableEmbedResponse | null>(null);
@@ -390,6 +535,8 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
   const [nowTs, setNowTs] = useState(() => Date.now());
   const [hiddenFieldIds, setHiddenFieldIds] = useState<string[]>([]);
   const [sortRules, setSortRules] = useState<SortRule[]>([]);
+  const [filterRules, setFilterRules] = useState<FilterRule[]>([]);
+  const [groupRule, setGroupRule] = useState<GroupRule | null>(null);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -533,25 +680,47 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
   }, [fields, hiddenFieldIds]);
   const capabilities = embed?.capabilities ?? {};
   const canInlineEdit = Boolean(attrs.allowInlineEdit && capabilities.canInlineEdit);
-  const hasMore = records.length < total;
   const gridWidth = INDEX_WIDTH + visibleFields.length * COLUMN_WIDTH;
   const updatedAgoSec = lastSyncedAt ? Math.max(0, Math.floor((nowTs - lastSyncedAt) / 1000)) : null;
   const nextRefreshInSec = nextRefreshAt ? Math.max(0, Math.ceil((nextRefreshAt - nowTs) / 1000)) : null;
   const sortedRecords = useMemo(() => sortRecords(records, fields, sortRules), [fields, records, sortRules]);
 
-  const visibleRecords = useMemo(() => {
+  const filteredRecords = useMemo(() => {
+    const baseRecords = filterRecords(sortedRecords, fields, filterRules);
     const normalized = searchQuery.trim().toLowerCase();
+
     if (!normalized) {
-      return sortedRecords;
+      return baseRecords;
     }
 
-    return sortedRecords.filter((record) =>
+    return baseRecords.filter((record) =>
       visibleFields.some((field) => renderCell(getFieldValue(record, field), field).toLowerCase().includes(normalized)),
     );
-  }, [searchQuery, sortedRecords, visibleFields]);
+  }, [fields, filterRules, searchQuery, sortedRecords, visibleFields]);
 
-  const gridHeight = HEADER_HEIGHT + Math.max(visibleRecords.length, 1) * ROW_HEIGHT;
-  const selectedRecord = selection ? visibleRecords[selection.rowIndex] : null;
+  const visibleRows = useMemo<TableRow[]>(() => {
+    if (!groupRule) {
+      return filteredRecords.map((record) => ({ kind: 'record', record }));
+    }
+
+    const groupField = fields.find((field) => field.id === groupRule.fieldId);
+    if (!groupField) {
+      return filteredRecords.map((record) => ({ kind: 'record', record }));
+    }
+
+    const groupedRecords = [...filteredRecords].sort((left, right) => {
+      const leftValue = normalizeSortValue(getFieldValue(left, groupField), groupField);
+      const rightValue = normalizeSortValue(getFieldValue(right, groupField), groupField);
+      const result = compareSortValues(leftValue, rightValue);
+      return groupRule.desc ? -result : result;
+    });
+
+    return buildGroupedRows(groupedRecords, groupField);
+  }, [fields, filteredRecords, groupRule]);
+
+  const gridHeight = HEADER_HEIGHT + Math.max(visibleRows.length, 1) * ROW_HEIGHT;
+  const selectedRow = selection ? visibleRows[selection.rowIndex] ?? null : null;
+  const selectedRecord = selectedRow && selectedRow.kind === 'record' ? selectedRow.record : null;
   const selectedField = selection ? visibleFields[selection.fieldIndex] ?? null : null;
   const selectedAttachments = useMemo(() => {
     if (!selectedRecord || !selectedField || selectedField.type !== 'Attachment') {
@@ -580,6 +749,8 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
 
     return () => observer.disconnect();
   }, []);
+
+  const hasMore = records.length < total;
 
   const loadNextPage = useCallback(async () => {
     if (!attrs.datasheetId || isLoading || isMutating || !hasMore) {
@@ -785,7 +956,11 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     const rowIndex = Math.floor((y + scrollOffset.top - HEADER_HEIGHT) / ROW_HEIGHT);
     const fieldIndex = Math.floor((x + scrollOffset.left - INDEX_WIDTH) / COLUMN_WIDTH);
 
-    if (rowIndex < 0 || rowIndex >= visibleRecords.length || fieldIndex < 0 || fieldIndex >= visibleFields.length) {
+    if (rowIndex < 0 || rowIndex >= visibleRows.length || fieldIndex < 0 || fieldIndex >= visibleFields.length) {
+      return null;
+    }
+
+    if (visibleRows[rowIndex]?.kind !== 'record') {
       return null;
     }
 
@@ -797,7 +972,8 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
       return;
     }
 
-    const record = visibleRecords[nextSelection.rowIndex];
+    const row = visibleRows[nextSelection.rowIndex];
+    const record = row && row.kind === 'record' ? row.record : null;
     const field = visibleFields[nextSelection.fieldIndex];
 
     if (!record || !field || !canInlineEdit || !EDITABLE_FIELD_TYPES.has(field.type)) {
@@ -848,7 +1024,8 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
       return;
     }
 
-    const record = visibleRecords[editingCell.rowIndex];
+    const row = visibleRows[editingCell.rowIndex];
+    const record = row && row.kind === 'record' ? row.record : null;
     const field = visibleFields[editingCell.fieldIndex];
     setEditingCell(null);
 
@@ -862,7 +1039,8 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
       return;
     }
 
-    const record = visibleRecords[editingSelectCell.rowIndex];
+    const row = visibleRows[editingSelectCell.rowIndex];
+    const record = row && row.kind === 'record' ? row.record : null;
     const field = visibleFields[editingSelectCell.fieldIndex];
     if (!record || !field || (field.type !== 'SingleSelect' && field.type !== 'MultiSelect')) {
       return;
@@ -879,7 +1057,8 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
       return;
     }
 
-    const record = visibleRecords[editingSelectCell.rowIndex];
+    const row = visibleRows[editingSelectCell.rowIndex];
+    const record = row && row.kind === 'record' ? row.record : null;
     const field = visibleFields[editingSelectCell.fieldIndex];
     if (!record || !field || (field.type !== 'SingleSelect' && field.type !== 'MultiSelect')) {
       return;
@@ -950,7 +1129,8 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     hasMore,
     gridWidth,
     gridHeight,
-    visibleRecords,
+    visibleRows,
+    filteredRecords,
     selectedRecord,
     selectedField,
     selectedAttachments,
@@ -958,6 +1138,10 @@ export function useWikiTableEmbed(rawAttrs: Partial<WikiTableEmbedAttrs> | null 
     setHiddenFieldIds,
     sortRules,
     setSortRules,
+    filterRules,
+    setFilterRules,
+    groupRule,
+    setGroupRule,
     loadEmbed,
     loadNextPage,
     createRow,
