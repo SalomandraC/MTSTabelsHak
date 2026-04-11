@@ -4,6 +4,8 @@ import type { MouseEvent } from 'react';
 
 import { handleListAction } from '../model/list-actions';
 import { menuBarStateSelector } from '../model/menu-state';
+import { getCanvasDrawSettings } from '../../plugins/model/plugin-registry';
+import { usePlugins } from '../../plugins';
 
 import VectorLeft from '../../../app/images/VectorLeft.svg';
 import VectorRight from '../../../app/images/VectorRight.svg';
@@ -171,6 +173,10 @@ function ToolbarButton({
 }
 
 export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }: PageEditorToolbarProps) {
+  const { items: plugins } = usePlugins();
+  const canvasSettings = getCanvasDrawSettings(plugins);
+  const showCanvasButton = plugins.some(p => p.id === 'canvas-draw' && p.enabled) && canvasSettings['toolbar'];
+
   const state =
     useEditorState({
       editor,
@@ -533,21 +539,25 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           isInGroup={true}
         />
 
-        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+        {showCanvasButton && (
+          <>
+            <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
-        <ToolbarButton
-          icon={
-            <Pencil className="h-4 w-4"
-              style={{ color: 'rgba(80, 87, 98, 1)' }}
+            <ToolbarButton
+              icon={
+                <Pencil className="h-4 w-4"
+                  style={{ color: 'rgba(80, 87, 98, 1)' }}
+                />
+              }
+              label="Canvas"
+              onClick={() => editor.chain().focus().insertCanvasBlock().run()}
+              isFirst={true}
+              isLast={true}
+              isInGroup={true}
+              aria-label="Вставить блок для рисования"
             />
-          }
-          label="Canvas"
-          onClick={() => editor.chain().focus().insertCanvasBlock().run()}
-          isFirst={true}
-          isLast={true}
-          isInGroup={true}
-          aria-label="Вставить блок для рисования"
-        />
+          </>
+        )}
 
         {state.isLink && state.linkHref ? (
           <div className="mx-1 inline-flex h-8 min-w-[15rem] items-center rounded-md border border-[#d2d8e3] bg-[#eef2ff] px-2 text-xs text-[#2a3962]">

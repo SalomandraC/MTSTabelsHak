@@ -57,14 +57,28 @@ export class PluginsService {
         scopeType: 'user',
       },
     });
-    const overrideMap = new Map(overrides.map((item: { pluginId: string; isEnabled: boolean }) => [item.pluginId, item.isEnabled]));
+    const overrideMap = new Map<string, { enabled: boolean; settings: string | null }>();
+    for (const item of overrides) {
+      overrideMap.set(item.pluginId, { enabled: item.isEnabled, settings: item.settings });
+    }
 
     const items = pluginDefinitions.map((definition) => {
       const planAllowed = isPlanAllowed(definition, planId);
-      const explicitState = overrideMap.get(definition.id);
+      const override = overrideMap.get(definition.id);
+      const explicitState = override?.enabled;
       const enabled = definition.kind === 'core'
         ? true
         : Boolean(planAllowed && definition.implemented && (explicitState ?? definition.defaultEnabled));
+
+      // merge settings: user overrides > defaults
+      let settings = definition.defaultSettings ?? {};
+      if (override?.settings) {
+        try {
+          settings = { ...settings, ...JSON.parse(override.settings) };
+        } catch {
+          // keep defaults if parse fails
+        }
+      }
 
       let status: PluginStatus = 'available';
       let lockedReason: string | null = null;
@@ -94,6 +108,7 @@ export class PluginsService {
         canToggle: definition.kind === 'optional' && planAllowed && definition.implemented,
         status,
         lockedReason,
+        settings,
       };
     });
 
@@ -157,6 +172,37 @@ export class PluginsService {
       },
       update: {
         isEnabled: false,
+      },
+    });
+
+    return this.getCatalogForUser(user);
+  }
+
+  async updatePluginSettings(user: UserContext, pluginId: string, settings: Record<string, boolean>) {
+    const definition = this.getOptionalImplementedPluginOrThrow(pluginId);
+    const planId = this.resolvePlanId(user);
+
+    if (!isPlanAllowed(definition, planId)) {
+      throw new BadRequestException('Plugin is not available for the current subscription plan');
+    }
+
+    await this.prisma.pluginActivation.upsert({
+      where: {
+        pluginId_scopeType_userId: {
+          pluginId,
+          scopeType: 'user',
+          userId: user.userId,
+        },
+      },
+      create: {
+        pluginId,
+        scopeType: 'user',
+        userId: user.userId,
+        isEnabled: true,
+        settings: JSON.stringify(settings),
+      },
+      update: {
+        settings: JSON.stringify(settings),
       },
     });
 

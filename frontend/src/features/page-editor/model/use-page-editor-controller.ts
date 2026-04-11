@@ -16,8 +16,9 @@ import type { SlashMenuItem } from '../../slash-menu';
 import { createPageEditorExtensions, initialContent } from './editor-config';
 import { formatFileSize, readFileAsDataUrl, validateImageFile } from './image-utils';
 import type { PageEditorSlashCommandItem } from './slash-command-items';
-import { slashCommandItems } from './slash-command-items';
+import { getSlashCommandItems } from './slash-command-items';
 import { base64ToBytes, bytesToBase64, readStoredDraft, writeStoredDraft } from './yjs-utils';
+import { usePlugins } from '../../plugins';
 
 type SlashState = {
   isOpen: boolean;
@@ -129,6 +130,7 @@ function getEditorMarkdown(editor: NonNullable<ReturnType<typeof useEditor>>): s
 }
 
 export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpoint }: UsePageEditorControllerOptions) {
+  const { items: plugins } = usePlugins();
   const [slashState, setSlashState] = useState<SlashState>(baseSlashState);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [saveStatus, setSaveStatus] = useState('Ожидаем страницу');
@@ -486,14 +488,16 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
     });
   };
 
+  const slashItems = useMemo(() => getSlashCommandItems(plugins), [plugins]);
+
   const filteredItems = useMemo(() => {
     if (!slashState.query) {
-      return slashCommandItems;
+      return slashItems;
     }
 
     const normalized = slashState.query.toLowerCase().trim();
 
-    return slashCommandItems.filter((item) => {
+    return slashItems.filter((item) => {
       return (
         item.label.toLowerCase().includes(normalized) ||
         item.keywords.some((keyword) => keyword.toLowerCase().includes(normalized))

@@ -5,6 +5,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { handleListAction } from '../model/list-actions';
 import { menuBarStateSelector } from '../model/menu-state';
+import { getCanvasDrawSettings } from '../../plugins/model/plugin-registry';
+import { usePlugins } from '../../plugins';
 import { wikiliveApi } from '../../../shared/api/wikilive';
 
 import B from '../../../app/images/B.svg';
@@ -78,6 +80,9 @@ function ToolbarButton({
 }
 
 export function FloatingToolbar({ editor, onOpenLinkModal, pageTitle }: FloatingToolbarProps) {
+  const { items: plugins } = usePlugins();
+  const canvasSettings = getCanvasDrawSettings(plugins);
+  const showCanvasButton = plugins.some(p => p.id === 'canvas-draw' && p.enabled) && canvasSettings['floating-toolbar'];
   const [visible, setVisible] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -369,15 +374,19 @@ export function FloatingToolbar({ editor, onOpenLinkModal, pageTitle }: Floating
         @
       </button>
 
-      <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+      {showCanvasButton && (
+        <>
+          <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
-      <ToolbarButton
-        icon={<Pencil className="h-3.5 w-3.5" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
-        onClick={() => editor.chain().focus().insertCanvasBlock().run()}
-        isFirst={true}
-        isLast={true}
-        aria-label="Вставить блок для рисования"
-      />
+          <ToolbarButton
+            icon={<Pencil className="h-3.5 w-3.5" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
+            onClick={() => editor.chain().focus().insertCanvasBlock().run()}
+            isFirst={true}
+            isLast={true}
+            aria-label="Вставить блок для рисования"
+          />
+        </>
+      )}
 
       <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 

@@ -487,6 +487,7 @@ export function WorkspacePage() {
     errorMessage: pluginsErrorMessage,
     pendingPluginId,
     togglePlugin,
+    updatePluginSettings: togglePluginSettings,
     isWorkspaceSidebarEnabled,
   } = usePlugins();
   const initialRoute = useMemo(() => readWorkspaceRoute(), []);
@@ -1159,6 +1160,7 @@ export function WorkspacePage() {
         pendingPluginId={pendingPluginId}
         onClose={() => setIsPluginsModalOpen(false)}
         onTogglePlugin={(pluginId, enabled) => void togglePlugin(pluginId, enabled)}
+        onToggleSettings={(pluginId, settings) => void togglePluginSettings(pluginId, settings)}
       />
       <MwsTableActionModal
         node={selectedTableNode}

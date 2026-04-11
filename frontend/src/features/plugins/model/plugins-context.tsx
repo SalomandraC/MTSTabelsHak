@@ -26,6 +26,7 @@ type PluginsContextValue = {
   pendingPluginId: string | null;
   refreshCatalog: () => Promise<void>;
   togglePlugin: (pluginId: string, enabled: boolean) => Promise<void>;
+  updatePluginSettings: (pluginId: string, settings: Record<string, boolean>) => Promise<void>;
   isPluginEnabled: (pluginId: string) => boolean;
   isWorkspaceSidebarEnabled: (slot: WorkspaceSidebarSlot) => boolean;
 };
@@ -83,6 +84,20 @@ export function PluginsProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const updatePluginSettings = useCallback(async (pluginId: string, settings: Record<string, boolean>) => {
+    setPendingPluginId(pluginId);
+    setErrorMessage('');
+
+    try {
+      const response = await wikiliveApi.updatePluginSettings(pluginId, settings);
+      setCatalog(response);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Не удалось обновить настройки плагина');
+    } finally {
+      setPendingPluginId(null);
+    }
+  }, []);
+
   const value = useMemo<PluginsContextValue>(() => ({
     items: catalog.items,
     plan: catalog.plan,
@@ -91,9 +106,10 @@ export function PluginsProvider({ children }: { children: ReactNode }) {
     pendingPluginId,
     refreshCatalog,
     togglePlugin,
+    updatePluginSettings,
     isPluginEnabled: (pluginId: string) => catalog.items.some((item) => item.id === pluginId && item.enabled),
     isWorkspaceSidebarEnabled: (slot: WorkspaceSidebarSlot) => isWorkspaceSidebarSlotEnabled(catalog.items, slot),
-  }), [catalog.items, catalog.plan, errorMessage, isLoading, pendingPluginId, refreshCatalog, togglePlugin]);
+  }), [catalog.items, catalog.plan, errorMessage, isLoading, pendingPluginId, refreshCatalog, togglePlugin, updatePluginSettings]);
 
   return <PluginsContext.Provider value={value}>{children}</PluginsContext.Provider>;
 }

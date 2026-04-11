@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { BrainCircuit, Boxes, Crown, GitBranch, MessageSquareQuote, ShieldCheck, Star, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { BrainCircuit, Boxes, Check, Crown, GitBranch, MessageSquareQuote, ShieldCheck, Star, X } from 'lucide-react';
 import type { PluginCatalogItem, PluginPlan } from '../../../shared/api/wikilive';
 import { ModalActionButton } from '../../../shared/ui';
 
@@ -12,6 +12,7 @@ type PluginsModalProps = {
   pendingPluginId: string | null;
   onClose: () => void;
   onTogglePlugin: (pluginId: string, enabled: boolean) => void;
+  onToggleSettings: (pluginId: string, settings: Record<string, boolean>) => void;
 };
 
 function getStatusLabel(item: PluginCatalogItem) {
@@ -103,6 +104,53 @@ function getPluginAccent(item: PluginCatalogItem) {
   }
 }
 
+type CanvasSettingsCheckboxesProps = {
+  pluginId: string;
+  settings: Record<string, boolean>;
+  isPending: boolean;
+  onToggle: (key: string) => void;
+};
+
+function CanvasSettingsCheckboxes({ settings, isPending, onToggle }: CanvasSettingsCheckboxesProps) {
+  const options = [
+    { key: 'toolbar', label: 'Основной тулбар' },
+    { key: 'floating-toolbar', label: 'Плавающее меню' },
+    { key: 'slash-menu', label: 'Slash-меню' },
+  ];
+
+  return (
+    <div className="mt-3 rounded-xl border border-editor-border-subtle bg-white/60 px-3 py-2.5">
+      <p className="text-xs font-medium text-editor-text-secondary">Отображение кнопок:</p>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
+        {options.map((opt) => (
+          <label
+            key={opt.key}
+            className="flex cursor-pointer items-center gap-2 text-sm text-editor-text-primary"
+          >
+            <span
+              role="checkbox"
+              tabIndex={0}
+              aria-checked={settings[opt.key]}
+              className={[
+                'flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors',
+                settings[opt.key]
+                  ? 'border-[#d81f44] bg-[#d81f44] text-white'
+                  : 'border-editor-border-control bg-white',
+                isPending ? 'opacity-50' : '',
+              ].join(' ')}
+              onClick={() => onToggle(opt.key)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggle(opt.key); }}
+            >
+              {settings[opt.key] ? <Check size={14} strokeWidth={3} /> : null}
+            </span>
+            {opt.label}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function PluginsModal({
   isOpen,
   items,
@@ -112,6 +160,7 @@ export function PluginsModal({
   pendingPluginId,
   onClose,
   onTogglePlugin,
+  onToggleSettings,
 }: PluginsModalProps) {
   useEffect(() => {
     if (!isOpen) {
@@ -209,6 +258,19 @@ export function PluginsModal({
                             <p className="mt-2 text-sm leading-6 text-editor-text-primary/85">{item.description}</p>
                           </div>
                         </div>
+
+                        {/* Canvas-draw sub-feature checkboxes */}
+                        {item.id === 'canvas-draw' && item.enabled && item.settings ? (
+                          <CanvasSettingsCheckboxes
+                            pluginId={item.id}
+                            settings={item.settings}
+                            isPending={isPending}
+                            onToggle={(key) => {
+                              const next = { ...item.settings, [key]: !item.settings?.[key] };
+                              onToggleSettings(item.id, next);
+                            }}
+                          />
+                        ) : null}
                         <div className="mt-4 flex flex-wrap gap-2 text-xs">
                           <span className="rounded-full border border-editor-border-subtle bg-white px-2.5 py-1 font-semibold text-editor-text-secondary">
                             {getCategoryLabel(item.category)}

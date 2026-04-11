@@ -12,6 +12,7 @@ export interface PluginDefinition {
   implemented: boolean;
   placement: string[];
   requiredPlans?: PluginPlanId[];
+  defaultSettings?: Record<string, boolean>;
 }
 
 export const pluginPlans = {
@@ -126,5 +127,10 @@ export const pluginDefinitions: PluginDefinition[] = [
     implemented: true,
     requiredPlans: ['pro', 'enterprise'],
     placement: ['Редактор', 'Тулбар редактора'],
+    defaultSettings: {
+      'toolbar': true,
+      'floating-toolbar': true,
+      'slash-menu': true,
+    },
   },
 ];
