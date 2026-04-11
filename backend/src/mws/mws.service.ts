@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   BadGatewayException,
   ForbiddenException,
   Injectable,
@@ -379,6 +380,15 @@ export class MwsService {
       this.redisService.delByPattern(`mws:fields:${datasheetId}:*`),
       this.redisService.del(`mws:views:${datasheetId}`),
     ]);
+  }
+
+  private resolveToken(user?: UserContext): string {
+    const token = user?.mwsToken ?? this.configService.get<string>('MWS_TABLES_API_TOKEN');
+    if (!token) {
+      throw new BadRequestException('MWS_TABLES_API_TOKEN is not configured');
+    }
+
+    return token;
   }
 
   private async request(
