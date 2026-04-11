@@ -1,6 +1,22 @@
 @import 'tailwindcss';
 @import 'highlight.js/styles/atom-one-dark.css';
 
+@font-face {
+  font-family: 'MTSWide';
+  src: url('/fonts/MTSWide-Bold-XQ34CV62.ttf') format('truetype');
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'MTSWide';
+  src: url('/fonts/MTSWide-Medium-MH5A5AEJ.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 @layer base {
   :root {
     color-scheme: light;
@@ -51,16 +67,24 @@
   
 @font-face {
   font-family: 'MTS Compact';
-  src: url('../../app/fonts/MTS-Compact.woff2') format('woff2');
-  font-weight: 300 700;
+  src: url('../../app/fonts/MTSWide-Medium-MH5A5AEJ.ttf') format('truetype');
+  font-weight: 400 600;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
   font-family: 'MTS Wide';
-  src: url('../../app/fonts/MTS-Wide.woff2') format('woff2');
-  font-weight: 400 700;
+  src: url('../../app/fonts/MTSWide-Medium-MH5A5AEJ.ttf') format('truetype');
+  font-weight: 400 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'MTS Wide';
+  src: url('../../app/fonts/MTSWide-Bold-XQ34CV62.ttf') format('truetype');
+  font-weight: 700;
   font-style: normal;
   font-display: swap;
 }
@@ -291,4 +315,19 @@
     background: var(--color-modal-secondary-bg);
     color: var(--color-modal-secondary-text);
   }
+}
+
+.PageEditorHeader,
+.PageEditorHeader *,
+.ProseMirror,
+.ProseMirror * {
+  font-family: 'MTSWide', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.PageEditorHeader strong,
+.PageEditorHeader b,
+.ProseMirror strong,
+.ProseMirror b {
+  font-family: 'MTSWide', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: bold;
 }

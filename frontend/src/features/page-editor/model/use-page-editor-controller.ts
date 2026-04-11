@@ -80,6 +80,7 @@ export function usePageEditorController() {
   const editor = useEditor({
     extensions,
     content: initialContent,
+    shouldRerenderOnTransaction: false,
     editorProps: {
       attributes: {
         class: 'tiptap h-full min-h-full',

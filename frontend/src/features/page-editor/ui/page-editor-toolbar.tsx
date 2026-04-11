@@ -15,6 +15,9 @@ import H3 from '../../../app/images/H3.svg';
 import T from '../../../app/images/T.svg';
 import T1 from '../../../app/images/T1.svg';
 import U from '../../../app/images/U.svg';
+import AlignLeft from '../../../app/images/AlignLeft.svg';
+import AlignCenter from '../../../app/images/AlignCenter.svg';
+import AlignRight from '../../../app/images/AlignRight.svg';
 
 import {
   List,
@@ -24,6 +27,9 @@ import {
   Image,
   BrushCleaning,
   ListChecks,
+  TextAlignEnd,
+  TextAlignStart,
+  TextAlignCenter,
 } from 'lucide-react';
 
 const redFilter = 'brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(2665%) hue-rotate(346deg) brightness(101%) contrast(97%)';
@@ -50,6 +56,57 @@ type ToolbarButtonProps = {
 
   onClick: ((event: React.MouseEvent<HTMLButtonElement>) => void) | (() => void);
 };
+
+function areMenuStatesEqual(
+  previous: ReturnType<typeof menuBarStateSelector> | null,
+  next: ReturnType<typeof menuBarStateSelector> | null,
+) {
+  if (previous === next) {
+    return true;
+  }
+
+  if (!previous || !next) {
+    return false;
+  }
+
+  return (
+    previous.isBold === next.isBold &&
+    previous.canBold === next.canBold &&
+    previous.isItalic === next.isItalic &&
+    previous.canItalic === next.canItalic &&
+    previous.isStrike === next.isStrike &&
+    previous.canStrike === next.canStrike &&
+    previous.isCode === next.isCode &&
+    previous.canCode === next.canCode &&
+    previous.isUnderline === next.isUnderline &&
+    previous.canUnderline === next.canUnderline &&
+    previous.canClearNodes === next.canClearNodes &&
+    previous.isParagraph === next.isParagraph &&
+    previous.isHeading1 === next.isHeading1 &&
+    previous.isHeading2 === next.isHeading2 &&
+    previous.isHeading3 === next.isHeading3 &&
+    previous.isAlignLeft === next.isAlignLeft &&
+    previous.isAlignCenter === next.isAlignCenter &&
+    previous.isAlignRight === next.isAlignRight &&
+    previous.isBulletList === next.isBulletList &&
+    previous.canBulletList === next.canBulletList &&
+    previous.isOrderedList === next.isOrderedList &&
+    previous.canOrderedList === next.canOrderedList &&
+    previous.isTaskList === next.isTaskList &&
+    previous.canTaskList === next.canTaskList &&
+    previous.isBlockquote === next.isBlockquote &&
+    previous.isCodeBlock === next.isCodeBlock &&
+    previous.canCodeBlock === next.canCodeBlock &&
+    previous.isLink === next.isLink &&
+    previous.linkHref === next.linkHref &&
+    previous.linkLabel === next.linkLabel &&
+    previous.canUnsetLink === next.canUnsetLink &&
+    previous.isImageSelected === next.isImageSelected &&
+    previous.canUndo === next.canUndo &&
+    previous.canRedo === next.canRedo &&
+    previous.canClearFormatting === next.canClearFormatting
+  );
+}
 
 function ToolbarButton({ 
   label, 
@@ -95,8 +152,7 @@ function ToolbarButton({
     isInGroup 
       ? 'bg-transparent text-[rgba(80,87,98,1)] hover:bg-[#d5d9e0]' 
       : 'bg-transparent text-editor-icon hover:bg-[#e8ebf1] hover:text-editor-text-primary',
-    pressed && isInGroup ? 'border-red-500 !border-opacity-100' : '',
-    pressed && !isInGroup ? 'border-red-500 !border-opacity-100' : '',
+    pressed ? '!border-2 border-red-500 !border-opacity-100' : '',
     disabled ? 'cursor-not-allowed opacity-45 hover:bg-transparent' : '',
   ]
     .filter(Boolean)
@@ -120,6 +176,7 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
     useEditorState({
       editor,
       selector: menuBarStateSelector,
+      equalityFn: areMenuStatesEqual,
     }) ??
     {
       isBold: false,
@@ -152,7 +209,8 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
       isLink: false,
       linkHref: undefined,
       linkLabel: undefined,
-      isImage: false,
+      canUnsetLink: false,
+      isImageSelected: false,
       canUndo: false,
       canRedo: false,
       canClearFormatting: false,
@@ -212,7 +270,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           pressed={state.isBold}
           disabled={!state.canBold}
           noBorder={false}
-          size="sm"
           isFirst={true}  
           isLast={false}
           isInGroup={true}
@@ -231,7 +288,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           pressed={state.isItalic}
           disabled={!state.canItalic}
           noBorder={false}
-          size="sm"
           isFirst={false}
           isLast={false}
           isInGroup={true}
@@ -250,7 +306,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           pressed={state.isStrike}
           disabled={!state.canStrike}
           noBorder={false}
-          size="sm"
           isFirst={false}
           isLast={false}
           isInGroup={true}
@@ -269,7 +324,6 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           pressed={state.isUnderline}
           disabled={!state.canUnderline}
           noBorder={false}
-          size="sm"
           isFirst={false}
           isLast={true}
           isInGroup={true}
@@ -349,28 +403,43 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
         <ToolbarButton
-          label="L"
+          icon={
+            <TextAlignStart className="h-4 w-4" 
+              style={{ color: 'rgba(80, 87, 98, 1)' }} 
+            />
+          }
           onClick={() => alignSelection('left')}
           pressed={state.isAlignLeft}
           isFirst={true}
           isLast={false}
           isInGroup={true}
+          aria-label="Выровнять по левому краю"
         />
         <ToolbarButton
-          label="C"
+          icon={
+            <TextAlignCenter className="h-4 w-4" 
+              style={{ color: 'rgba(80, 87, 98, 1)' }} 
+            />
+          }
           onClick={() => alignSelection('center')}
           pressed={state.isAlignCenter}
           isFirst={false}
           isLast={false}
           isInGroup={true}
+          aria-label="Выровнять по центру"
         />
         <ToolbarButton
-          label="R"
+          icon={
+            <TextAlignEnd className="h-4 w-4" 
+              style={{ color: 'rgba(80, 87, 98, 1)' }} 
+            />
+          }
           onClick={() => alignSelection('right')}
           pressed={state.isAlignRight}
           isFirst={false}
           isLast={true}
           isInGroup={true}
+          aria-label="Выровнять по правому краю"
         />
 
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
@@ -396,8 +465,12 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           aria-label="Нумерованный список"
         />
         <ToolbarButton
-          icon={<ListChecks className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
-          onClick={() => handleListAction(editor, 'taskList')}
+          icon={
+            <ListChecks className="h-4 w-4" 
+              style={{ color: 'rgba(80, 87, 98, 1)' }} 
+            />
+          }
+          onClick={() => editor.chain().focus().toggleTaskList().run()}
           pressed={state.isTaskList}
           disabled={!state.canTaskList}
           isFirst={false}
@@ -427,7 +500,7 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           onClick={() => editor.chain().focus().toggleCodeBlock().run()}
           pressed={state.isCodeBlock}
           disabled={!state.canCodeBlock}
-          isFirst={false}
+          isFirst={true}
           isLast={true}
           isInGroup={true}
           aria-label="Блок кода"
