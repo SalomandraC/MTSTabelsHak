@@ -9,8 +9,10 @@ import {
   Query,
   UploadedFile,
   UseInterceptors,
+  Res,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { UserContext } from 'src/auth/user-context';
 import {
@@ -19,6 +21,7 @@ import {
   CreateMwsRecordsDto,
   CreateMwsTablePageDto,
   CreateMwsViewDto,
+  MoveMwsFieldDto,
   ResolveTableEmbedDto,
   UpdateMwsRecordsDto,
 } from './dto/mws.dto';
@@ -78,6 +81,27 @@ export class MwsController {
     @CurrentUser() user: UserContext,
   ) {
     return this.mwsService.createField(spaceId, datasheetId, dto, user);
+  }
+
+  @Delete('datasheets/:datasheetId/fields/:fieldId')
+  async deleteField(
+    @Param('datasheetId') datasheetId: string,
+    @Param('fieldId') fieldId: string,
+    @Query('spaceId') spaceId: string,
+    @CurrentUser() user: UserContext,
+  ) {
+    return this.mwsService.deleteField(spaceId, datasheetId, fieldId, user);
+  }
+
+  @Patch('datasheets/:datasheetId/views/:viewId/fields/:fieldId/index')
+  async moveField(
+    @Param('datasheetId') datasheetId: string,
+    @Param('viewId') viewId: string,
+    @Param('fieldId') fieldId: string,
+    @Body() dto: MoveMwsFieldDto,
+    @CurrentUser() user: UserContext,
+  ) {
+    return this.mwsService.moveField(datasheetId, viewId, fieldId, dto.index, user);
   }
 
   @Get('datasheets/:datasheetId/views')
@@ -160,5 +184,18 @@ export class MwsController {
     @CurrentUser() user: UserContext,
   ) {
     return this.mwsService.uploadAttachment(datasheetId, recordId, fieldId, file, user);
+  }
+
+  @Get('datasheets/:datasheetId/attachments')
+  async downloadAttachment(
+    @Param('datasheetId') datasheetId: string,
+    @Query('token') token: string,
+    @CurrentUser() user: UserContext,
+    @Res() response: Response,
+  ) {
+    const file = await this.mwsService.downloadAttachment(datasheetId, token, user);
+    response.setHeader('Content-Type', file.contentType || 'application/octet-stream');
+    response.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(file.fileName)}`);
+    response.send(file.buffer);
   }
 }

@@ -11,6 +11,7 @@ import {
   type WikiPage,
   wikiliveApi,
 } from '../../../shared/api/wikilive';
+import { createWikiTableEmbed, createWikiTableEmbedNode, type WikiTableSelection } from '../../wiki-tables';
 import type { SlashMenuItem } from '../../slash-menu';
 import { createPageEditorExtensions, initialContent } from './editor-config';
 import { formatFileSize, readFileAsDataUrl, validateImageFile } from './image-utils';
@@ -115,6 +116,16 @@ function getProviderUsers(provider: HocuspocusProvider): PresenceUser[] {
   });
 
   return [...users.values()];
+}
+
+function getEditorMarkdown(editor: NonNullable<ReturnType<typeof useEditor>>): string {
+  const markdownStorage = (editor.storage as { markdown?: { getMarkdown?: () => string } }).markdown;
+
+  if (markdownStorage?.getMarkdown) {
+    return markdownStorage.getMarkdown();
+  }
+
+  return editor.getText();
 }
 
 export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpoint }: UsePageEditorControllerOptions) {
@@ -263,13 +274,24 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
       createPageEditorExtensions({
         ydoc: collabState?.ydoc,
         provider: collabState?.provider,
+        requestAutocomplete: async (currentText: string) => {
+          const response = await wikiliveApi.aiAutocomplete({
+            currentText,
+            pageTitle: page?.title,
+            pageSnapshot: {
+              markdown: currentText,
+            },
+          });
+
+          return response.text;
+        },
         user: {
           id: userId,
           name: userDisplayName,
           color: userColor,
         },
       }),
-    [collabState?.provider, collabState?.ydoc, userColor, userDisplayName, userId],
+    [collabState?.provider, collabState?.ydoc, page?.title, userColor, userDisplayName, userId],
   );
 
   const resetImageModalState = () => {
@@ -654,6 +676,36 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
       return;
     }
 
+    if (item.id === 'ai-generate') {
+      setSlashState(baseSlashState);
+
+      const prompt = window.prompt('Введите запрос для AI генерации', 'Сформулируй краткий план текущей секции')?.trim();
+      if (!prompt) {
+        return;
+      }
+
+      void wikiliveApi.aiGenerate({
+        prompt,
+        pageTitle: page?.title,
+        pageSnapshot: {
+          markdown: editor ? getEditorMarkdown(editor) : page?.plainTextPreview ?? '',
+        },
+      }).then((response) => {
+        const generatedContent = response.document?.content;
+
+        if (Array.isArray(generatedContent) && generatedContent.length > 0) {
+          editor.chain().focus().insertContent(generatedContent as any).run();
+          return;
+        }
+
+        editor.chain().focus().insertContent(response.document as any).run();
+      }).catch((error) => {
+        setSaveStatus(error instanceof Error ? `AI generate error: ${error.message}` : 'AI generate error');
+      });
+
+      return;
+    }
+
     if (item.id === 'image') {
       setSlashState(baseSlashState);
       openImageModal();
@@ -673,22 +725,14 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
     setIsPagePickerOpen(false);
   };
 
-  const handleSelectTable = (table: {
-    spaceId: string;
-    nodeId: string;
-    datasheetId: string;
-    title: string;
-    viewId: string | null;
-    selectedFieldIds: string[];
-    pageSize: number;
-    allowInlineEdit: boolean;
-  }) => {
+  const handleSelectTable = (table: WikiTableSelection) => {
     if (!editor) {
       return;
     }
 
-    const attrs = {
+    const embed = createWikiTableEmbed({
       blockId: crypto.randomUUID(),
+      title: table.title,
       spaceId: table.spaceId,
       nodeId: table.nodeId,
       datasheetId: table.datasheetId,
@@ -698,14 +742,15 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
       filterByFormula: null,
       pageSize: table.pageSize,
       allowInlineEdit: table.allowInlineEdit,
-    };
+    });
+    const attrs = embed.toJson();
 
     const inserted = editor.commands.insertMwsTableEmbed(attrs);
 
     if (!inserted) {
       editor.commands.insertContent({
         type: 'rootblock',
-        content: [{ type: 'mwsTableEmbed', attrs }],
+        content: [createWikiTableEmbedNode(attrs)],
       });
     }
 

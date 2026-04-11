@@ -48,6 +48,16 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     },
   },
   {
+    id: 'ai-generate',
+    label: 'AI: Сгенерировать',
+    hint: 'Сгенерировать блок контента по prompt',
+    keywords: ['ai', 'generate', 'gpt', 'генерация', 'контент', 'текст'],
+    icon: 'AI',
+    run: () => {
+      // Handled in PageEditor controller with prompt flow.
+    },
+  },
+  {
     id: 'task-list',
     label: 'Чеклист',
     hint: 'Создать список задач с чекбоксами',

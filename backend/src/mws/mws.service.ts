@@ -1,7 +1,10 @@
 import {
-  BadGatewayException,
   BadRequestException,
+  BadGatewayException,
+  ForbiddenException,
   Injectable,
+  NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
@@ -150,6 +153,31 @@ export class MwsService {
     return { field: this.unwrapPayload(data) };
   }
 
+  async deleteField(spaceId: string, datasheetId: string, fieldId: string, user: UserContext) {
+    const data = await this.request(
+      user,
+      'DELETE',
+      `/spaces/${spaceId}/datasheets/${datasheetId}/fields/${fieldId}`,
+    );
+    await this.invalidateDatasheetCache(datasheetId);
+    return {
+      deleted: Boolean(this.unwrapPayload(data) ?? true),
+    };
+  }
+
+  async moveField(datasheetId: string, viewId: string, fieldId: string, index: number, user: UserContext) {
+    const data = await this.request(
+      user,
+      'PATCH',
+      `/datasheets/${datasheetId}/views/${viewId}/fields/${fieldId}`,
+      { index },
+    );
+    await this.invalidateDatasheetCache(datasheetId);
+    return {
+      moved: Boolean(this.unwrapPayload(data) ?? true),
+    };
+  }
+
   async listViews(datasheetId: string, user: UserContext) {
     const cacheKey = `mws:views:${datasheetId}`;
     return this.withCache(cacheKey, 300, async () => {
@@ -179,27 +207,32 @@ export class MwsService {
   ) {
     const cacheKey = `mws:records:${datasheetId}:${Buffer.from(JSON.stringify(query)).toString('base64')}`;
     return this.withCache(cacheKey, 10, async () => {
-      const data = await this.request(user, 'GET', `/datasheets/${datasheetId}/records`, undefined, query);
+      const data = await this.request(user, 'GET', `/datasheets/${datasheetId}/records`, undefined, this.normalizeRecordsQuery(query));
       const payload = this.unwrapPayload(data);
+      const nestedRecords = this.readNestedValue(payload, ['records']);
       return {
         items: this.readArray(payload, ['records', 'items']),
-        pageNum: Number(payload.pageNum ?? query.pageNum ?? 1),
-        pageSize: Number(payload.pageSize ?? query.pageSize ?? 50),
-        total: Number(payload.total ?? 0),
+        pageNum: Number(payload.pageNum ?? nestedRecords?.pageNum ?? query.pageNum ?? 1),
+        pageSize: Number(payload.pageSize ?? nestedRecords?.pageSize ?? query.pageSize ?? 50),
+        total: Number(payload.total ?? nestedRecords?.total ?? 0),
       };
     });
   }
 
   async createRecords(datasheetId: string, dto: CreateMwsRecordsDto, user: UserContext) {
-    const data = await this.request(user, 'POST', `/datasheets/${datasheetId}/records`, dto);
-    await this.invalidateDatasheetCache(datasheetId);
-    return { items: this.readArray(this.unwrapPayload(data), ['records', 'items']) };
+    const data = await this.request(user, 'POST', `/datasheets/${datasheetId}/records`, {
+      ...dto,
+      fieldKey: 'id',
+    });
+    return { items: data.data?.records ?? [] };
   }
 
   async updateRecords(datasheetId: string, dto: UpdateMwsRecordsDto, user: UserContext) {
-    const data = await this.request(user, 'PATCH', `/datasheets/${datasheetId}/records`, dto);
-    await this.invalidateDatasheetCache(datasheetId);
-    return { items: this.readArray(this.unwrapPayload(data), ['records', 'items']) };
+    const data = await this.request(user, 'PATCH', `/datasheets/${datasheetId}/records`, {
+      ...dto,
+      fieldKey: 'id',
+    });
+    return { items: data.data?.records ?? [] };
   }
 
   async deleteRecords(datasheetId: string, recordIds: string[], user: UserContext) {
@@ -241,6 +274,7 @@ export class MwsService {
             fieldKey: 'id',
             cellFormat: 'json',
             filterByFormula: dto.filterByFormula,
+            sort: dto.sort,
           },
           user,
         ),
@@ -294,6 +328,50 @@ export class MwsService {
     );
 
     return { attachment: this.unwrapPayload(data) };
+  }
+
+  async downloadAttachment(datasheetId: string, token: string, user: UserContext) {
+    const authToken = this.resolveToken(user);
+    if (!authToken) {
+      throw new BadRequestException({
+        code: 'MWS_TOKEN_REQUIRED',
+        message:
+          'MWS Tables token is required. Pass x-mws-token header or set MWS_TABLES_API_TOKEN in backend/.env or docker compose environment.',
+      });
+    }
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.request<ArrayBuffer>({
+          method: 'GET',
+          url: `${this.baseUrl}/datasheets/${datasheetId}/attachments`,
+          params: { token },
+          responseType: 'arraybuffer',
+          headers: {
+            Authorization: authToken.startsWith('Bearer ') ? authToken : `Bearer ${authToken}`,
+          },
+        }),
+      );
+
+      const contentType = String(response.headers['content-type'] ?? 'application/octet-stream');
+      const disposition = String(response.headers['content-disposition'] ?? '');
+      const fileName = this.extractFileNameFromContentDisposition(disposition) ?? `attachment-${Date.now()}`;
+
+      return {
+        buffer: Buffer.from(response.data),
+        contentType,
+        fileName,
+      };
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const message = error?.response?.data?.message ?? 'MWS Tables attachment download failed';
+      throw new BadGatewayException({
+        code: 'MWS_UPSTREAM_ERROR',
+        message,
+        upstream: 'MWS_TABLES',
+        upstreamStatus: status ?? 502,
+      });
+    }
   }
 
   private async withCache<T>(key: string, ttlSec: number, factory: () => Promise<T>): Promise<T> {
@@ -523,6 +601,11 @@ export class MwsService {
   }
 
   private readArray(payload: any, keys: string[]) {
+    const direct = this.readNestedValue(payload, keys);
+    if (Array.isArray(direct)) {
+      return direct;
+    }
+
     for (const key of keys) {
       if (Array.isArray(payload?.[key])) {
         return payload[key];
@@ -530,6 +613,36 @@ export class MwsService {
     }
 
     return Array.isArray(payload) ? payload : [];
+  }
+
+  private readNestedValue(payload: any, keys: string[]) {
+    let current = payload;
+
+    for (const key of keys) {
+      if (!current || typeof current !== 'object' || !(key in current)) {
+        return undefined;
+      }
+
+      current = current[key];
+    }
+
+    return current;
+  }
+
+  private normalizeRecordsQuery(query: Record<string, unknown>) {
+    const sort = query.sort;
+    if (typeof sort !== 'string' || !sort.trim()) {
+      return query;
+    }
+
+    try {
+      return {
+        ...query,
+        sort: JSON.parse(sort),
+      };
+    } catch {
+      return query;
+    }
   }
 
   private async invalidateNodeCache(spaceId: string) {
@@ -544,6 +657,7 @@ export class MwsService {
       this.redisService.del(`mws:views:${datasheetId}`),
     ]);
   }
+
 
   private async request(
     user: UserContext,
@@ -579,12 +693,26 @@ export class MwsService {
     } catch (error: any) {
       const status = error?.response?.status;
       const message = error?.response?.data?.message ?? 'MWS Tables request failed';
-      throw new BadGatewayException({
+      const payload = {
         code: 'MWS_UPSTREAM_ERROR',
         message,
         upstream: 'MWS_TABLES',
         upstreamStatus: status ?? 502,
-      });
+      };
+
+      if (status === 403) {
+        throw new ForbiddenException(payload);
+      }
+
+      if (status === 404) {
+        throw new NotFoundException(payload);
+      }
+
+      if (status === 401) {
+        throw new UnauthorizedException(payload);
+      }
+
+      throw new BadGatewayException(payload);
     }
   }
 
@@ -599,5 +727,23 @@ export class MwsService {
     return candidates
       .map((candidate) => candidate?.replace(/^Bearer\s+/i, '').trim())
       .find((candidate) => Boolean(candidate));
+  }
+
+  private extractFileNameFromContentDisposition(value: string): string | null {
+    if (!value) {
+      return null;
+    }
+
+    const utfMatch = value.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utfMatch?.[1]) {
+      try {
+        return decodeURIComponent(utfMatch[1]);
+      } catch {
+        return utfMatch[1];
+      }
+    }
+
+    const asciiMatch = value.match(/filename="?([^";]+)"?/i);
+    return asciiMatch?.[1] ?? null;
   }
 }

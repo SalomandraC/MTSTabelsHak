@@ -12,6 +12,8 @@ type RefreshResponse = {
   expiresInSec: number;
 };
 
+export type AuthSessionRefresh = RefreshResponse;
+
 export type MeResponse = {
   user: {
     userId: string;
@@ -47,7 +49,7 @@ export type PluginCatalogResponse = {
 
 let accessToken: string | null = null;
 let activeUser: MeResponse['user'] | null = null;
-let refreshInFlight: Promise<string | null> | null = null;
+let refreshInFlight: Promise<RefreshResponse | null> | null = null;
 
 function getDemoUserFromUrl(): MeResponse['user'] | null {
   const params = new URLSearchParams(window.location.search);
@@ -208,6 +210,24 @@ export type MwsField = {
   property?: Record<string, unknown>;
 };
 
+export type CreateMwsFieldPayload = {
+  spaceId: string;
+  name: string;
+  type: string;
+  property?: Record<string, unknown>;
+};
+
+export type UploadMwsAttachmentPayload = {
+  file: File;
+  recordId?: string | null;
+  fieldId?: string | null;
+};
+
+export type DownloadMwsAttachmentPayload = {
+  token: string;
+  fileName?: string | null;
+};
+
 export type MwsView = {
   id: string;
   name: string;
@@ -248,6 +268,10 @@ export type ResolveTableEmbedRequest = {
   pageSize?: number;
   filterByFormula?: string | null;
   allowInlineEdit?: boolean;
+  sort?: Array<{
+    fieldId: string;
+    desc: boolean;
+  }>;
 };
 
 export type ResolveTableEmbedResponse = {
@@ -267,6 +291,50 @@ export type ResolveTableEmbedResponse = {
     };
     openInMwsUrl?: string | null;
   };
+};
+
+export type AiTransformType = 'professional' | 'shorten' | 'expand' | 'fix_grammar';
+
+export type AiAutocompletePayload = {
+  currentText: string;
+  pageTitle?: string;
+  pageSnapshot?: Record<string, unknown>;
+};
+
+export type AiGeneratePayload = {
+  prompt: string;
+  pageTitle?: string;
+  pageSnapshot?: Record<string, unknown>;
+};
+
+export type AiTransformPayload = {
+  text: string;
+  transformation: AiTransformType;
+  pageTitle?: string;
+  pageSnapshot?: Record<string, unknown>;
+};
+
+export type AiChatPayload = {
+  question: string;
+  pageId?: string;
+  datasheetId?: string;
+  viewId?: string;
+  pageTitle?: string;
+  pageSnapshot?: Record<string, unknown>;
+};
+
+export type AiGenerateResponse = {
+  document: {
+    type: 'doc';
+    content: unknown[];
+  };
+};
+
+export type AiChatResponse = {
+  answer: string;
+  usedTools?: Array<{ toolName: string; args: Record<string, unknown> }>;
+  contextMarkdown?: string;
+  references?: Array<Record<string, unknown>>;
 };
 
 function toQueryString(query: RequestOptions['query']) {
@@ -320,7 +388,7 @@ function setActiveUser(user: MeResponse['user'] | null): void {
   activeUser = user;
 }
 
-async function refreshAccessToken(): Promise<string | null> {
+async function refreshAccessToken(): Promise<RefreshResponse | null> {
   if (refreshInFlight) {
     return refreshInFlight;
   }
@@ -342,7 +410,7 @@ async function refreshAccessToken(): Promise<string | null> {
 
     const payload = (await response.json()) as RefreshResponse;
     setAccessToken(payload.accessToken);
-    return payload.accessToken;
+    return payload;
   })().finally(() => {
     refreshInFlight = null;
   });
@@ -383,8 +451,8 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   const isAuthEndpoint = path.startsWith('/api/v1/auth/');
   if (response.status === 401 && authMode === 'required' && !skipAuthRetry && !isAuthEndpoint) {
-    const token = await refreshAccessToken();
-    if (token) {
+    const session = await refreshAccessToken();
+    if (session?.accessToken) {
       return request<T>(path, {
         ...options,
         skipAuthRetry: true,
@@ -401,6 +469,17 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   return response.json() as Promise<T>;
+}
+
+async function requestWithAuth<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  if (!accessToken) {
+    await refreshAccessToken();
+  }
+
+  return request<T>(path, {
+    ...options,
+    authMode: 'required',
+  });
 }
 
 export const wikiliveApi = {
@@ -428,22 +507,28 @@ export const wikiliveApi = {
     return response;
   },
   async restoreSession() {
-    const token = await refreshAccessToken();
-    if (!token) {
+    const session = await refreshAccessToken();
+    if (!session) {
       if (!getDemoUserFromUrl()) {
         return null;
       }
 
       try {
         const me = await this.getMe();
-        return me.user;
+        return {
+          user: me.user,
+          expiresInSec: null,
+        };
       } catch {
         return null;
       }
     }
 
     const me = await this.getMe();
-    return me.user;
+    return {
+      user: me.user,
+      expiresInSec: session.expiresInSec,
+    };
   },
   listPlugins() {
     return request<PluginCatalogResponse>('/api/v1/plugins/catalog');
@@ -584,6 +669,29 @@ export const wikiliveApi = {
       query: { viewId },
     });
   },
+  createMwsField(datasheetId: string, payload: CreateMwsFieldPayload) {
+    return request<{ field: MwsField }>(`/api/v1/mws/datasheets/${datasheetId}/fields`, {
+      method: 'POST',
+      query: { spaceId: payload.spaceId },
+      body: JSON.stringify({
+        name: payload.name,
+        type: payload.type,
+        property: payload.property,
+      }),
+    });
+  },
+  deleteMwsField(datasheetId: string, fieldId: string, spaceId: string) {
+    return request<{ deleted: boolean }>(`/api/v1/mws/datasheets/${datasheetId}/fields/${fieldId}`, {
+      method: 'DELETE',
+      query: { spaceId },
+    });
+  },
+  moveMwsField(datasheetId: string, viewId: string, fieldId: string, index: number) {
+    return request<{ moved: boolean }>(`/api/v1/mws/datasheets/${datasheetId}/views/${viewId}/fields/${fieldId}/index`, {
+      method: 'PATCH',
+      body: JSON.stringify({ index }),
+    });
+  },
   listMwsViews(datasheetId: string) {
     return request<{ items: MwsView[] }>(`/api/v1/mws/datasheets/${datasheetId}/views`);
   },
@@ -593,6 +701,10 @@ export const wikiliveApi = {
     pageNum?: number;
     fields?: string[];
     filterByFormula?: string | null;
+    sort?: Array<{
+      fieldId: string;
+      desc: boolean;
+    }>;
   } = {}) {
     return request<MwsRecordList>(`/api/v1/mws/datasheets/${datasheetId}/records`, {
       query: {
@@ -603,6 +715,7 @@ export const wikiliveApi = {
         filterByFormula: query.filterByFormula,
         fieldKey: 'id',
         cellFormat: 'json',
+        sort: query.sort ? JSON.stringify(query.sort) : undefined,
       },
     });
   },
@@ -629,6 +742,104 @@ export const wikiliveApi = {
       method: 'DELETE',
     });
   },
+  async uploadMwsAttachment(
+    datasheetId: string,
+    payload: UploadMwsAttachmentPayload,
+  ): Promise<{
+    attachment: {
+      token?: string;
+      name?: string;
+      mimeType?: string;
+      size?: number;
+      url?: string;
+    };
+  }> {
+    const demoUser = getDemoUserFromUrl();
+    const formData = new FormData();
+    formData.append('file', payload.file);
+
+    const headers = new Headers();
+    if (accessToken) {
+      headers.set('Authorization', `Bearer ${accessToken}`);
+    } else if (demoUser) {
+      headers.set('x-user-id', demoUser.userId);
+      headers.set('x-user-name', demoUser.displayName);
+    }
+
+    const response = await fetch(
+      `${API_BASE_URL}/api/v1/mws/datasheets/${datasheetId}/attachments${toQueryString({
+        recordId: payload.recordId,
+        fieldId: payload.fieldId,
+      })}`,
+      {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+        headers,
+      },
+    );
+
+    if (response.status === 401) {
+      const session = await refreshAccessToken();
+      if (session?.accessToken) {
+        return this.uploadMwsAttachment(datasheetId, payload);
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(await parseErrorMessage(response));
+    }
+    return response.json() as Promise<{
+      attachment: {
+        token?: string;
+        name?: string;
+        mimeType?: string;
+        size?: number;
+        url?: string;
+      };
+    }>;
+  },
+  async downloadMwsAttachment(datasheetId: string, payload: DownloadMwsAttachmentPayload): Promise<void> {
+    const demoUser = getDemoUserFromUrl();
+    const headers = new Headers();
+
+    if (accessToken) {
+      headers.set('Authorization', `Bearer ${accessToken}`);
+    } else if (demoUser) {
+      headers.set('x-user-id', demoUser.userId);
+      headers.set('x-user-name', demoUser.displayName);
+    }
+
+    const response = await fetch(
+      `${API_BASE_URL}/api/v1/mws/datasheets/${datasheetId}/attachments${toQueryString({ token: payload.token })}`,
+      {
+        method: 'GET',
+        credentials: 'include',
+        headers,
+      },
+    );
+
+    if (response.status === 401) {
+      const session = await refreshAccessToken();
+      if (session?.accessToken) {
+        return this.downloadMwsAttachment(datasheetId, payload);
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(await parseErrorMessage(response));
+    }
+
+    const blob = await response.blob();
+    const objectUrl = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = payload.fileName?.trim() || `attachment-${Date.now()}`;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.URL.revokeObjectURL(objectUrl);
+  },
   resolveTableEmbed(payload: ResolveTableEmbedRequest) {
     return request<ResolveTableEmbedResponse>('/api/v1/mws/table-embeds/resolve', {
       method: 'POST',
@@ -644,6 +855,30 @@ export const wikiliveApi = {
         datasheetId: payload.datasheetId ?? undefined,
         title: payload.title,
       }),
+    });
+  },
+  aiAutocomplete(payload: AiAutocompletePayload) {
+    return requestWithAuth<{ text: string }>('/api/v1/ai/autocomplete', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiGenerate(payload: AiGeneratePayload) {
+    return requestWithAuth<AiGenerateResponse>('/api/v1/ai/generate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiTransform(payload: AiTransformPayload) {
+    return requestWithAuth<{ text: string }>('/api/v1/ai/transform', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiChat(payload: AiChatPayload) {
+    return requestWithAuth<AiChatResponse>('/api/v1/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 };

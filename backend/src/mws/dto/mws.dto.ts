@@ -2,6 +2,7 @@ import {
   IsArray,
   IsBoolean,
   IsInt,
+  IsNotEmpty,
   IsObject,
   IsOptional,
   IsString,
@@ -29,14 +30,22 @@ export class CreateMwsDatasheetDto {
 
 export class CreateMwsFieldDto {
   @IsString()
+  @IsNotEmpty()
   name!: string;
 
   @IsString()
+  @IsNotEmpty()
   type!: string;
 
   @IsOptional()
   @IsObject()
   property?: Record<string, unknown>;
+}
+
+export class MoveMwsFieldDto {
+  @IsInt()
+  @Min(1)
+  index!: number;
 }
 
 export class CreateMwsViewDto {
@@ -98,6 +107,13 @@ export class ResolveTableEmbedDto {
   @IsOptional()
   @IsBoolean()
   allowInlineEdit?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  sort?: Array<{
+    fieldId: string;
+    desc?: boolean;
+  }>;
 }
 
 export class CreateMwsTablePageDto {
