@@ -84,6 +84,28 @@ export type PageDocumentState = {
   persistedAt: string | null;
 };
 
+export type PageHistoryTrigger = 'editor_idle' | 'before_unload' | 'manual' | 'reconnect' | 'collab_store' | 'restore';
+
+export type PageHistoryItem = {
+  id: string;
+  serverVersion: number;
+  trigger: PageHistoryTrigger;
+  createdBy: string | null;
+  createdByName: string | null;
+  createdAt: string;
+  excerpt: string | null;
+  restoredFromCheckpointId: string | null;
+};
+
+export type PageHistoryCheckpoint = {
+  checkpoint: PageHistoryItem;
+  documentState: PageDocumentState;
+  document: {
+    type: string;
+    content?: unknown[];
+  };
+};
+
 export type PageEmbed = {
   id: string;
   type: 'mwsTableEmbed';
@@ -144,6 +166,32 @@ export type PresenceUser = {
   displayName: string;
   color: string;
   avatarUrl?: string | null;
+};
+
+export type CommentThreadStatus = 'open' | 'resolved';
+
+export type PageCommentMessage = {
+  id: string;
+  threadId: string;
+  body: string;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PageCommentThread = {
+  id: string;
+  pageId: string;
+  anchorText: string;
+  status: CommentThreadStatus;
+  createdBy: string;
+  createdByName: string;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  messages: PageCommentMessage[];
 };
 
 export type CollabSession = {
@@ -618,6 +666,40 @@ export const wikiliveApi = {
   getOutgoingLinks(pageId: string) {
     return request<{ items: OutgoingLink[] }>(`/api/v1/pages/${pageId}/outgoing-links`);
   },
+  getComments(pageId: string, includeResolved = true) {
+    return request<{ items: PageCommentThread[] }>(`/api/v1/pages/${pageId}/comments`, {
+      query: { includeResolved },
+    });
+  },
+  createCommentThread(pageId: string, payload: { threadId: string; anchorText: string; body: string }) {
+    return request<{ thread: PageCommentThread }>(`/api/v1/pages/${pageId}/comments/threads`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  addCommentMessage(pageId: string, threadId: string, payload: { body: string }) {
+    return request<{ thread: PageCommentThread }>(`/api/v1/pages/${pageId}/comments/threads/${threadId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  updateCommentMessage(pageId: string, threadId: string, messageId: string, payload: { body: string }) {
+    return request<{ thread: PageCommentThread }>(`/api/v1/pages/${pageId}/comments/threads/${threadId}/messages/${messageId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+  deleteCommentMessage(pageId: string, threadId: string, messageId: string) {
+    return request<{ thread: PageCommentThread }>(`/api/v1/pages/${pageId}/comments/threads/${threadId}/messages/${messageId}`, {
+      method: 'DELETE',
+    });
+  },
+  updateCommentThread(pageId: string, threadId: string, payload: { status: CommentThreadStatus }) {
+    return request<{ thread: PageCommentThread }>(`/api/v1/pages/${pageId}/comments/threads/${threadId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
   openCollabSession(pageId: string, payload: {
     clientId: string;
     deviceId: string;
@@ -641,13 +723,19 @@ export const wikiliveApi = {
       }),
     });
   },
-  createCheckpoint(pageId: string, value: string, trigger: 'editor-idle' | 'manual' | 'before-unload' | 'reconnect' = 'editor-idle') {
+  createCheckpoint(
+    pageId: string,
+    value: string,
+    trigger: 'editor-idle' | 'manual' | 'before-unload' | 'reconnect' | 'restore' = 'editor-idle',
+    restoredFromCheckpointId?: string | null,
+  ) {
     return request<{ checkpointId: string; persistedAt: string; serverVersion: number }>(
       `/api/v1/pages/${pageId}/checkpoints`,
       {
         method: 'POST',
         body: JSON.stringify({
           trigger,
+          restoredFromCheckpointId: restoredFromCheckpointId ?? undefined,
           documentState: {
             encoding: 'base64-yjs-update-v2',
             value,
@@ -655,6 +743,14 @@ export const wikiliveApi = {
         }),
       },
     );
+  },
+  listPageHistory(pageId: string, limit = 50) {
+    return request<{ items: PageHistoryItem[] }>(`/api/v1/pages/${pageId}/history`, {
+      query: { limit },
+    });
+  },
+  getPageHistoryCheckpoint(pageId: string, checkpointId: string) {
+    return request<PageHistoryCheckpoint>(`/api/v1/pages/${pageId}/history/${checkpointId}`);
   },
   listMwsSpaces() {
     return request<{ items: MwsSpace[] }>('/api/v1/mws/spaces');

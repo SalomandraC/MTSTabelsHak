@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { HocuspocusProvider } from '@hocuspocus/provider';
+import type { Content } from '@tiptap/core';
 import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
 
@@ -47,6 +48,7 @@ type UsePageEditorControllerOptions = {
   page: WikiPage | null;
   onRenamePage: (title: string) => Promise<void>;
   onCheckpoint: () => Promise<void>;
+  onOpenCommentThread?: (threadId: string) => void;
   isAiSlashEnabled: boolean;
   isAiEditorExtensionEnabled: boolean;
 };
@@ -135,6 +137,7 @@ export function usePageEditorController({
   page,
   onRenamePage,
   onCheckpoint,
+  onOpenCommentThread,
   isAiSlashEnabled,
   isAiEditorExtensionEnabled,
 }: UsePageEditorControllerOptions) {
@@ -304,8 +307,18 @@ export function usePageEditorController({
           name: userDisplayName,
           color: userColor,
         },
+        onOpenCommentThread,
       }),
-    [collabState?.provider, collabState?.ydoc, isAiEditorExtensionEnabled, page?.title, userColor, userDisplayName, userId],
+    [
+      collabState?.provider,
+      collabState?.ydoc,
+      isAiEditorExtensionEnabled,
+      onOpenCommentThread,
+      page?.title,
+      userColor,
+      userDisplayName,
+      userId,
+    ],
   );
 
   const resetImageModalState = () => {
@@ -328,6 +341,14 @@ export function usePageEditorController({
     setImageFileSizeLabel('');
     setImagePreviewSrc('');
   }, []);
+
+  const getCurrentDocumentStateValue = useCallback(() => {
+    if (!collabState) {
+      return null;
+    }
+
+    return bytesToBase64(Y.encodeStateAsUpdate(collabState.ydoc));
+  }, [collabState]);
 
   const editor = useEditor(
     {
@@ -717,11 +738,11 @@ export function usePageEditorController({
         const generatedContent = response.document?.content;
 
         if (Array.isArray(generatedContent) && generatedContent.length > 0) {
-          editor.chain().focus().insertContent(generatedContent as any).run();
+          editor.chain().focus().insertContent(generatedContent as Content).run();
           return;
         }
 
-        editor.chain().focus().insertContent(response.document as any).run();
+        editor.chain().focus().insertContent(response.document as Content).run();
       }).catch((error) => {
         setSaveStatus(error instanceof Error ? `AI generate error: ${error.message}` : 'AI generate error');
       });
@@ -917,5 +938,6 @@ export function usePageEditorController({
       onFileSelect: handleSelectImageFile,
       onConfirm: handleConfirmImageInsert,
     },
+    getCurrentDocumentStateValue,
   };
 }

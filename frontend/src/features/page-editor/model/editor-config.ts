@@ -39,6 +39,7 @@ import { Markdown } from 'tiptap-markdown';
 import { MwsTableEmbed } from '../../wiki-tables';
 import { AIGhostTextExtension } from '../../plugins/ai-assistant';
 import { CodeBlockComponent } from '../ui/code-block-component.tsx';
+import { CommentAnchor } from './comment-anchor';
 import { ImageBlock } from './image-block';
 import { PageLink } from './page-link';
 import { RootBlock } from './root-block';
@@ -102,6 +103,7 @@ type PageEditorExtensionOptions = {
     name: string;
     color: string;
   };
+  onOpenCommentThread?: (threadId: string) => void;
 };
 
 export function createPageEditorExtensions(options: PageEditorExtensionOptions = {}) {
@@ -119,6 +121,9 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     RootBlock,
     ImageBlock,
     PageLink,
+    CommentAnchor.configure({
+      onOpenThread: options.onOpenCommentThread,
+    }),
     MwsTableEmbed,
     TaskList,
     TaskItem.configure({ nested: true }),

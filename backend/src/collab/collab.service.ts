@@ -66,6 +66,7 @@ export class CollabService {
       dto.documentState.value,
       user,
       dto.trigger,
+      dto.restoredFromCheckpointId,
     );
   }
 

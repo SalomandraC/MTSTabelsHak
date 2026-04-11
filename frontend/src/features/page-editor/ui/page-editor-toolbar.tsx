@@ -24,11 +24,7 @@ import BrushCleaning from '../../../app/images/brush-cleaning.svg';
 import AtSign from '../../../app/images/at-sign.svg';
 import Picture from '../../../app/images/Picture.svg';
 
-import {
-  TextAlignEnd,
-  TextAlignStart,
-  TextAlignCenter,
-} from 'lucide-react';
+import { History, MessageSquare, TextAlignCenter, TextAlignEnd, TextAlignStart } from 'lucide-react';
 
 const redFilter = 'brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(2665%) hue-rotate(346deg) brightness(101%) contrast(97%)';
 
@@ -36,6 +32,9 @@ type PageEditorToolbarProps = {
   editor: Editor | null;
   onOpenLinkModal: (position?: { top: number; left: number }) => void;
   onOpenImageModal: () => void;
+  onCreateComment?: (editor: Editor) => void;
+  onOpenTimeMachine?: () => void;
+  commentCount?: number;
 };
 
 type ToolbarButtonProps = {
@@ -169,7 +168,14 @@ function ToolbarButton({
   );
 }
 
-export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }: PageEditorToolbarProps) {
+export function PageEditorToolbar({
+  editor,
+  onOpenLinkModal,
+  onOpenImageModal,
+  onCreateComment,
+  onOpenTimeMachine,
+  commentCount = 0,
+}: PageEditorToolbarProps) {
   const state =
     useEditorState({
       editor,
@@ -513,7 +519,35 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal }:
           isFirst={true}
           isLast={true}
           isInGroup={true}
+          aria-label="Вставить ссылку"
         />
+
+        {onCreateComment ? (
+          <ToolbarButton
+            icon={
+              <span className="flex items-center gap-1 px-0.5">
+                <MessageSquare className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />
+                {commentCount > 0 ? <span className="text-[11px] font-semibold">{commentCount}</span> : null}
+              </span>
+            }
+            onClick={() => onCreateComment(editor)}
+            isFirst={true}
+            isLast={true}
+            isInGroup={true}
+            aria-label="Комментировать выделение"
+          />
+        ) : null}
+
+        {onOpenTimeMachine ? (
+          <ToolbarButton
+            icon={<History className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
+            onClick={onOpenTimeMachine}
+            isFirst={true}
+            isLast={true}
+            isInGroup={true}
+            aria-label="Открыть машину времени"
+          />
+        ) : null}
 
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
