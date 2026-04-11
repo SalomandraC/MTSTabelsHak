@@ -46,6 +46,8 @@ export class AiToolRegistryService {
           return await this.createRecords(args, user, context);
         case 'patch_records':
           return await this.patchRecords(args, user, context);
+        case 'get_records':
+          return await this.getRecords(args, user, context);
         case 'delete_records':
           return await this.deleteRecords(args, user, context);
         case 'smart_import':
@@ -99,6 +101,28 @@ export class AiToolRegistryService {
     } as any, user);
 
     return this.success('patch_records', result, context.pageId);
+  }
+
+  private async getRecords(
+    args: Record<string, unknown>,
+    user: UserContext,
+    context: ToolExecutionContext,
+  ): Promise<ToolExecutionSuccess> {
+    const result = await this.mwsService.listRecords(
+      String(args.datasheetId),
+      {
+        viewId: typeof args.viewId === 'string' ? args.viewId : undefined,
+        pageSize: typeof args.pageSize === 'number' ? args.pageSize : 20,
+        pageNum: typeof args.pageNum === 'number' ? args.pageNum : 1,
+        fields: Array.isArray(args.fields) ? args.fields.join(',') : undefined,
+        filterByFormula: typeof args.filterByFormula === 'string' ? args.filterByFormula : undefined,
+        fieldKey: 'id',
+        cellFormat: typeof args.cellFormat === 'string' ? args.cellFormat : 'json',
+      },
+      user,
+    );
+
+    return this.success('get_records', result, context.pageId);
   }
 
   private async deleteRecords(

@@ -8,10 +8,11 @@ import { WikiDocumentInjectionService } from './wiki-document-injection.service'
 import { AiProviderClientService } from './ai-provider-client.service';
 import { AiAssistantService } from './ai-assistant.service';
 import { AiChatService } from './ai-chat.service';
+import { AiSmokeTestController } from './ai-smoke-test.controller';
 
 @Module({
   imports: [HttpModule, MwsModule, CollabModule],
-  controllers: [AiToolsController],
+  controllers: [AiToolsController, AiSmokeTestController],
   providers: [
     AiProviderClientService,
     AiAssistantService,

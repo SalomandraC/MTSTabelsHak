@@ -7,9 +7,10 @@ export type AiChatRole = 'system' | 'user' | 'assistant' | 'tool';
 
 export interface AiChatMessage {
   role: AiChatRole;
-  content: string;
+  content?: string;
   name?: string;
   tool_call_id?: string;
+  tool_calls?: AiToolCall[];
 }
 
 export interface AiToolCall {
@@ -59,14 +60,17 @@ export class AiProviderClientService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {
-    this.baseUrl = this.configService.get<string>('AI_PROVIDER_BASE_URL', 'https://api.openai.com/v1');
-    this.apiKey = this.configService.get<string>('AI_PROVIDER_API_KEY') ?? undefined;
-    this.model = this.configService.get<string>('AI_PROVIDER_MODEL', 'gpt-4.1-mini');
+    this.baseUrl = this.configService.get<string>('MWS_AI_BASE_URL', 'https://api.gpt.mws.ru/v1');
+    this.apiKey =
+      this.configService.get<string>('MWS_AI_TOKEN') ??
+      this.configService.get<string>('AI_PROVIDER_API_KEY') ??
+      undefined;
+    this.model = this.configService.get<string>('MWS_AI_MODEL', 'kimi-k2-instruct');
   }
 
   async complete(request: AiChatRequest): Promise<AiChatResponse> {
     if (!this.apiKey) {
-      throw new InternalServerErrorException('AI_PROVIDER_API_KEY is required');
+      throw new InternalServerErrorException('MWS_AI_TOKEN is required');
     }
 
     const response = await firstValueFrom(

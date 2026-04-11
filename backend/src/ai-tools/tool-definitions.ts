@@ -62,6 +62,26 @@ const patchRecordsSchema: JsonSchema = {
   additionalProperties: false,
 };
 
+const getRecordsSchema: JsonSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  required: ['datasheetId'],
+  properties: {
+    datasheetId: { type: 'string', minLength: 1 },
+    viewId: { type: 'string' },
+    pageSize: { type: 'integer', minimum: 1, maximum: 1000 },
+    pageNum: { type: 'integer', minimum: 1, maximum: 1000 },
+    fields: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    filterByFormula: { type: 'string' },
+    fieldKey: { type: 'string', enum: ['id'] },
+    cellFormat: { type: 'string', enum: ['json', 'string'] },
+  },
+  additionalProperties: false,
+};
+
 const deleteRecordsSchema: JsonSchema = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   type: 'object',
@@ -118,6 +138,14 @@ export const AI_TOOL_DEFINITIONS: FunctionToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'get_records',
+      description: 'Read rows from MWS datasheet by datasheetId using canonical fld... field identifiers',
+      parameters: getRecordsSchema,
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'delete_records',
       description: 'Delete rows in MWS datasheet by recordIds',
       parameters: deleteRecordsSchema,
@@ -136,6 +164,7 @@ export const AI_TOOL_DEFINITIONS: FunctionToolDefinition[] = [
 export const AI_TOOL_SCHEMA_BY_NAME: Record<string, JsonSchema> = {
   create_records: createRecordsSchema,
   patch_records: patchRecordsSchema,
+  get_records: getRecordsSchema,
   delete_records: deleteRecordsSchema,
   smart_import: smartImportSchema,
 };

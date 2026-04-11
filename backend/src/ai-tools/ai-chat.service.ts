@@ -1,85 +1,86 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { UserContext } from 'src/auth/user-context';
-import { MwsService } from 'src/mws/mws.service';
 import { AiProviderClientService, AiChatMessage } from './ai-provider-client.service';
-import { ChatQuestionInput, ChatQuestionResponse, AiChatToolDefinition } from './ai-chat.types';
+import { ChatQuestionInput, ChatQuestionResponse } from './ai-chat.types';
+import { AiToolRegistryService } from './ai-tool-registry.service';
+import { ToolExecutionResult } from './ai-tool-registry.types';
 
 @Injectable()
 export class AiChatService {
   constructor(
     private readonly aiProviderClientService: AiProviderClientService,
-    private readonly mwsService: MwsService,
+    private readonly aiToolRegistryService: AiToolRegistryService,
   ) {}
-
-  getToolDefinitions(): AiChatToolDefinition[] {
-    return [
-      {
-        type: 'function',
-        function: {
-          name: 'get_mws_records',
-          description: 'Read records from MWS Tables and return canonical rows for answering user questions',
-          parameters: {
-            type: 'object',
-            required: ['datasheetId'],
-            properties: {
-              datasheetId: { type: 'string' },
-              viewId: { type: 'string' },
-              pageSize: { type: 'integer', minimum: 1, maximum: 100 },
-              pageNum: { type: 'integer', minimum: 1, maximum: 1000 },
-              fields: { type: 'array', items: { type: 'string' } },
-              filterByFormula: { type: 'string' },
-              fieldKey: { type: 'string', enum: ['id'] },
-            },
-            additionalProperties: false,
-          },
-        },
-      },
-    ];
-  }
 
   async askQuestion(input: ChatQuestionInput, user: UserContext): Promise<ChatQuestionResponse> {
     const contextMarkdown = this.snapshotToMarkdown(input.pageSnapshot);
-    const messages = this.buildMessages(input.question, contextMarkdown);
+    const messages = this.buildMessages(input.question, contextMarkdown, input);
 
-    const toolCalls = this.shouldQueryMws(input)
-      ? [
-          {
-            name: 'get_mws_records',
-            arguments: {
-              datasheetId: input.datasheetId,
-              viewId: input.viewId,
-              pageSize: 20,
-              pageNum: 1,
-              fieldKey: 'id',
-            },
-          },
-        ]
-      : [];
+    const toolDefinitions = this.aiToolRegistryService
+      .getToolDefinitions()
+      .filter((definition) => ['create_records', 'patch_records', 'get_records'].includes(definition.function.name));
+    const conversation: AiChatMessage[] = [...messages];
+    const usedTools: Array<{ toolName: string; args: Record<string, unknown> }> = [];
+    const references: Array<Record<string, unknown>> = [];
 
-    const assistantResponse = await this.aiProviderClientService.complete({
+    let response = await this.aiProviderClientService.complete({
       messages,
       temperature: 0.25,
       maxTokens: 512,
-      tools: this.getToolDefinitions(),
-      toolChoice: toolCalls.length > 0 ? 'auto' : 'none',
+      tools: toolDefinitions,
+      toolChoice: 'auto',
     });
 
-    const modelToolCall = assistantResponse.choices?.[0]?.message?.tool_calls?.[0];
-    const activeToolCall = modelToolCall
-      ? {
-          name: modelToolCall.function.name,
-          arguments: this.parseToolArguments(modelToolCall.function.arguments),
+    for (let round = 0; round < 3; round += 1) {
+      const assistantMessage = response.choices?.[0]?.message;
+      const toolCalls = assistantMessage?.tool_calls ?? [];
+
+      if (!toolCalls.length) {
+        break;
+      }
+
+      conversation.push({
+        role: 'assistant',
+        content: assistantMessage?.content ?? '',
+        tool_calls: toolCalls,
+      });
+
+      for (const toolCall of toolCalls) {
+        const toolName = toolCall.function.name;
+        const args = this.parseToolArguments(toolCall.function.arguments);
+        usedTools.push({ toolName, args });
+
+        const toolResult = await this.executeTool(toolName, args, user, {
+          pageId: input.pageId,
+        });
+
+        if (toolResult.ok && toolResult.canonicalRecords?.length) {
+          references.push(
+            ...toolResult.canonicalRecords.map((record) => ({
+              recordId: record.recordId,
+              fields: record.fields,
+            })),
+          );
         }
-      : toolCalls[0];
 
-    const references: Array<Record<string, unknown>> = [];
-    let answer = String(assistantResponse.choices?.[0]?.message?.content ?? '').trim();
+        conversation.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          name: toolName,
+          content: JSON.stringify(toolResult),
+        });
+      }
 
-    if (activeToolCall?.name === 'get_mws_records') {
-      const toolResult = await this.executeTool(activeToolCall.name, activeToolCall.arguments, user);
-      references.push(...toolResult.items.map((item) => ({ ...item })));
-      answer = answer || this.formatRecordsAnswer(toolResult.items);
+      response = await this.aiProviderClientService.complete({
+        messages: conversation,
+        temperature: 0.2,
+        maxTokens: 512,
+        tools: toolDefinitions,
+        toolChoice: 'none',
+      });
     }
+
+    const answer = String(response.choices?.[0]?.message?.content ?? '').trim();
 
     if (!answer) {
       throw new BadRequestException({
@@ -90,54 +91,39 @@ export class AiChatService {
 
     return {
       answer,
-      usedTools: activeToolCall ? [{ toolName: activeToolCall.name, args: activeToolCall.arguments }] : [],
+      usedTools,
       contextMarkdown,
       references,
     };
   }
 
   async executeTool(
-    toolName: 'get_mws_records',
+    toolName: string,
     args: Record<string, unknown>,
     user: UserContext,
-  ): Promise<{ items: Array<{ recordId: string; fields: Record<string, unknown> }>; pageNum: number; pageSize: number; total: number }> {
-    if (toolName !== 'get_mws_records') {
-      throw new BadRequestException({ code: 'AI_CHAT_TOOL_UNSUPPORTED', message: `Unsupported tool: ${toolName}` });
-    }
-
-    const datasheetId = String(args.datasheetId ?? '');
-    if (!datasheetId) {
-      throw new BadRequestException({
-        code: 'AI_CHAT_TOOL_INVALID_ARGS',
-        message: 'datasheetId is required for get_mws_records',
-      });
-    }
-
-    const result = await this.mwsService.listRecords(datasheetId, {
-      viewId: typeof args.viewId === 'string' ? args.viewId : undefined,
-      pageSize: typeof args.pageSize === 'number' ? args.pageSize : 20,
-      pageNum: typeof args.pageNum === 'number' ? args.pageNum : 1,
-      fields: Array.isArray(args.fields) ? args.fields.join(',') : undefined,
-      filterByFormula: typeof args.filterByFormula === 'string' ? args.filterByFormula : undefined,
-      fieldKey: 'id',
-      cellFormat: 'json',
-    }, user);
-
-    return {
-      items: this.toCanonicalRecords(result.items),
-      pageNum: result.pageNum,
-      pageSize: result.pageSize,
-      total: result.total,
-    };
+    context: { pageId?: string } = {},
+  ): Promise<ToolExecutionResult> {
+    return this.aiToolRegistryService.executeTool(toolName, args, user, {
+      pageId: context.pageId,
+    });
   }
 
-  private buildMessages(question: string, contextMarkdown: string): AiChatMessage[] {
+  private buildMessages(question: string, contextMarkdown: string, input: ChatQuestionInput): AiChatMessage[] {
+    const tableContextLines = [
+      input.datasheetId ? `Target MWS datasheetId: ${input.datasheetId}` : null,
+      input.viewId ? `Target MWS viewId: ${input.viewId}` : null,
+      input.fieldKey ? `Preferred fieldKey: ${input.fieldKey}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
     return [
       {
         role: 'system',
         content: [
           'You are a wiki assistant that answers user questions using the page context and available tools.',
           'If the user asks about records, tasks, rows, or table content, use the get_mws_records tool.',
+          'When tool arguments require a datasheetId, use the exact Target MWS datasheetId from the context.',
           'Keep the answer concise, factual, and grounded in the provided context or tool output.',
         ].join(' '),
       },
@@ -145,15 +131,11 @@ export class AiChatService {
         role: 'user',
         content: [
           `Question: ${question}`,
+          tableContextLines || null,
           contextMarkdown ? `Page context:\n${contextMarkdown}` : null,
         ].filter(Boolean).join('\n\n'),
       },
     ];
-  }
-
-  private shouldQueryMws(input: ChatQuestionInput): boolean {
-    const lower = input.question.toLowerCase();
-    return Boolean(input.datasheetId) && /(табл|задач|строк|запис|records|table)/i.test(lower);
   }
 
   private snapshotToMarkdown(snapshot?: Record<string, unknown> | string): string {
@@ -233,23 +215,4 @@ export class AiChatService {
     }
   }
 
-  private toCanonicalRecords(items: Array<{ recordId?: string; fields?: Record<string, unknown> }>): Array<{ recordId: string; fields: Record<string, unknown> }> {
-    return items.map((item) => ({
-      recordId: String(item.recordId ?? ''),
-      fields: item.fields ?? {},
-    }));
-  }
-
-  private formatRecordsAnswer(items: Array<{ recordId: string; fields: Record<string, unknown> }>): string {
-    if (!items.length) {
-      return 'В таблице нет записей.';
-    }
-
-    const lines = items.slice(0, 5).map((item, index) => {
-      const title = String(item.fields['Название'] ?? item.fields['Title'] ?? item.fields['name'] ?? `Запись ${index + 1}`);
-      return `${index + 1}. ${title}`;
-    });
-
-    return ['Вот что есть в таблице:', ...lines].join('\n');
-  }
 }
