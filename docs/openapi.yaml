@@ -1515,6 +1515,20 @@ components:
           type: string
         type:
           type: string
+        parentId:
+          type: string
+          nullable: true
+        path:
+          type: array
+          description: Breadcrumb-путь ноды внутри пространства MWS Tables
+          items:
+            type: string
+        datasheetId:
+          type: string
+          nullable: true
+        dstId:
+          type: string
+          nullable: true
         icon:
           type: string
           nullable: true
@@ -1524,6 +1538,17 @@ components:
         permission:
           type: integer
           nullable: true
+        capabilities:
+          type: object
+          properties:
+            canRead:
+              type: boolean
+            canInlineEdit:
+              type: boolean
+            canCreateRecords:
+              type: boolean
+            canDeleteRecords:
+              type: boolean
         children:
           type: array
           items:
@@ -1828,12 +1853,18 @@ components:
               type: string
             view:
               $ref: '#/components/schemas/MwsView'
+            views:
+              type: array
+              items:
+                $ref: '#/components/schemas/MwsView'
             fields:
               type: array
               items:
                 $ref: '#/components/schemas/MwsField'
             preview:
               $ref: '#/components/schemas/MwsRecordListResponse'
+            total:
+              type: integer
             capabilities:
               type: object
               properties:

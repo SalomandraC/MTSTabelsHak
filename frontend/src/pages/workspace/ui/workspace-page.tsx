@@ -1,15 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { PageEditor } from '../../../features/page-editor';
 import {
+  DEFAULT_WIKILIVE_SPACE_ID,
   type Backlink,
+  type MwsSpace,
   type OutgoingLink,
   type WikiPage,
   type WikiTreeNode,
-  WIKILIVE_SPACE_ID,
   wikiliveApi,
 } from '../../../shared/api/wikilive';
 import { DocumentLinkGraph, type DocumentGraphEdge } from './document-link-graph';
+
+const SELECTED_SPACE_STORAGE_KEY = 'wikilive:selected-space-id';
 
 function flattenPages(nodes: WikiTreeNode[]): WikiTreeNode[] {
   return nodes.flatMap((node) => [
@@ -18,36 +21,136 @@ function flattenPages(nodes: WikiTreeNode[]): WikiTreeNode[] {
   ]);
 }
 
+function flattenFolders(nodes: WikiTreeNode[]): WikiTreeNode[] {
+  return nodes.flatMap((node) => [
+    ...(node.type === 'folder' ? [node] : []),
+    ...flattenFolders(node.children ?? []),
+  ]);
+}
+
+function findNode(nodes: WikiTreeNode[], nodeId: string | null): WikiTreeNode | null {
+  if (!nodeId) {
+    return null;
+  }
+
+  for (const node of nodes) {
+    if (node.id === nodeId) {
+      return node;
+    }
+
+    const child = findNode(node.children ?? [], nodeId);
+    if (child) {
+      return child;
+    }
+  }
+
+  return null;
+}
+
+function FolderOptions({ folders }: { folders: WikiTreeNode[] }) {
+  return (
+    <>
+      <option value="">Корень</option>
+      {folders.map((folder) => (
+        <option key={folder.id} value={folder.id}>
+          {folder.title}
+        </option>
+      ))}
+    </>
+  );
+}
+
 function TreeItem({
   node,
   activePageId,
-  onSelect,
+  selectedFolderId,
+  folders,
+  onSelectPage,
+  onSelectFolder,
+  onCreatePageInFolder,
+  onCreateFolderInFolder,
+  onRenameFolder,
+  onArchiveFolder,
+  onMoveNode,
 }: {
   node: WikiTreeNode;
   activePageId: string | null;
-  onSelect: (pageId: string) => void;
+  selectedFolderId: string | null;
+  folders: WikiTreeNode[];
+  onSelectPage: (pageId: string) => void;
+  onSelectFolder: (folderId: string) => void;
+  onCreatePageInFolder: (folderId: string) => void;
+  onCreateFolderInFolder: (folderId: string) => void;
+  onRenameFolder: (folder: WikiTreeNode) => void;
+  onArchiveFolder: (folder: WikiTreeNode) => void;
+  onMoveNode: (nodeId: string, parentId: string | null) => void;
 }) {
-  const isActive = node.id === activePageId;
+  const isActivePage = node.id === activePageId;
+  const isSelectedFolder = node.type === 'folder' && node.id === selectedFolderId;
+  const folderChoices = folders.filter((folder) => folder.id !== node.id);
 
   return (
     <li>
-      <button
-        type="button"
-        disabled={node.type !== 'page'}
-        onClick={() => node.type === 'page' && onSelect(node.id)}
+      <div
         className={[
-          'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors',
-          node.type === 'page' ? 'text-editor-text-primary hover:bg-editor-bg-control' : 'cursor-default text-editor-text-tertiary',
-          isActive ? 'bg-[#eef2ff] font-semibold text-[#2f4d86]' : '',
+          'group flex items-center gap-1 rounded-lg px-2 py-1 text-sm transition-colors',
+          node.type === 'page' ? 'text-editor-text-primary hover:bg-editor-bg-control' : 'text-editor-text-tertiary hover:bg-editor-bg-control',
+          isActivePage || isSelectedFolder ? 'bg-[#eef2ff] font-semibold text-[#2f4d86]' : '',
         ].join(' ')}
       >
-        <span className="w-4 shrink-0 text-center">{node.type === 'folder' ? '▸' : '•'}</span>
-        <span className="truncate">{node.title}</span>
-      </button>
+        <button
+          type="button"
+          onClick={() => (node.type === 'page' ? onSelectPage(node.id) : onSelectFolder(node.id))}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          <span className="w-4 shrink-0 text-center">{node.type === 'folder' ? '▸' : '•'}</span>
+          <span className="truncate">{node.title}</span>
+        </button>
+
+        {node.type === 'folder' ? (
+          <div className="flex shrink-0 items-center gap-1 text-[11px] font-semibold opacity-0 transition-opacity group-hover:opacity-100">
+            <button type="button" onClick={() => onCreatePageInFolder(node.id)} className="rounded border border-editor-border-subtle px-1.5 py-0.5">
+              +стр
+            </button>
+            <button type="button" onClick={() => onCreateFolderInFolder(node.id)} className="rounded border border-editor-border-subtle px-1.5 py-0.5">
+              +пап
+            </button>
+            <button type="button" onClick={() => onRenameFolder(node)} className="rounded border border-editor-border-subtle px-1.5 py-0.5">
+              имя
+            </button>
+            <button type="button" onClick={() => onArchiveFolder(node)} className="rounded border border-editor-border-subtle px-1.5 py-0.5">
+              арх
+            </button>
+          </div>
+        ) : (
+          <select
+            aria-label={`Переместить страницу ${node.title}`}
+            value={node.parentId ?? ''}
+            onChange={(event) => onMoveNode(node.id, event.target.value || null)}
+            className="hidden h-7 w-24 shrink-0 rounded border border-editor-border-subtle bg-white px-1 text-[11px] font-normal text-editor-text-tertiary group-hover:block"
+          >
+            <FolderOptions folders={folderChoices} />
+          </select>
+        )}
+      </div>
+
       {node.children.length > 0 ? (
         <ul className="ml-3 border-l border-editor-border-subtle pl-2">
           {node.children.map((child) => (
-            <TreeItem key={child.id} node={child} activePageId={activePageId} onSelect={onSelect} />
+            <TreeItem
+              key={child.id}
+              node={child}
+              activePageId={activePageId}
+              selectedFolderId={selectedFolderId}
+              folders={folders}
+              onSelectPage={onSelectPage}
+              onSelectFolder={onSelectFolder}
+              onCreatePageInFolder={onCreatePageInFolder}
+              onCreateFolderInFolder={onCreateFolderInFolder}
+              onRenameFolder={onRenameFolder}
+              onArchiveFolder={onArchiveFolder}
+              onMoveNode={onMoveNode}
+            />
           ))}
         </ul>
       ) : null}
@@ -56,8 +159,11 @@ function TreeItem({
 }
 
 export function WorkspacePage() {
+  const [spaces, setSpaces] = useState<MwsSpace[]>([]);
+  const [selectedSpaceId, setSelectedSpaceId] = useState(DEFAULT_WIKILIVE_SPACE_ID);
   const [tree, setTree] = useState<WikiTreeNode[]>([]);
   const [activePageId, setActivePageId] = useState<string | null>(null);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [activePage, setActivePage] = useState<WikiPage | null>(null);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [outgoingLinks, setOutgoingLinks] = useState<OutgoingLink[]>([]);
@@ -66,7 +172,9 @@ export function WorkspacePage() {
   const [statusMessage, setStatusMessage] = useState('Загружаем wiki workspace');
   const [errorMessage, setErrorMessage] = useState('');
 
-  const refreshGraphLinks = async (nodes: WikiTreeNode[]) => {
+  const folders = useMemo(() => flattenFolders(tree), [tree]);
+
+  const refreshGraphLinks = useCallback(async (nodes: WikiTreeNode[]) => {
     const pages = flattenPages(nodes);
     const responses = await Promise.all(
       pages.map(async (page) => {
@@ -81,28 +189,34 @@ export function WorkspacePage() {
     );
 
     setGraphEdges(responses.flat());
-  };
+  }, []);
 
-  const refreshTree = async (preferredPageId?: string | null) => {
-    const response = await wikiliveApi.getWikiTree();
-    let nextTree = response.items;
-    let pages = flattenPages(nextTree);
+  const refreshTree = useCallback(
+    async (spaceId: string, preferredPageId?: string | null) => {
+      const response = await wikiliveApi.getWikiTree(spaceId);
+      let nextTree = response.items;
+      let pages = flattenPages(nextTree);
+      let nextActivePageId: string | null = null;
 
-    if (pages.length === 0) {
-      const created = await wikiliveApi.createPage('Новая страница');
-      const refreshed = await wikiliveApi.getWikiTree();
-      nextTree = refreshed.items;
-      pages = flattenPages(nextTree);
-      setActivePageId(created.page.id);
-    } else if (preferredPageId && pages.some((page) => page.id === preferredPageId)) {
-      setActivePageId(preferredPageId);
-    } else if (!activePageId || !pages.some((page) => page.id === activePageId)) {
-      setActivePageId(pages[0].id);
-    }
+      if (pages.length === 0) {
+        const created = await wikiliveApi.createPage(spaceId, 'Новая страница');
+        const refreshed = await wikiliveApi.getWikiTree(spaceId);
+        nextTree = refreshed.items;
+        pages = flattenPages(nextTree);
+        nextActivePageId = created.page.id;
+      } else if (preferredPageId && pages.some((page) => page.id === preferredPageId)) {
+        nextActivePageId = preferredPageId;
+      } else {
+        nextActivePageId = pages[0].id;
+      }
 
-    setTree(nextTree);
-    await refreshGraphLinks(nextTree).catch(() => setGraphEdges([]));
-  };
+      setTree(nextTree);
+      setActivePageId(nextActivePageId);
+      setSelectedFolderId((current) => (findNode(nextTree, current)?.type === 'folder' ? current : null));
+      await refreshGraphLinks(nextTree).catch(() => setGraphEdges([]));
+    },
+    [refreshGraphLinks],
+  );
 
   const refreshLinks = async (pageId: string) => {
     const [backlinksResponse, outgoingResponse] = await Promise.all([
@@ -123,11 +237,57 @@ export function WorkspacePage() {
   useEffect(() => {
     let cancelled = false;
 
+    void wikiliveApi
+      .listMwsSpaces()
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+
+        const nextSpaces = response.items.length > 0 ? response.items : [{ id: DEFAULT_WIKILIVE_SPACE_ID, name: DEFAULT_WIKILIVE_SPACE_ID }];
+        const storedSpaceId = localStorage.getItem(SELECTED_SPACE_STORAGE_KEY);
+        const nextSpaceId = nextSpaces.some((space) => space.id === storedSpaceId)
+          ? storedSpaceId
+          : nextSpaces[0]?.id ?? DEFAULT_WIKILIVE_SPACE_ID;
+
+        setSpaces(nextSpaces);
+        setSelectedSpaceId(nextSpaceId ?? DEFAULT_WIKILIVE_SPACE_ID);
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        setSpaces([{ id: DEFAULT_WIKILIVE_SPACE_ID, name: DEFAULT_WIKILIVE_SPACE_ID }]);
+        setSelectedSpaceId(DEFAULT_WIKILIVE_SPACE_ID);
+        setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить пространства MWS Tables');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!selectedSpaceId) {
+      return;
+    }
+
+    localStorage.setItem(SELECTED_SPACE_STORAGE_KEY, selectedSpaceId);
+    setActivePage(null);
+    setActivePageId(null);
+    setSelectedFolderId(null);
+    setBacklinks([]);
+    setOutgoingLinks([]);
+
     void (async () => {
       try {
         setIsLoading(true);
         setErrorMessage('');
-        await refreshTree(activePageId);
+        setStatusMessage('Загружаем wiki workspace');
+        await refreshTree(selectedSpaceId, null);
       } catch (error) {
         if (!cancelled) {
           setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить wiki workspace');
@@ -143,9 +303,7 @@ export function WorkspacePage() {
     return () => {
       cancelled = true;
     };
-    // Initial bootstrap only; page switching is handled by the activePageId effect.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refreshTree, selectedSpaceId]);
 
   useEffect(() => {
     if (!activePageId) {
@@ -182,18 +340,82 @@ export function WorkspacePage() {
     };
   }, [activePageId]);
 
-  const handleCreatePage = async () => {
+  const handleSelectPage = (pageId: string) => {
+    setSelectedFolderId(null);
+    setActivePageId(pageId);
+  };
+
+  const handleCreatePage = async (parentNodeId: string | null = selectedFolderId) => {
     const title = `Страница ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
     setStatusMessage('Создаем страницу');
 
     try {
-      const created = await wikiliveApi.createPage(title);
-      await refreshTree(created.page.id);
-      setActivePageId(created.page.id);
+      const created = await wikiliveApi.createPage(selectedSpaceId, title, parentNodeId);
+      await refreshTree(selectedSpaceId, created.page.id);
+      setSelectedFolderId(parentNodeId);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Не удалось создать страницу');
     } finally {
       setStatusMessage('');
+    }
+  };
+
+  const handleCreateFolder = async (parentNodeId: string | null = selectedFolderId) => {
+    const title = window.prompt('Название папки', 'Новая папка')?.trim();
+    if (!title) {
+      return;
+    }
+
+    setStatusMessage('Создаем папку');
+
+    try {
+      const created = await wikiliveApi.createFolder({
+        spaceId: selectedSpaceId,
+        parentNodeId,
+        title,
+      });
+      await refreshTree(selectedSpaceId, activePageId);
+      setSelectedFolderId(created.folder.id);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Не удалось создать папку');
+    } finally {
+      setStatusMessage('');
+    }
+  };
+
+  const handleRenameFolder = async (folder: WikiTreeNode) => {
+    const title = window.prompt('Новое название папки', folder.title)?.trim();
+    if (!title || title === folder.title) {
+      return;
+    }
+
+    try {
+      await wikiliveApi.updateFolder(folder.id, { title });
+      await refreshTree(selectedSpaceId, activePageId);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Не удалось переименовать папку');
+    }
+  };
+
+  const handleArchiveFolder = async (folder: WikiTreeNode) => {
+    if (!window.confirm(`Архивировать папку "${folder.title}" и все вложенные страницы?`)) {
+      return;
+    }
+
+    try {
+      await wikiliveApi.deleteFolder(folder.id);
+      await refreshTree(selectedSpaceId, activePageId);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Не удалось архивировать папку');
+    }
+  };
+
+  const handleMoveNode = async (nodeId: string, parentId: string | null) => {
+    try {
+      await wikiliveApi.moveNode(nodeId, { targetParentId: parentId });
+      await refreshTree(selectedSpaceId, activePageId);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Не удалось переместить ноду');
     }
   };
 
@@ -204,7 +426,7 @@ export function WorkspacePage() {
 
     const response = await wikiliveApi.updatePage(activePageId, { title });
     setActivePage(response.page);
-    await refreshTree(activePageId);
+    await refreshTree(selectedSpaceId, activePageId);
   };
 
   const handleCheckpoint = async () => {
@@ -212,7 +434,7 @@ export function WorkspacePage() {
       return;
     }
 
-    await Promise.all([refreshActivePage(activePageId), refreshTree(activePageId)]);
+    await Promise.all([refreshActivePage(activePageId), refreshTree(selectedSpaceId, activePageId)]);
   };
 
   return (
@@ -220,14 +442,40 @@ export function WorkspacePage() {
       <aside className="flex w-72 shrink-0 flex-col border-r border-editor-border-subtle bg-white/95">
         <div className="border-b border-editor-border-subtle p-4">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">WikiLive</p>
-          <h1 className="mt-1 font-wide text-lg font-semibold">Space {WIKILIVE_SPACE_ID}</h1>
-          <button
-            type="button"
-            onClick={handleCreatePage}
-            className="mt-3 w-full rounded-lg bg-[#ff0037] px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#df0030]"
+          <label className="mt-2 block text-xs font-semibold text-editor-text-tertiary" htmlFor="workspace-space-select">
+            Пространство
+          </label>
+          <select
+            id="workspace-space-select"
+            value={selectedSpaceId}
+            onChange={(event) => setSelectedSpaceId(event.target.value)}
+            className="mt-1 h-10 w-full rounded-lg border border-editor-border-control bg-white px-3 text-sm font-semibold outline-none focus:border-[#7b67ee]"
           >
-            Новая страница
-          </button>
+            {spaces.map((space) => (
+              <option key={space.id} value={space.id}>
+                {space.name}
+              </option>
+            ))}
+          </select>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => void handleCreatePage()}
+              className="rounded-lg bg-[#ff0037] px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#df0030]"
+            >
+              Новая страница
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleCreateFolder()}
+              className="rounded-lg border border-editor-border-control bg-white px-3 py-2 text-sm font-semibold text-editor-text-primary transition-colors hover:bg-editor-bg-control"
+            >
+              Новая папка
+            </button>
+          </div>
+          {selectedFolderId ? (
+            <p className="mt-2 text-xs text-editor-text-tertiary">Новые элементы попадут в выбранную папку.</p>
+          ) : null}
         </div>
 
         <div className="flex-1 overflow-y-auto p-3">
@@ -235,12 +483,25 @@ export function WorkspacePage() {
           {!isLoading && tree.length === 0 ? <p className="px-2 text-sm text-editor-text-tertiary">Пока нет страниц</p> : null}
           <ul className="space-y-1">
             {tree.map((node) => (
-              <TreeItem key={node.id} node={node} activePageId={activePageId} onSelect={setActivePageId} />
+              <TreeItem
+                key={node.id}
+                node={node}
+                activePageId={activePageId}
+                selectedFolderId={selectedFolderId}
+                folders={folders}
+                onSelectPage={handleSelectPage}
+                onSelectFolder={setSelectedFolderId}
+                onCreatePageInFolder={(folderId) => void handleCreatePage(folderId)}
+                onCreateFolderInFolder={(folderId) => void handleCreateFolder(folderId)}
+                onRenameFolder={(folder) => void handleRenameFolder(folder)}
+                onArchiveFolder={(folder) => void handleArchiveFolder(folder)}
+                onMoveNode={(nodeId, parentId) => void handleMoveNode(nodeId, parentId)}
+              />
             ))}
           </ul>
         </div>
         <div className="border-t border-editor-border-subtle p-3">
-          <DocumentLinkGraph pages={flattenPages(tree)} activePageId={activePageId} edges={graphEdges} onSelectPage={setActivePageId} />
+          <DocumentLinkGraph pages={flattenPages(tree)} activePageId={activePageId} edges={graphEdges} onSelectPage={handleSelectPage} />
         </div>
       </aside>
 
@@ -251,7 +512,7 @@ export function WorkspacePage() {
         {statusMessage ? (
           <div className="border-b border-editor-border-subtle bg-white px-4 py-2 text-sm text-editor-text-tertiary">{statusMessage}</div>
         ) : null}
-        <PageEditor page={activePage} onRenamePage={handleRenamePage} onCheckpoint={handleCheckpoint} />
+        <PageEditor spaceId={selectedSpaceId} page={activePage} onRenamePage={handleRenamePage} onCheckpoint={handleCheckpoint} />
       </section>
 
       <aside className="hidden w-80 shrink-0 flex-col border-l border-editor-border-subtle bg-white/95 xl:flex">
@@ -268,7 +529,7 @@ export function WorkspacePage() {
                 <button
                   key={link.pageId}
                   type="button"
-                  onClick={() => setActivePageId(link.pageId)}
+                  onClick={() => handleSelectPage(link.pageId)}
                   className="block w-full rounded-lg border border-editor-border-subtle p-3 text-left text-sm hover:bg-editor-bg-control"
                 >
                   <span className="font-semibold">{link.title}</span>
@@ -286,7 +547,7 @@ export function WorkspacePage() {
                 <button
                   key={link.targetPageId}
                   type="button"
-                  onClick={() => setActivePageId(link.targetPageId)}
+                  onClick={() => handleSelectPage(link.targetPageId)}
                   className="block w-full rounded-lg border border-editor-border-subtle p-3 text-left text-sm hover:bg-editor-bg-control"
                 >
                   <span className="font-semibold">{link.targetTitle}</span>

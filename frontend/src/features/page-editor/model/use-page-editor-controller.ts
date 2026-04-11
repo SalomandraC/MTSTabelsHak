@@ -42,6 +42,7 @@ type CollabState = {
 };
 
 type UsePageEditorControllerOptions = {
+  spaceId: string;
   page: WikiPage | null;
   onRenamePage: (title: string) => Promise<void>;
   onCheckpoint: () => Promise<void>;
@@ -76,7 +77,7 @@ function getPersistentId(key: string, fallbackPrefix: string) {
   }
 }
 
-export function usePageEditorController({ page, onRenamePage, onCheckpoint }: UsePageEditorControllerOptions) {
+export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpoint }: UsePageEditorControllerOptions) {
   const [slashState, setSlashState] = useState<SlashState>(baseSlashState);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [saveStatus, setSaveStatus] = useState('Ожидаем страницу');
@@ -614,7 +615,16 @@ export function usePageEditorController({ page, onRenamePage, onCheckpoint }: Us
     setIsPagePickerOpen(false);
   };
 
-  const handleSelectTable = (table: { spaceId: string; nodeId: string; datasheetId: string; title: string }) => {
+  const handleSelectTable = (table: {
+    spaceId: string;
+    nodeId: string;
+    datasheetId: string;
+    title: string;
+    viewId: string | null;
+    selectedFieldIds: string[];
+    pageSize: number;
+    allowInlineEdit: boolean;
+  }) => {
     if (!editor) {
       return;
     }
@@ -624,12 +634,12 @@ export function usePageEditorController({ page, onRenamePage, onCheckpoint }: Us
       spaceId: table.spaceId,
       nodeId: table.nodeId,
       datasheetId: table.datasheetId,
-      viewId: null,
+      viewId: table.viewId,
       displayMode: 'table',
-      selectedFieldIds: [],
+      selectedFieldIds: table.selectedFieldIds,
       filterByFormula: null,
-      pageSize: 10,
-      allowInlineEdit: false,
+      pageSize: table.pageSize,
+      allowInlineEdit: table.allowInlineEdit,
     };
 
     const inserted = editor.commands.insertMwsTableEmbed(attrs);
@@ -745,12 +755,14 @@ export function usePageEditorController({ page, onRenamePage, onCheckpoint }: Us
     openImageModal,
     pagePicker: {
       isOpen: isPagePickerOpen,
+      spaceId,
       currentPageId: page?.id,
       onSelect: handleSelectPage,
       onClose: () => setIsPagePickerOpen(false),
     },
     tablePicker: {
       isOpen: isTablePickerOpen,
+      initialSpaceId: spaceId,
       onSelect: handleSelectTable,
       onClose: () => setIsTablePickerOpen(false),
     },

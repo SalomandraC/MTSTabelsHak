@@ -12,13 +12,14 @@ import { PagePickerModal } from './page-picker-modal';
 import { TablePickerModal } from './table-picker-modal';
 
 type PageEditorProps = {
+  spaceId: string;
   page: WikiPage | null;
   onRenamePage: (title: string) => Promise<void>;
   onCheckpoint: () => Promise<void>;
 };
 
-export function PageEditor({ page, onRenamePage, onCheckpoint }: PageEditorProps) {
-  const controller = usePageEditorController({ page, onRenamePage, onCheckpoint });
+export function PageEditor({ spaceId, page, onRenamePage, onCheckpoint }: PageEditorProps) {
+  const controller = usePageEditorController({ spaceId, page, onRenamePage, onCheckpoint });
 
   if (!page) {
     return (
