@@ -77,6 +77,46 @@ function getPersistentId(key: string, fallbackPrefix: string) {
   }
 }
 
+const collaborationColors = ['#ff0037', '#111827', '#b00025', '#505762', '#df0030'];
+
+function getCollaborationColor(seed: string) {
+  let hash = 0;
+
+  for (const char of seed) {
+    hash = (hash * 31 + char.charCodeAt(0)) % collaborationColors.length;
+  }
+
+  return collaborationColors[Math.abs(hash) % collaborationColors.length];
+}
+
+function getProviderUsers(provider: HocuspocusProvider): PresenceUser[] {
+  const awareness = (provider as unknown as { awareness?: { getStates?: () => Map<number, { user?: { id?: string; name?: string; color?: string } }> } }).awareness;
+  const states = awareness?.getStates?.();
+
+  if (!states) {
+    return [];
+  }
+
+  const users = new Map<string, PresenceUser>();
+
+  states.forEach((state, clientId) => {
+    const displayName = state.user?.name;
+
+    if (!displayName) {
+      return;
+    }
+
+    const userId = state.user?.id ?? `${displayName}-${clientId}`;
+    users.set(userId, {
+      userId,
+      displayName,
+      color: state.user?.color ?? getCollaborationColor(userId),
+    });
+  });
+
+  return [...users.values()];
+}
+
 export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpoint }: UsePageEditorControllerOptions) {
   const [slashState, setSlashState] = useState<SlashState>(baseSlashState);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -105,7 +145,10 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
   const slashStateRef = useRef(baseSlashState);
   const selectedIndexRef = useRef(0);
 
-  const userDisplayName = getCurrentUser()?.displayName ?? 'WikiLive User';
+  const currentUser = getCurrentUser();
+  const userDisplayName = currentUser?.displayName ?? 'WikiLive User';
+  const userId = currentUser?.userId ?? userDisplayName;
+  const userColor = getCollaborationColor(userId);
 
   useEffect(() => {
     if (!page) {
@@ -120,6 +163,7 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
     let cancelled = false;
     let provider: HocuspocusProvider | null = null;
     let ydoc: Y.Doc | null = null;
+    let cleanupAwareness: (() => void) | null = null;
 
     setSaveStatus('Открываем collaboration session');
     setConnectionStatus('connecting');
@@ -174,6 +218,19 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
         }
       });
 
+      const updateActiveUsers = () => {
+        if (!provider || cancelled) {
+          return;
+        }
+
+        const providerUsers = getProviderUsers(provider);
+        setActiveUsers(providerUsers.length > 0 ? providerUsers : session.awareness?.activeUsers ?? []);
+      };
+
+      provider.awareness?.on('update', updateActiveUsers);
+      cleanupAwareness = () => provider?.awareness?.off('update', updateActiveUsers);
+      updateActiveUsers();
+
       setCollabState({
         pageId: page.id,
         ydoc,
@@ -183,7 +240,6 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
         activeUsers: session.awareness?.activeUsers ?? [],
       });
       setRecoveryMessage(restoredDraft);
-      setActiveUsers(session.awareness?.activeUsers ?? []);
       setSaveStatus('Документ подключен');
     })().catch((error) => {
       if (!cancelled) {
@@ -194,6 +250,7 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
 
     return () => {
       cancelled = true;
+      cleanupAwareness?.();
       provider?.destroy();
       ydoc?.destroy();
     };
@@ -207,11 +264,12 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
         ydoc: collabState?.ydoc,
         provider: collabState?.provider,
         user: {
+          id: userId,
           name: userDisplayName,
-          color: '#ff0037',
+          color: userColor,
         },
       }),
-    [collabState?.provider, collabState?.ydoc, userDisplayName],
+    [collabState?.provider, collabState?.ydoc, userColor, userDisplayName, userId],
   );
 
   const resetImageModalState = () => {

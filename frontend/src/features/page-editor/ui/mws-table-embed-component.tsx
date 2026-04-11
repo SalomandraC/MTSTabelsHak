@@ -1,6 +1,20 @@
 import type { NodeViewProps } from '@tiptap/react';
 import { NodeViewWrapper } from '@tiptap/react';
-import { ExternalLink, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import {
+  Columns3,
+  ExternalLink,
+  EyeOff,
+  Filter,
+  Group,
+  PlusCircle,
+  RefreshCw,
+  RotateCcw,
+  RotateCw,
+  Search,
+  Settings,
+  SortAsc,
+  Trash2,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { type MwsField, type MwsRecord, type ResolveTableEmbedResponse, wikiliveApi } from '../../../shared/api/wikilive';
@@ -18,9 +32,29 @@ const EDITABLE_FIELD_TYPES = new Set([
   'Phone',
 ]);
 
+const HEADER_HEIGHT = 40;
+const ROW_HEIGHT = 38;
+const INDEX_WIDTH = 56;
+const COLUMN_WIDTH = 184;
+const MIN_GRID_HEIGHT = 320;
+const MAX_GRID_HEIGHT = 520;
+
+type CanvasSelection = {
+  rowIndex: number;
+  fieldIndex: number;
+};
+
+type EditingCell = CanvasSelection & {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  value: string;
+};
+
 function renderCell(value: unknown): string {
   if (value === null || value === undefined || value === '') {
-    return '-';
+    return '';
   }
 
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
@@ -74,6 +108,43 @@ function fieldInputType(field: MwsField) {
   return 'text';
 }
 
+function clampText(ctx: CanvasRenderingContext2D, value: string, maxWidth: number) {
+  if (ctx.measureText(value).width <= maxWidth) {
+    return value;
+  }
+
+  let next = value;
+  while (next.length > 1 && ctx.measureText(`${next}...`).width > maxWidth) {
+    next = next.slice(0, -1);
+  }
+
+  return `${next}...`;
+}
+
+function ToolbarButton({
+  label,
+  icon,
+  onClick,
+  disabled = false,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-sm text-[#3f3f46] transition-colors hover:bg-[#edf0f5] disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
 export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
   const [data, setData] = useState<ResolveTableEmbedResponse | null>(null);
   const [records, setRecords] = useState<MwsRecord[]>([]);
@@ -83,6 +154,14 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
   const [isMutating, setIsMutating] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [staleMessage, setStaleMessage] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [viewport, setViewport] = useState({ width: 720, height: MIN_GRID_HEIGHT });
+  const [scrollOffset, setScrollOffset] = useState({ left: 0, top: 0 });
+  const [selection, setSelection] = useState<CanvasSelection | null>(null);
+  const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
+
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const hasLoadedDataRef = useRef(false);
 
   const attrs = node.attrs as {
@@ -127,6 +206,8 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       setRecords(response.embed.preview.items);
       setPageNum(response.embed.preview.pageNum);
       setTotal(response.embed.total ?? response.embed.preview.total);
+      setSelection(null);
+      setEditingCell(null);
       setStaleMessage('');
       hasLoadedDataRef.current = true;
     } catch (error) {
@@ -160,8 +241,178 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
   const capabilities = embed?.capabilities ?? {};
   const canInlineEdit = Boolean(attrs.allowInlineEdit && capabilities.canInlineEdit);
   const hasMore = records.length < total;
+  const gridWidth = INDEX_WIDTH + fields.length * COLUMN_WIDTH;
 
-  const loadNextPage = async () => {
+  const visibleRecords = useMemo(() => {
+    const normalized = searchQuery.trim().toLowerCase();
+    if (!normalized) {
+      return records;
+    }
+
+    return records.filter((record) =>
+      fields.some((field) => renderCell(getFieldValue(record, field)).toLowerCase().includes(normalized)),
+    );
+  }, [fields, records, searchQuery]);
+
+  const gridHeight = HEADER_HEIGHT + Math.max(visibleRecords.length, 1) * ROW_HEIGHT;
+  const selectedRecord = selection ? visibleRecords[selection.rowIndex] : null;
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) {
+      return undefined;
+    }
+
+    const updateViewport = () => {
+      setViewport({
+        width: Math.max(1, element.clientWidth),
+        height: Math.max(1, element.clientHeight),
+      });
+    };
+
+    updateViewport();
+    const observer = new ResizeObserver(updateViewport);
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const dpr = window.devicePixelRatio || 1;
+    const width = Math.max(1, viewport.width);
+    const height = Math.max(1, viewport.height);
+    canvas.width = Math.floor(width * dpr);
+    canvas.height = Math.floor(height * dpr);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return;
+    }
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 1;
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(0, 0, width, HEADER_HEIGHT);
+    ctx.strokeStyle = '#dde2ea';
+    ctx.beginPath();
+    ctx.moveTo(0, HEADER_HEIGHT - 0.5);
+    ctx.lineTo(width, HEADER_HEIGHT - 0.5);
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, HEADER_HEIGHT, INDEX_WIDTH, height - HEADER_HEIGHT);
+    ctx.strokeStyle = '#e5e8ef';
+    ctx.beginPath();
+    ctx.moveTo(INDEX_WIDTH - 0.5, 0);
+    ctx.lineTo(INDEX_WIDTH - 0.5, height);
+    ctx.stroke();
+
+    ctx.fillStyle = '#6b7280';
+    ctx.fillText('#', 20, HEADER_HEIGHT / 2);
+
+    fields.forEach((field, fieldIndex) => {
+      const x = INDEX_WIDTH + fieldIndex * COLUMN_WIDTH - scrollOffset.left;
+      if (x + COLUMN_WIDTH < INDEX_WIDTH || x > width) {
+        return;
+      }
+
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(x, 0, COLUMN_WIDTH, HEADER_HEIGHT);
+      ctx.strokeStyle = '#dde2ea';
+      ctx.strokeRect(x - 0.5, 0.5, COLUMN_WIDTH, HEADER_HEIGHT);
+      ctx.fillStyle = '#3f3f46';
+      ctx.font = '600 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+      ctx.fillText(clampText(ctx, field.name, COLUMN_WIDTH - 28), x + 12, HEADER_HEIGHT / 2);
+      ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    });
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, HEADER_HEIGHT, width, height - HEADER_HEIGHT);
+    ctx.clip();
+
+    const firstRow = Math.max(0, Math.floor((scrollOffset.top - HEADER_HEIGHT) / ROW_HEIGHT));
+    const lastRow = Math.min(
+      visibleRecords.length - 1,
+      Math.ceil((scrollOffset.top + height - HEADER_HEIGHT) / ROW_HEIGHT),
+    );
+
+    for (let rowIndex = firstRow; rowIndex <= lastRow; rowIndex += 1) {
+      const record = visibleRecords[rowIndex];
+      if (!record) {
+        continue;
+      }
+
+      const y = HEADER_HEIGHT + rowIndex * ROW_HEIGHT - scrollOffset.top;
+      const isSelectedRow = selection?.rowIndex === rowIndex;
+
+      ctx.fillStyle = isSelectedRow ? '#f4f2ff' : rowIndex % 2 === 0 ? '#ffffff' : '#fbfcfe';
+      ctx.fillRect(0, y, width, ROW_HEIGHT);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, y, INDEX_WIDTH, ROW_HEIGHT);
+      ctx.fillStyle = '#555b66';
+      ctx.fillText(String(rowIndex + 1), 22, y + ROW_HEIGHT / 2);
+
+      fields.forEach((field, fieldIndex) => {
+        const x = INDEX_WIDTH + fieldIndex * COLUMN_WIDTH - scrollOffset.left;
+        if (x + COLUMN_WIDTH < INDEX_WIDTH || x > width) {
+          return;
+        }
+
+        const isSelected = selection?.rowIndex === rowIndex && selection.fieldIndex === fieldIndex;
+        ctx.strokeStyle = '#e5e8ef';
+        ctx.strokeRect(x - 0.5, y - 0.5, COLUMN_WIDTH, ROW_HEIGHT);
+
+        if (isSelected) {
+          ctx.strokeStyle = '#7b67ee';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x + 1, y + 1, COLUMN_WIDTH - 2, ROW_HEIGHT - 2);
+          ctx.lineWidth = 1;
+        }
+
+        const value = renderCell(getFieldValue(record, field));
+        ctx.fillStyle = value ? '#1f2937' : '#a1a7b3';
+        ctx.fillText(clampText(ctx, value || '-', COLUMN_WIDTH - 24), x + 12, y + ROW_HEIGHT / 2);
+      });
+
+      ctx.strokeStyle = '#e5e8ef';
+      ctx.beginPath();
+      ctx.moveTo(0, y + ROW_HEIGHT - 0.5);
+      ctx.lineTo(width, y + ROW_HEIGHT - 0.5);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, INDEX_WIDTH, HEADER_HEIGHT);
+    ctx.strokeStyle = '#dde2ea';
+    ctx.strokeRect(0.5, 0.5, INDEX_WIDTH, HEADER_HEIGHT);
+    ctx.fillStyle = '#6b7280';
+    ctx.fillText('#', 20, HEADER_HEIGHT / 2);
+
+    if (visibleRecords.length === 0) {
+      ctx.fillStyle = '#7b8190';
+      ctx.fillText('Нет строк для отображения', INDEX_WIDTH + 16, HEADER_HEIGHT + ROW_HEIGHT / 2);
+    }
+  }, [fields, scrollOffset.left, scrollOffset.top, selection, viewport.height, viewport.width, visibleRecords]);
+
+  const loadNextPage = useCallback(async () => {
     if (!attrs.datasheetId || isLoading || isMutating || !hasMore) {
       return;
     }
@@ -185,7 +436,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     } finally {
       setIsMutating(false);
     }
-  };
+  }, [attrs.datasheetId, attrs.filterByFormula, attrs.viewId, hasMore, isLoading, isMutating, pageNum, pageSize, selectedFieldIds]);
 
   const updateCell = async (record: MwsRecord, field: MwsField, value: string | boolean) => {
     if (!attrs.datasheetId || !EDITABLE_FIELD_TYPES.has(field.type)) {
@@ -241,8 +492,8 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     }
   };
 
-  const deleteRow = async (record: MwsRecord) => {
-    if (!attrs.datasheetId) {
+  const deleteRow = async (record: MwsRecord | null) => {
+    if (!attrs.datasheetId || !record) {
       return;
     }
 
@@ -251,11 +502,86 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       await wikiliveApi.deleteMwsRecords(attrs.datasheetId, [record.recordId]);
       setRecords((current) => current.filter((item) => item.recordId !== record.recordId));
       setTotal((current) => Math.max(0, current - 1));
+      setSelection(null);
+      setEditingCell(null);
       setStaleMessage('');
     } catch (error) {
       setStaleMessage(error instanceof Error ? error.message : 'Не удалось удалить строку');
     } finally {
       setIsMutating(false);
+    }
+  };
+
+  const hitTest = (event: React.PointerEvent<HTMLCanvasElement> | React.MouseEvent<HTMLCanvasElement>): CanvasSelection | null => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+
+    if (y < HEADER_HEIGHT || x < INDEX_WIDTH) {
+      return null;
+    }
+
+    const rowIndex = Math.floor((y + scrollOffset.top - HEADER_HEIGHT) / ROW_HEIGHT);
+    const fieldIndex = Math.floor((x + scrollOffset.left - INDEX_WIDTH) / COLUMN_WIDTH);
+
+    if (rowIndex < 0 || rowIndex >= visibleRecords.length || fieldIndex < 0 || fieldIndex >= fields.length) {
+      return null;
+    }
+
+    return { rowIndex, fieldIndex };
+  };
+
+  const beginEdit = (nextSelection: CanvasSelection | null) => {
+    if (!nextSelection) {
+      return;
+    }
+
+    const record = visibleRecords[nextSelection.rowIndex];
+    const field = fields[nextSelection.fieldIndex];
+
+    if (!record || !field || !canInlineEdit || !EDITABLE_FIELD_TYPES.has(field.type)) {
+      return;
+    }
+
+    if (field.type === 'Checkbox') {
+      void updateCell(record, field, !getFieldValue(record, field));
+      return;
+    }
+
+    setEditingCell({
+      ...nextSelection,
+      left: INDEX_WIDTH + nextSelection.fieldIndex * COLUMN_WIDTH,
+      top: HEADER_HEIGHT + nextSelection.rowIndex * ROW_HEIGHT,
+      width: COLUMN_WIDTH,
+      height: ROW_HEIGHT,
+      value: renderCell(getFieldValue(record, field)),
+    });
+  };
+
+  const commitEdit = () => {
+    if (!editingCell) {
+      return;
+    }
+
+    const record = visibleRecords[editingCell.rowIndex];
+    const field = fields[editingCell.fieldIndex];
+    setEditingCell(null);
+
+    if (record && field) {
+      void updateCell(record, field, editingCell.value);
+    }
+  };
+
+  const handleCanvasScroll = () => {
+    const element = scrollRef.current;
+    if (!element) {
+      return;
+    }
+
+    setScrollOffset({ left: element.scrollLeft, top: element.scrollTop });
+
+    if (element.scrollHeight - element.scrollTop - element.clientHeight < 120) {
+      void loadNextPage();
     }
   };
 
@@ -278,37 +604,45 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
             {embed?.view?.name ? `view: ${embed.view.name}` : 'default view'} · {records.length}/{total} строк
           </p>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-          {embed?.openInMwsUrl ? (
-            <a
-              href={embed.openInMwsUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 rounded-lg border border-editor-border-control px-3 py-1.5 text-xs font-semibold text-editor-text-primary"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              Открыть в MWS
-            </a>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => void createRow()}
-            disabled={!capabilities.canCreateRecords || isMutating || fields.length === 0}
-            className="inline-flex items-center gap-1 rounded-lg border border-editor-border-control px-3 py-1.5 text-xs font-semibold text-editor-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+        {embed?.openInMwsUrl ? (
+          <a
+            href={embed.openInMwsUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-editor-border-control px-3 py-1.5 text-xs font-semibold text-editor-text-primary"
           >
-            <Plus className="h-3.5 w-3.5" />
-            Добавить строку
-          </button>
-          <button
-            type="button"
-            onClick={() => void loadEmbed()}
-            disabled={isLoading}
-            className="inline-flex items-center gap-1 rounded-lg bg-editor-bg-control px-3 py-1.5 text-xs font-semibold text-editor-text-primary disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            Обновить
-          </button>
+            <ExternalLink className="h-3.5 w-3.5" />
+            Открыть в MWS
+          </a>
+        ) : null}
+      </div>
+
+      <div className="flex h-11 items-center gap-1 overflow-x-auto border-b border-editor-border-subtle bg-[#f5f6f8] px-2">
+        <ToolbarButton label="" icon={<RotateCcw className="h-4 w-4" />} disabled />
+        <ToolbarButton label="" icon={<RotateCw className="h-4 w-4" />} disabled />
+        <div className="mx-1 h-6 w-px bg-[#dfe3ea]" />
+        <ToolbarButton label="Вставить запись" icon={<PlusCircle className="h-4 w-4" />} onClick={() => void createRow()} disabled={!capabilities.canCreateRecords || isMutating || fields.length === 0} />
+        <ToolbarButton label="Скрыть поля" icon={<EyeOff className="h-4 w-4" />} disabled />
+        <ToolbarButton label="Фильтр" icon={<Filter className="h-4 w-4" />} disabled />
+        <ToolbarButton label="Группа" icon={<Group className="h-4 w-4" />} disabled />
+        <ToolbarButton label="Сортировка" icon={<SortAsc className="h-4 w-4" />} disabled />
+        <ToolbarButton label="Удалить строку" icon={<Trash2 className="h-4 w-4" />} onClick={() => void deleteRow(selectedRecord)} disabled={!selectedRecord || !capabilities.canDeleteRecords || isMutating} />
+        <ToolbarButton label="Обновить" icon={<RefreshCw className="h-4 w-4" />} onClick={() => void loadEmbed()} disabled={isLoading} />
+        <div className="ml-auto flex h-8 shrink-0 items-center gap-1 rounded-md border border-[#dfe3ea] bg-white px-2">
+          <Search className="h-4 w-4 text-[#626a75]" />
+          <input
+            value={searchQuery}
+            onChange={(event) => {
+              setSearchQuery(event.target.value);
+              setSelection(null);
+              setEditingCell(null);
+            }}
+            placeholder="Найти"
+            className="h-7 w-28 border-0 bg-transparent text-sm outline-none"
+          />
         </div>
+        <ToolbarButton label="Структура" icon={<Columns3 className="h-4 w-4" />} disabled />
+        <ToolbarButton label="Дополнительно" icon={<Settings className="h-4 w-4" />} disabled />
       </div>
 
       <div className="p-4">
@@ -325,66 +659,62 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
           <div className="rounded-lg bg-[#f3f6fb] p-4 text-sm text-editor-text-tertiary">В выбранном view пока нет строк</div>
         ) : null}
         {!errorMessage && records.length > 0 ? (
-          <div className="max-h-[32rem] overflow-auto rounded-lg border border-editor-border-subtle">
-            <table className="min-w-max border-collapse text-left text-sm">
-              <thead className="sticky top-0 z-10 bg-[#f7f9fc] text-xs uppercase tracking-[0.08em] text-editor-text-tertiary">
-                <tr>
-                  {fields.map((field) => (
-                    <th key={field.id} className="min-w-40 border-b border-editor-border-subtle px-3 py-2 font-semibold">
-                      {field.name}
-                    </th>
-                  ))}
-                  <th className="sticky right-0 min-w-24 border-b border-editor-border-subtle bg-[#f7f9fc] px-3 py-2 font-semibold">Действия</th>
-                </tr>
-              </thead>
-              <tbody>
-                {records.map((record) => (
-                  <tr key={record.recordId} className="border-b border-editor-border-subtle last:border-b-0">
-                    {fields.map((field) => {
-                      const value = getFieldValue(record, field);
-                      const isEditable = canInlineEdit && EDITABLE_FIELD_TYPES.has(field.type);
+          <div
+            ref={scrollRef}
+            onScroll={handleCanvasScroll}
+            className="relative overflow-auto rounded-lg border border-editor-border-subtle bg-white"
+            style={{ height: Math.min(MAX_GRID_HEIGHT, Math.max(MIN_GRID_HEIGHT, gridHeight)) }}
+          >
+            <div className="relative" style={{ width: Math.max(gridWidth, viewport.width), height: Math.max(gridHeight, viewport.height) }}>
+              <div style={{ width: Math.max(gridWidth, viewport.width), height: Math.max(gridHeight, viewport.height) }} />
+              <canvas
+                ref={canvasRef}
+                data-testid="mws_canvas_grid"
+                className="absolute left-0 top-0 block cursor-cell bg-transparent"
+                style={{
+                  transform: `translate(${scrollOffset.left}px, ${scrollOffset.top}px)`,
+                }}
+                onPointerDown={(event) => {
+                  const nextSelection = hitTest(event);
+                  setSelection(nextSelection);
+                  setEditingCell(null);
+                }}
+                onDoubleClick={(event) => beginEdit(hitTest(event))}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    beginEdit(selection);
+                  }
+                }}
+                tabIndex={0}
+              />
+              {editingCell ? (
+                <input
+                  autoFocus
+                  value={editingCell.value}
+                  type={fieldInputType(fields[editingCell.fieldIndex])}
+                  onChange={(event) => setEditingCell((current) => (current ? { ...current, value: event.target.value } : current))}
+                  onBlur={commitEdit}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      commitEdit();
+                    }
 
-                      return (
-                        <td key={field.id} className="max-w-72 px-3 py-2 align-top">
-                          {isEditable && field.type === 'Checkbox' ? (
-                            <input
-                              type="checkbox"
-                              defaultChecked={Boolean(value)}
-                              onChange={(event) => void updateCell(record, field, event.target.checked)}
-                              className="h-4 w-4"
-                            />
-                          ) : null}
-                          {isEditable && field.type !== 'Checkbox' ? (
-                            <input
-                              type={fieldInputType(field)}
-                              defaultValue={typeof value === 'string' || typeof value === 'number' ? String(value) : ''}
-                              onBlur={(event) => void updateCell(record, field, event.target.value)}
-                              className="h-8 w-full min-w-40 rounded border border-transparent bg-transparent px-2 text-sm outline-none hover:border-editor-border-subtle focus:border-[#7b67ee] focus:bg-white"
-                            />
-                          ) : null}
-                          {!isEditable ? (
-                            <span className="block max-w-72 truncate text-editor-text-primary" title={renderCell(value)}>
-                              {renderCell(value)}
-                            </span>
-                          ) : null}
-                        </td>
-                      );
-                    })}
-                    <td className="sticky right-0 bg-white px-3 py-2 align-top">
-                      <button
-                        type="button"
-                        onClick={() => void deleteRow(record)}
-                        disabled={!capabilities.canDeleteRecords || isMutating}
-                        className="inline-flex items-center gap-1 rounded-lg border border-editor-border-control px-2 py-1 text-xs font-semibold text-editor-text-primary disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Удалить
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    if (event.key === 'Escape') {
+                      event.preventDefault();
+                      setEditingCell(null);
+                    }
+                  }}
+                  className="absolute z-20 rounded border border-[#7b67ee] bg-white px-2 text-sm outline-none shadow-sm"
+                  style={{
+                    left: editingCell.left + 2,
+                    top: editingCell.top + 2,
+                    width: editingCell.width - 4,
+                    height: editingCell.height - 4,
+                  }}
+                />
+              ) : null}
+            </div>
           </div>
         ) : null}
         {hasMore ? (

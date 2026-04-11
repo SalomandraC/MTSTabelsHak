@@ -23,6 +23,21 @@ let accessToken: string | null = null;
 let activeUser: MeResponse['user'] | null = null;
 let refreshInFlight: Promise<string | null> | null = null;
 
+function getDemoUserFromUrl(): MeResponse['user'] | null {
+  const params = new URLSearchParams(window.location.search);
+  const userId = params.get('userId') ?? params.get('demoUserId');
+  const displayName = params.get('userName') ?? params.get('demoUserName');
+
+  if (!userId) {
+    return null;
+  }
+
+  return {
+    userId,
+    displayName: displayName ?? `User ${userId.slice(0, 8)}`,
+  };
+}
+
 export type PageSummary = {
   id: string;
   title: string;
@@ -252,7 +267,7 @@ export function getAccessToken() {
 }
 
 export function getCurrentUser() {
-  return activeUser;
+  return activeUser ?? getDemoUserFromUrl();
 }
 
 function setAccessToken(token: string | null): void {
@@ -295,11 +310,20 @@ async function refreshAccessToken(): Promise<string | null> {
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { query, headers, body, skipAuthRetry, authMode = 'required', ...init } = options;
+  const demoUser = getDemoUserFromUrl();
 
   let requestHeaders: HeadersInit = {
     'Content-Type': 'application/json',
     ...(headers ?? {}),
   };
+
+  if (authMode === 'required' && !accessToken && demoUser) {
+    requestHeaders = {
+      ...requestHeaders,
+      'x-user-id': demoUser.userId,
+      'x-user-name': demoUser.displayName,
+    };
+  }
 
   if (authMode === 'required' && accessToken) {
     requestHeaders = {
@@ -364,7 +388,16 @@ export const wikiliveApi = {
   async restoreSession() {
     const token = await refreshAccessToken();
     if (!token) {
-      return null;
+      if (!getDemoUserFromUrl()) {
+        return null;
+      }
+
+      try {
+        const me = await this.getMe();
+        return me.user;
+      } catch {
+        return null;
+      }
     }
 
     const me = await this.getMe();
@@ -429,6 +462,11 @@ export const wikiliveApi = {
     return request<{ page: WikiPage }>(`/api/v1/pages/${pageId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
+    });
+  },
+  deletePage(pageId: string) {
+    return request<void>(`/api/v1/pages/${pageId}`, {
+      method: 'DELETE',
     });
   },
   getBacklinks(pageId: string) {

@@ -90,6 +90,12 @@ npm run start:dev
 - frontend держит access token только в памяти и делает silent refresh каждые 10 минут
 - по умолчанию `AUTH_REQUIRED=true`; для демо-режима можно вручную выставить `AUTH_REQUIRED=false`
 
+Совместная работа и шаринг страницы:
+- каждая открытая страница синхронизирует URL в формате `/spaces/:spaceId/pages/:pageId`
+- кнопку `Скопировать ссылку` можно использовать, чтобы открыть тот же документ во втором окне или отправить другому пользователю
+- для проверки разных реальных пользователей откройте ссылку в другом браузерном профиле/инкогнито и войдите другим MWS API-ключом
+- в демо-режиме с `AUTH_REQUIRED=false` можно открыть ссылку с query params `?userId=demo-user-2&userName=Demo%20User%202`, чтобы backend выдал отдельного demo-пользователя через `x-user-id`/`x-user-name`
+
 ## API и документация
 
 - OpenAPI: [docs/openapi.yaml](/Users/nikitababicenko/PhpstormProjects/truetecharena/docs/openapi.yaml)
