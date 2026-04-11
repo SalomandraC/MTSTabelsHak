@@ -5,9 +5,12 @@ import {
   ChevronDown,
   ChevronRight,
   Database,
+  FileDown,
+  FileUp,
   FileText,
   Folder,
   LogOut,
+  MoreHorizontal,
   Plus,
   Search,
   Send,
@@ -27,6 +30,8 @@ import {
   type Backlink,
   type MwsSpace,
   type OutgoingLink,
+  type TemplateCategorySummary,
+  type TemplateListQuery,
   type PageTemplateSummary,
   type WikiPage,
   type WorkspaceTreeNode,
@@ -44,6 +49,7 @@ import {
 } from './workspace-layout';
 
 const SELECTED_SPACE_STORAGE_KEY = 'wikilive:selected-space-id';
+const DEFAULT_TEMPLATE_PAGE_SIZE = 20;
 
 type WorkspaceRouteState = {
   spaceId: string | null;
@@ -298,6 +304,7 @@ function WorkspaceTreeItem({
   onSelectMwsTable,
   onToggleFolder,
   onDeletePage,
+  onCreateTemplateFromPage,
 }: {
   node: WorkspaceTreeNode;
   depth: number;
@@ -308,13 +315,34 @@ function WorkspaceTreeItem({
   onSelectMwsTable: (node: WorkspaceTreeNode) => void;
   onToggleFolder: (folderId: string) => void;
   onDeletePage: (pageId: string, title: string) => void;
+  onCreateTemplateFromPage: (pageId: string, title: string) => void;
 }) {
+  const actionsMenuRef = useRef<HTMLDivElement | null>(null);
+  const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
   const hasChildren = node.children.length > 0;
   const isExpandable = node.kind === 'mwsFolder' || hasChildren;
   const isExpanded = isExpandable ? expandedFolderIds.has(node.id) : false;
   const isActivePage = node.linkedPageId === activePageId;
   const isSelectedTable = node.kind === 'mwsTable' && node.id === selectedTableNodeId;
   const itemPadding = 8 + depth * 22;
+
+  useEffect(() => {
+    if (!isActionsMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(event.target as Node)) {
+        setIsActionsMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+    };
+  }, [isActionsMenuOpen]);
 
   return (
     <li className="treeItemRoot relative" tabIndex={-1}>
@@ -377,18 +405,67 @@ function WorkspaceTreeItem({
         </button>
 
         {node.kind === 'wikiPage' && node.linkedPageId ? (
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onDeletePage(node.linkedPageId!, node.title);
-            }}
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[#b6b6b6] opacity-0 transition-opacity hover:bg-[#fff1f3] hover:text-[#d70032] group-hover:opacity-100"
-            title="Удалить страницу"
-            aria-label={`Удалить страницу ${node.title}`}
-          >
-            <Trash2 size={14} strokeWidth={2.2} />
-          </button>
+          <div ref={actionsMenuRef} className="relative ml-1 shrink-0">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setIsActionsMenuOpen((current) => !current);
+              }}
+              className="flex h-6 w-6 items-center justify-center rounded text-[#b6b6b6] opacity-0 transition-opacity hover:bg-[#f2f3f5] hover:text-[#1f1f1f] group-hover:opacity-100"
+              title="Действия"
+              aria-label={`Действия для страницы ${node.title}`}
+              aria-haspopup="menu"
+              aria-expanded={isActionsMenuOpen}
+            >
+              <MoreHorizontal size={14} strokeWidth={2.2} />
+            </button>
+
+            {isActionsMenuOpen ? (
+              <div
+                role="menu"
+                aria-label={`Действия для страницы ${node.title}`}
+                className="absolute right-0 top-7 z-30 w-44 overflow-hidden rounded-xl border border-editor-border-subtle bg-white py-1 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setIsActionsMenuOpen(false);
+                    onSelectPage(node.linkedPageId!);
+                  }}
+                  className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
+                >
+                  Редактировать
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setIsActionsMenuOpen(false);
+                    onCreateTemplateFromPage(node.linkedPageId!, node.title);
+                  }}
+                  className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
+                >
+                  Создать шаблон
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setIsActionsMenuOpen(false);
+                    onDeletePage(node.linkedPageId!, node.title);
+                  }}
+                  className="flex w-full items-center px-3 py-2 text-left text-sm text-[#d70032] hover:bg-[#fff1f3]"
+                >
+                  Удалить
+                </button>
+              </div>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
@@ -406,6 +483,7 @@ function WorkspaceTreeItem({
               onSelectMwsTable={onSelectMwsTable}
               onToggleFolder={onToggleFolder}
               onDeletePage={onDeletePage}
+              onCreateTemplateFromPage={onCreateTemplateFromPage}
             />
           ))}
         </ul>
@@ -593,11 +671,36 @@ export function WorkspacePage() {
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [templates, setTemplates] = useState<PageTemplateSummary[]>([]);
+  const [templateCategories, setTemplateCategories] = useState<TemplateCategorySummary[]>([]);
+  const areTemplateCategoriesLoadedRef = useRef(false);
+  const [templateQuery, setTemplateQuery] = useState<TemplateListQuery>({
+    scope: 'all',
+    sort: 'relevance',
+    search: '',
+    page: 1,
+    pageSize: DEFAULT_TEMPLATE_PAGE_SIZE,
+  });
+  const templateQueryRef = useRef<TemplateListQuery>({
+    scope: 'all',
+    sort: 'relevance',
+    search: '',
+    page: 1,
+    pageSize: DEFAULT_TEMPLATE_PAGE_SIZE,
+  });
+  const [templatePageInfo, setTemplatePageInfo] = useState({
+    page: 1,
+    pageSize: DEFAULT_TEMPLATE_PAGE_SIZE,
+    total: 0,
+    hasNextPage: false,
+  });
   const [isTemplatesLoading, setIsTemplatesLoading] = useState(true);
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [isCreateTemplateModalOpen, setIsCreateTemplateModalOpen] = useState(false);
+  const [pendingTemplateSource, setPendingTemplateSource] = useState<{ pageId: string; title: string } | null>(null);
+  const [editingTemplate, setEditingTemplate] = useState<PageTemplateSummary | null>(null);
   const [isInstantiatingTemplate, setIsInstantiatingTemplate] = useState(false);
   const [isCreatingTemplate, setIsCreatingTemplate] = useState(false);
+  const [isDeletingTemplate, setIsDeletingTemplate] = useState(false);
   const leftSidebar = useResizableSidebar({
     defaultWidth: LEFT_SIDEBAR_MIN_WIDTH,
     minWidth: LEFT_SIDEBAR_MIN_WIDTH,
@@ -716,12 +819,24 @@ export function WorkspacePage() {
     };
   }, [initialRoute.spaceId]);
 
-  const refreshTemplates = useCallback(async (spaceId: string) => {
+  const refreshTemplates = useCallback(async (spaceId: string, overrides?: Partial<TemplateListQuery>) => {
     setIsTemplatesLoading(true);
 
+    const currentQuery = templateQueryRef.current;
+    const nextQuery: TemplateListQuery = {
+      ...currentQuery,
+      ...overrides,
+      spaceId,
+      page: overrides?.page ?? currentQuery.page ?? 1,
+      pageSize: overrides?.pageSize ?? currentQuery.pageSize ?? DEFAULT_TEMPLATE_PAGE_SIZE,
+    };
+
     try {
-      const response = await wikiliveApi.listTemplates(spaceId);
-      setTemplates(response.items);
+      const templatesResponse = await wikiliveApi.listTemplates(nextQuery);
+      templateQueryRef.current = nextQuery;
+      setTemplateQuery(nextQuery);
+      setTemplates(templatesResponse.items);
+      setTemplatePageInfo(templatesResponse.pageInfo);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить шаблоны');
     } finally {
@@ -729,15 +844,29 @@ export function WorkspacePage() {
     }
   }, []);
 
+  const ensureTemplateCategoriesLoaded = useCallback(async () => {
+    if (areTemplateCategoriesLoadedRef.current) {
+      return;
+    }
+
+    const response = await wikiliveApi.listTemplateCategories();
+    setTemplateCategories(response.items);
+    areTemplateCategoriesLoadedRef.current = true;
+  }, []);
+
   useEffect(() => {
-    let cancelled = false;
-
-    void refreshTemplates(selectedSpaceId);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshTemplates, selectedSpaceId]);
+    void ensureTemplateCategoriesLoaded().catch((error) => {
+      setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить категории шаблонов');
+    });
+    void refreshTemplates(selectedSpaceId, {
+      scope: 'all',
+      sort: 'relevance',
+      search: '',
+      categoryId: undefined,
+      page: 1,
+      pageSize: DEFAULT_TEMPLATE_PAGE_SIZE,
+    });
+  }, [ensureTemplateCategoriesLoaded, refreshTemplates, selectedSpaceId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -936,6 +1065,7 @@ export function WorkspacePage() {
       await refreshTree(selectedSpaceId, created.page.id);
       setActivePageId(created.page.id);
       writeWorkspaceRoute(selectedSpaceId, created.page.id, 'push');
+      await refreshTemplates(selectedSpaceId);
       setIsTemplateModalOpen(false);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Не удалось создать страницу из шаблона');
@@ -948,37 +1078,107 @@ export function WorkspacePage() {
   const handleCreateTemplateFromPage = async (payload: {
     title: string;
     summary: string;
-    category: string;
+    categoryId: string;
     accessLevel: 'private' | 'space' | 'public';
-    document: Record<string, unknown>;
+    document?: Record<string, unknown> | null;
   }) => {
-    if (!activeEditor) {
+    if (!activeEditor && !editingTemplate) {
       return;
     }
 
     setIsCreatingTemplate(true);
-    setStatusMessage('Сохраняем шаблон');
+    setStatusMessage(editingTemplate ? 'Обновляем шаблон' : 'Сохраняем шаблон');
     setErrorMessage('');
 
     try {
-      await wikiliveApi.createTemplate({
-        spaceId: selectedSpaceId,
-        title: payload.title,
-        summary: payload.summary,
-        category: payload.category,
-        accessLevel: payload.accessLevel,
-        document: payload.document,
-      });
+      if (editingTemplate) {
+        await wikiliveApi.updateTemplate(editingTemplate.id, {
+          title: payload.title,
+          summary: payload.summary,
+          categoryId: payload.categoryId,
+          accessLevel: payload.accessLevel,
+          document: payload.document ?? undefined,
+        });
+      } else {
+        await wikiliveApi.createTemplate({
+          spaceId: selectedSpaceId,
+          title: payload.title,
+          summary: payload.summary,
+          categoryId: payload.categoryId,
+          accessLevel: payload.accessLevel,
+          document: payload.document ?? {},
+        });
+      }
 
-      await refreshTemplates(selectedSpaceId);
+      await refreshTemplates(selectedSpaceId, { page: 1 });
       setIsCreateTemplateModalOpen(false);
+      setEditingTemplate(null);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Не удалось создать шаблон');
+      setErrorMessage(error instanceof Error ? error.message : 'Не удалось сохранить шаблон');
     } finally {
       setIsCreatingTemplate(false);
       setStatusMessage('');
     }
   };
+
+  const handleDeleteTemplate = async (template: PageTemplateSummary) => {
+    const confirmed = window.confirm(`Удалить шаблон "${template.title}"?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeletingTemplate(true);
+    setStatusMessage('Удаляем шаблон');
+
+    try {
+      await wikiliveApi.deleteTemplate(template.id);
+      await refreshTemplates(selectedSpaceId, { page: 1 });
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Не удалось удалить шаблон');
+    } finally {
+      setIsDeletingTemplate(false);
+      setStatusMessage('');
+    }
+  };
+
+  const handleEditTemplate = (template: PageTemplateSummary) => {
+    if (!template.canManage) {
+      return;
+    }
+
+    setEditingTemplate(template);
+    setIsCreateTemplateModalOpen(true);
+  };
+
+  const openCreateTemplateFromPage = (pageId: string, title: string) => {
+    setEditingTemplate(null);
+    setPendingTemplateSource({ pageId, title });
+
+    if (pageId !== activePageId) {
+      setSelectedTableNode(null);
+      setActivePageId(pageId);
+      writeWorkspaceRoute(selectedSpaceId, pageId, 'push');
+      return;
+    }
+
+    if (activeEditor) {
+      setIsCreateTemplateModalOpen(true);
+    }
+  };
+
+  useEffect(() => {
+    if (!pendingTemplateSource) {
+      return;
+    }
+
+    if (pendingTemplateSource.pageId !== activePageId || !activeEditor) {
+      return;
+    }
+
+    setIsCreateTemplateModalOpen(true);
+    setPendingTemplateSource(null);
+  }, [activeEditor, activePageId, pendingTemplateSource]);
 
   const handleCreateTablePage = async () => {
     if (!selectedTableNode?.mwsNode) {
@@ -1196,24 +1396,18 @@ export function WorkspacePage() {
           <div className="mt-2 px-3">
             <button
               type="button"
-              onClick={() => setIsTemplateModalOpen(true)}
+              onClick={() => {
+                setIsTemplateModalOpen(true);
+                void ensureTemplateCategoriesLoaded().catch((error) => {
+                  setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить категории шаблонов');
+                });
+                void refreshTemplates(selectedSpaceId, { page: 1 });
+              }}
               disabled={isTemplatesLoading}
               className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-editor-border-subtle bg-white px-3 text-sm font-semibold text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa] disabled:cursor-wait disabled:opacity-60"
             >
-              <Sparkles size={16} strokeWidth={2.2} />
-              {isTemplatesLoading ? 'Загружаем шаблоны...' : 'Создать из шаблона'}
-            </button>
-          </div>
-
-          <div className="mt-2 px-3">
-            <button
-              type="button"
-              onClick={() => setIsCreateTemplateModalOpen(true)}
-              disabled={!activeEditor}
-              className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-editor-border-subtle bg-white px-3 text-sm font-semibold text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <Sparkles size={16} strokeWidth={2.2} />
-              Сохранить как шаблон
+              <FileDown size={16} strokeWidth={2.2} />
+              {isTemplatesLoading ? 'Загружаем шаблоны...' : 'Маркетплейс шаблонов'}
             </button>
           </div>
 
@@ -1240,6 +1434,7 @@ export function WorkspacePage() {
                       onSelectMwsTable={handleSelectMwsTable}
                       onToggleFolder={handleToggleFolder}
                       onDeletePage={(pageId, title) => void handleDeletePage(pageId, title)}
+                      onCreateTemplateFromPage={(pageId, title) => openCreateTemplateFromPage(pageId, title)}
                     />
                   ))}
                 </ul>
@@ -1379,6 +1574,20 @@ export function WorkspacePage() {
             >
               {shareStatus || 'Скопировать ссылку'}
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEditingTemplate(null);
+                setIsCreateTemplateModalOpen(true);
+              }}
+              disabled={!activeEditor}
+              className="mt-2 w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm font-semibold text-editor-text-secondary transition-colors hover:bg-editor-bg-control disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span className="inline-flex items-center gap-2">
+                <FileUp size={15} strokeWidth={2.2} />
+                Сохранить как шаблон
+              </span>
+            </button>
             {activePageId ? (
               <button
                 type="button"
@@ -1497,20 +1706,39 @@ export function WorkspacePage() {
       <PageTemplateMarketplaceModal
         isOpen={isTemplateModalOpen}
         templates={templates}
+        query={templateQuery}
+        pageInfo={templatePageInfo}
+        categories={templateCategories}
+        isListLoading={isTemplatesLoading}
         isSubmitting={isInstantiatingTemplate}
+        isDeleting={isDeletingTemplate}
         onClose={() => {
           if (!isInstantiatingTemplate) {
             setIsTemplateModalOpen(false);
           }
         }}
+        onQueryChange={(queryOverrides) => void refreshTemplates(selectedSpaceId, { ...queryOverrides, page: 1 })}
+        onNextPage={() => void refreshTemplates(selectedSpaceId, { page: (templatePageInfo.page ?? 1) + 1 })}
+        onPrevPage={() => void refreshTemplates(selectedSpaceId, { page: Math.max(1, (templatePageInfo.page ?? 1) - 1) })}
         onSubmit={handleInstantiateTemplate}
+        onEditTemplate={handleEditTemplate}
+        onDeleteTemplate={handleDeleteTemplate}
       />
       <CreateTemplateFromPageModal
         isOpen={isCreateTemplateModalOpen}
-        sourcePageTitle={activePage?.title ?? 'Новая страница'}
+        mode={editingTemplate ? 'edit' : 'create'}
+        sourcePageTitle={editingTemplate?.title ?? pendingTemplateSource?.title ?? activePage?.title ?? 'Новая страница'}
+        categories={templateCategories}
+        initialSummary={editingTemplate?.summary}
+        initialCategoryId={editingTemplate?.categoryId ?? templateCategories[0]?.id ?? null}
+        initialAccessLevel={editingTemplate?.accessLevel}
         isSubmitting={isCreatingTemplate}
-        document={activeEditor?.getJSON() as Record<string, unknown> | null}
-        onClose={() => setIsCreateTemplateModalOpen(false)}
+        document={editingTemplate ? null : (activeEditor?.getJSON() as Record<string, unknown> | null)}
+        onClose={() => {
+          setIsCreateTemplateModalOpen(false);
+          setPendingTemplateSource(null);
+          setEditingTemplate(null);
+        }}
         onSubmit={handleCreateTemplateFromPage}
       />
     </main>

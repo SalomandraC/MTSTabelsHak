@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Search, Sparkles, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Edit3, Search, Sparkles, Trash2, X } from 'lucide-react';
 
 import { ScrollArea } from '../../../shared/ui';
-import type { PageTemplateSummary } from '../../../shared/api/wikilive';
+import type { PageTemplateSummary, TemplateCategorySummary, TemplateListQuery, TemplateListScope, TemplateListSort } from '../../../shared/api/wikilive';
 
 function getAccessBadge(template: PageTemplateSummary) {
   if (template.source === 'builtIn') {
@@ -24,66 +24,121 @@ function getAccessBadge(template: PageTemplateSummary) {
 type PageTemplateMarketplaceModalProps = {
   isOpen: boolean;
   templates: PageTemplateSummary[];
+  categories: TemplateCategorySummary[];
+  query: TemplateListQuery;
+  pageInfo: {
+    page: number;
+    pageSize: number;
+    total: number;
+    hasNextPage: boolean;
+  };
+  isListLoading: boolean;
   isSubmitting: boolean;
+  isDeleting: boolean;
   onClose: () => void;
+  onQueryChange: (overrides: Partial<TemplateListQuery>) => void;
+  onNextPage: () => void;
+  onPrevPage: () => void;
   onSubmit: (payload: {
     templateId: string;
     title?: string;
     values: Record<string, string>;
   }) => Promise<void>;
+  onEditTemplate: (template: PageTemplateSummary) => void;
+  onDeleteTemplate: (template: PageTemplateSummary) => Promise<void>;
 };
 
 export function PageTemplateMarketplaceModal({
   isOpen,
   templates,
+  categories,
+  query,
+  pageInfo,
+  isListLoading,
   isSubmitting,
+  isDeleting,
   onClose,
+  onQueryChange,
+  onNextPage,
+  onPrevPage,
   onSubmit,
+  onEditTemplate,
+  onDeleteTemplate,
 }: PageTemplateMarketplaceModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<TemplateListScope>('all');
+  const [categoryFilter, setCategoryFilter] = useState<'all' | string>('all');
+  const [sortBy, setSortBy] = useState<TemplateListSort>('relevance');
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [values, setValues] = useState<Record<string, string>>({});
-
-  const filteredTemplates = useMemo(() => {
-    const normalized = searchQuery.trim().toLowerCase();
-
-    if (!normalized) {
-      return templates;
-    }
-
-    return templates.filter((template) => {
-      const haystack = [template.title, template.summary, template.category, template.audience]
-        .join(' ')
-        .toLowerCase();
-
-      return haystack.includes(normalized);
-    });
-  }, [searchQuery, templates]);
-
-  const selectedTemplate = useMemo(
-    () => templates.find((template) => template.id === selectedTemplateId) ?? filteredTemplates[0] ?? null,
-    [filteredTemplates, selectedTemplateId, templates],
-  );
+  const initializedTemplateIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
       return;
     }
 
-    const nextTemplate = filteredTemplates[0] ?? null;
+    setSearchQuery(query.search ?? '');
+    setActiveTab(query.scope ?? 'all');
+    setCategoryFilter(query.categoryId ?? 'all');
+    setSortBy(query.sort ?? 'relevance');
+  }, [isOpen, query.categoryId, query.scope, query.search, query.sort]);
 
-    if (!selectedTemplateId && nextTemplate) {
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    if (searchQuery === (query.search ?? '')) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      onQueryChange({ search: searchQuery });
+    }, 260);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [isOpen, onQueryChange, searchQuery]);
+
+  const selectedTemplate = useMemo(() => {
+    if (selectedTemplateId) {
+      const selected = templates.find((template) => template.id === selectedTemplateId);
+      if (selected) {
+        return selected;
+      }
+    }
+
+    return templates[0] ?? null;
+  }, [selectedTemplateId, templates]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const nextTemplate = selectedTemplate ?? null;
+
+    if ((!selectedTemplateId || !templates.some((template) => template.id === selectedTemplateId)) && nextTemplate) {
       setSelectedTemplateId(nextTemplate.id);
     }
-  }, [filteredTemplates, isOpen, selectedTemplateId]);
+  }, [isOpen, selectedTemplate, selectedTemplateId, templates]);
 
   useEffect(() => {
     if (!selectedTemplate) {
       setValues({});
       setTitle('');
+      initializedTemplateIdRef.current = null;
       return;
     }
+
+    if (initializedTemplateIdRef.current === selectedTemplate.id) {
+      return;
+    }
+
+    initializedTemplateIdRef.current = selectedTemplate.id;
 
     setValues(
       Object.fromEntries(
@@ -92,6 +147,17 @@ export function PageTemplateMarketplaceModal({
     );
     setTitle('');
   }, [selectedTemplate]);
+
+  useEffect(() => {
+    if (isOpen) {
+      return;
+    }
+
+    initializedTemplateIdRef.current = null;
+    setSelectedTemplateId(null);
+    setTitle('');
+    setValues({});
+  }, [isOpen]);
 
   if (!isOpen) {
     return null;
@@ -132,10 +198,82 @@ export function PageTemplateMarketplaceModal({
                 className="w-full border-0 bg-transparent text-sm outline-none"
               />
             </label>
+            <div className="mt-3 flex rounded-xl bg-[#f1f2f4] p-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('all');
+                  onQueryChange({ scope: 'all' });
+                }}
+                className={[
+                  'h-8 flex-1 rounded-[10px] text-xs font-semibold transition-colors',
+                  activeTab === 'all' ? 'bg-white text-[#1f1f1f] shadow-sm' : 'text-[#757575] hover:text-[#303030]',
+                ].join(' ')}
+              >
+                Все шаблоны
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('mine');
+                  onQueryChange({ scope: 'mine' });
+                }}
+                className={[
+                  'h-8 flex-1 rounded-[10px] text-xs font-semibold transition-colors',
+                  activeTab === 'mine' ? 'bg-white text-[#1f1f1f] shadow-sm' : 'text-[#757575] hover:text-[#303030]',
+                ].join(' ')}
+              >
+                Мои шаблоны
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('space');
+                  onQueryChange({ scope: 'space' });
+                }}
+                className={[
+                  'h-8 flex-1 rounded-[10px] text-xs font-semibold transition-colors',
+                  activeTab === 'space' ? 'bg-white text-[#1f1f1f] shadow-sm' : 'text-[#757575] hover:text-[#303030]',
+                ].join(' ')}
+              >
+                В пространстве
+              </button>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <select
+                value={categoryFilter}
+                onChange={(event) => {
+                  const nextCategory = event.target.value;
+                  setCategoryFilter(nextCategory);
+                  onQueryChange({ categoryId: nextCategory === 'all' ? undefined : nextCategory });
+                }}
+                className="h-9 rounded-xl border border-editor-border-subtle bg-white px-2 text-xs outline-none focus:border-[#5586ff]"
+              >
+                <option value="all">Все категории</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.title}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={sortBy}
+                onChange={(event) => {
+                  const nextSort = event.target.value as TemplateListSort;
+                  setSortBy(nextSort);
+                  onQueryChange({ sort: nextSort });
+                }}
+                className="h-9 rounded-xl border border-editor-border-subtle bg-white px-2 text-xs outline-none focus:border-[#5586ff]"
+              >
+                <option value="relevance">По релевантности</option>
+                <option value="newest">По новизне</option>
+                <option value="popular">По популярности</option>
+              </select>
+            </div>
           </div>
           <ScrollArea className="min-h-0 flex-1 overflow-y-auto p-3">
             <div className="space-y-2">
-              {filteredTemplates.map((template) => {
+              {templates.map((template) => {
                 const isSelected = template.id === selectedTemplate?.id;
 
                 return (
@@ -165,18 +303,49 @@ export function PageTemplateMarketplaceModal({
                         </div>
                         <h3 className="mt-2 text-sm font-semibold text-[#1f1f1f]">{template.title}</h3>
                         <p className="mt-1 text-xs leading-5 text-editor-text-tertiary">{template.summary}</p>
+                        <p className="mt-1 text-[11px] text-[#7a7f88]">Использований: {template.usageCount}</p>
                       </div>
                     </div>
                   </button>
                 );
               })}
-              {filteredTemplates.length === 0 ? (
+              {isListLoading ? (
+                <div className="rounded-2xl border border-dashed border-editor-border-subtle bg-white px-4 py-6 text-sm text-editor-text-tertiary">
+                  Загружаем шаблоны...
+                </div>
+              ) : null}
+              {!isListLoading && templates.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-editor-border-subtle bg-white px-4 py-6 text-sm text-editor-text-tertiary">
                   По текущему поиску шаблонов не найдено.
                 </div>
               ) : null}
             </div>
           </ScrollArea>
+          <div className="border-t border-editor-border-subtle px-4 py-3">
+            <div className="flex items-center justify-between text-xs text-editor-text-tertiary">
+              <span>
+                Стр. {pageInfo.page} • Всего: {pageInfo.total}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onPrevPage}
+                  disabled={pageInfo.page <= 1 || isListLoading}
+                  className="rounded-md border border-editor-border-subtle bg-white px-2 py-1 font-semibold text-[#1f1f1f] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Назад
+                </button>
+                <button
+                  type="button"
+                  onClick={onNextPage}
+                  disabled={!pageInfo.hasNextPage || isListLoading}
+                  className="rounded-md border border-editor-border-subtle bg-white px-2 py-1 font-semibold text-[#1f1f1f] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Далее
+                </button>
+              </div>
+            </div>
+          </div>
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
@@ -196,6 +365,27 @@ export function PageTemplateMarketplaceModal({
                     <h3 className="mt-3 font-wide text-2xl font-semibold text-[#1f1f1f]">{selectedTemplate.title}</h3>
                     <p className="mt-2 max-w-2xl text-sm text-editor-text-tertiary">{selectedTemplate.summary}</p>
                   </div>
+                  {selectedTemplate.canManage ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onEditTemplate(selectedTemplate)}
+                        className="inline-flex h-9 items-center gap-2 rounded-lg border border-editor-border-subtle bg-white px-3 text-sm font-semibold text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa]"
+                      >
+                        <Edit3 size={14} strokeWidth={2.1} />
+                        Редактировать
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void onDeleteTemplate(selectedTemplate)}
+                        disabled={isDeleting}
+                        className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#ffd2d9] bg-[#fff7f8] px-3 text-sm font-semibold text-[#b00025] transition-colors hover:bg-[#fff1f3] disabled:cursor-wait disabled:opacity-60"
+                      >
+                        <Trash2 size={14} strokeWidth={2.1} />
+                        {isDeleting ? 'Удаляем...' : 'Удалить'}
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 

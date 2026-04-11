@@ -34,6 +34,16 @@ enum TemplateAccessLevel {
   public
 }
 
+model TemplateCategory {
+  id         String        @id @default(uuid())
+  title      String        @unique
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
+  templates  PageTemplate[]
+
+  @@map("template_categories")
+}
+
 model WikiNode {
   id          String       @id @default(uuid())
   spaceId     String       @map("space_id")
@@ -197,16 +207,21 @@ model PageTemplate {
   ownerUserId       String              @map("owner_user_id")
   title             String
   summary           String
-  category          String
+  categoryLegacy    String              @map("category")
+  categoryId        String?             @map("category_id")
   icon              String              @default("sparkles")
   accessLevel       TemplateAccessLevel  @default(private) @map("access_level")
   pageTitleTemplate String              @map("page_title_template")
+  usageCount        Int                 @default(0) @map("usage_count")
   fields            Json                @map("fields")
   document          Json                @map("document")
   createdAt         DateTime            @default(now()) @map("created_at")
   updatedAt         DateTime            @updatedAt @map("updated_at")
+  category          TemplateCategory?    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
 
   @@index([spaceId, accessLevel])
   @@index([ownerUserId, accessLevel])
+  @@index([categoryId])
+  @@index([usageCount])
   @@map("page_templates")
 }

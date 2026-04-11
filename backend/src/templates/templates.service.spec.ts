@@ -13,22 +13,35 @@ describe('TemplatesService', () => {
     })),
   };
 
-  const prisma = {
+  const prisma: any = {
     pageTemplate: {
       findMany: jest.fn(),
+      count: jest.fn(),
       findUnique: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
+      delete: jest.fn(),
+      createMany: jest.fn(),
+    },
+    templateCategory: {
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
       createMany: jest.fn(),
     },
   };
+  prisma.$transaction = jest.fn(async (callback: (tx: any) => Promise<any>) => callback(prisma));
 
   const service = new TemplatesService(pagesService as any, prisma as any);
 
   beforeEach(() => {
     jest.clearAllMocks();
+    prisma.pageTemplate.count.mockResolvedValue(0);
   });
 
   it('instantiates template with substituted values in default Yjs fragment', async () => {
+    prisma.pageTemplate.findUnique.mockResolvedValue(null);
+
     await service.instantiateTemplate(
       'mts-resume',
       {
@@ -60,6 +73,10 @@ describe('TemplatesService', () => {
     expect(serialized).toContain('Иван Иванов');
     expect(serialized).toContain('Frontend Engineer');
     expect(serialized).not.toContain('templateVariable');
+    expect(prisma.pageTemplate.updateMany).toHaveBeenCalledWith({
+      where: { id: 'mts-resume' },
+      data: { usageCount: { increment: 1 } },
+    });
   });
 
   it('returns built-in templates plus visible custom templates', async () => {
@@ -70,9 +87,11 @@ describe('TemplatesService', () => {
         ownerUserId: 'system',
         title: 'Резюме в компанию МТС',
         summary: 'Быстрый шаблон резюме с акцентом на опыт, навыки и мотивацию для отклика в МТС.',
-        category: 'Карьера',
+        categoryId: 'cat-career',
+        category: { id: 'cat-career', title: 'Карьера' },
         icon: 'briefcase',
         accessLevel: 'public',
+        usageCount: 5,
         pageTitleTemplate: 'Резюме - {{fullName}} - МТС',
         fields: [],
         document: { type: 'doc', content: [] },
@@ -85,9 +104,11 @@ describe('TemplatesService', () => {
         ownerUserId: 'user-1',
         title: 'Личный шаблон',
         summary: 'Only mine',
-        category: 'Мои шаблоны',
+        categoryId: 'cat-personal',
+        category: { id: 'cat-personal', title: 'База знаний' },
         icon: 'sparkles',
         accessLevel: 'private',
+        usageCount: 2,
         pageTitleTemplate: 'Личный шаблон',
         fields: [],
         document: { type: 'doc', content: [] },
@@ -100,9 +121,11 @@ describe('TemplatesService', () => {
         ownerUserId: 'user-2',
         title: 'Шаблон пространства',
         summary: 'Visible in space',
-        category: 'Команда',
+        categoryId: 'cat-team',
+        category: { id: 'cat-team', title: 'Командная работа' },
         icon: 'sparkles',
         accessLevel: 'space',
+        usageCount: 8,
         pageTitleTemplate: 'Шаблон пространства',
         fields: [],
         document: { type: 'doc', content: [] },
@@ -115,9 +138,11 @@ describe('TemplatesService', () => {
         ownerUserId: 'user-2',
         title: 'Публичный шаблон',
         summary: 'Visible everywhere',
-        category: 'Публичные',
+        categoryId: 'cat-docs',
+        category: { id: 'cat-docs', title: 'Документы' },
         icon: 'sparkles',
         accessLevel: 'public',
+        usageCount: 1,
         pageTitleTemplate: 'Публичный шаблон',
         fields: [],
         document: { type: 'doc', content: [] },
@@ -130,9 +155,11 @@ describe('TemplatesService', () => {
         ownerUserId: 'user-3',
         title: 'Скрытый шаблон',
         summary: 'Should not be visible',
-        category: 'Скрытые',
+        categoryId: 'cat-hidden',
+        category: { id: 'cat-hidden', title: 'Финансы' },
         icon: 'sparkles',
         accessLevel: 'private',
+        usageCount: 0,
         pageTitleTemplate: 'Скрытый шаблон',
         fields: [],
         document: { type: 'doc', content: [] },
@@ -143,7 +170,7 @@ describe('TemplatesService', () => {
 
     const result = await service.listTemplates(
       { userId: 'user-1', displayName: 'Demo User' } as any,
-      'space-1',
+      { spaceId: 'space-1' },
     );
 
     expect(result.items.some((item) => item.id === 'mts-resume')).toBe(true);
@@ -152,21 +179,29 @@ describe('TemplatesService', () => {
     expect(result.items.some((item) => item.id === 'tpl-public')).toBe(true);
     expect(result.items.some((item) => item.id === 'tpl-hidden')).toBe(false);
     expect(result.items.find((item) => item.id === 'mts-resume')?.source).toBe('builtIn');
+    expect(result.items.find((item) => item.id === 'tpl-private')?.canManage).toBe(true);
   });
 
   it('seeds built-in templates on module init', async () => {
+    prisma.templateCategory.findMany.mockResolvedValue([
+      { id: 'cat-career', title: 'Карьера' },
+      { id: 'cat-docs', title: 'Документы' },
+      { id: 'cat-team', title: 'Командная работа' },
+    ]);
+    prisma.templateCategory.createMany.mockResolvedValue({ count: 20 });
     prisma.pageTemplate.findMany.mockResolvedValue([]);
     prisma.pageTemplate.createMany.mockResolvedValue({ count: 3 });
 
     await service.onModuleInit();
 
+    expect(prisma.templateCategory.createMany).toHaveBeenCalledTimes(1);
     expect(prisma.pageTemplate.createMany).toHaveBeenCalledTimes(1);
     expect(prisma.pageTemplate.createMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.arrayContaining([
-          expect.objectContaining({ id: 'mts-resume', accessLevel: 'public' }),
-          expect.objectContaining({ id: 'simple-telecom-contract', accessLevel: 'public' }),
-          expect.objectContaining({ id: 'sprint-retro', accessLevel: 'public' }),
+          expect.objectContaining({ id: 'mts-resume', accessLevel: 'public', categoryId: 'cat-career' }),
+          expect.objectContaining({ id: 'simple-telecom-contract', accessLevel: 'public', categoryId: 'cat-docs' }),
+          expect.objectContaining({ id: 'sprint-retro', accessLevel: 'public', categoryId: 'cat-team' }),
         ]),
         skipDuplicates: true,
       }),
@@ -174,15 +209,18 @@ describe('TemplatesService', () => {
   });
 
   it('stores a custom template from page content and extracts template fields', async () => {
+    prisma.templateCategory.findUnique.mockResolvedValue({ id: 'cat-docs', title: 'Документы' });
     prisma.pageTemplate.create.mockResolvedValue({
       id: 'tpl-created',
       spaceId: 'space-1',
       ownerUserId: 'user-1',
       title: 'Шаблон из страницы',
       summary: 'Шаблон, созданный из страницы',
-      category: 'Мои шаблоны',
+      categoryId: 'cat-docs',
+      category: { id: 'cat-docs', title: 'Документы' },
       icon: 'sparkles',
       accessLevel: 'private',
+      usageCount: 0,
       pageTitleTemplate: 'Шаблон из страницы',
       fields: [
         {
@@ -225,7 +263,7 @@ describe('TemplatesService', () => {
         spaceId: 'space-1',
         title: 'Шаблон из страницы',
         summary: '',
-        category: '',
+        categoryId: 'cat-docs',
         accessLevel: 'private',
         document: {
           type: 'doc',
@@ -262,7 +300,7 @@ describe('TemplatesService', () => {
           ownerUserId: 'user-1',
           title: 'Шаблон из страницы',
           summary: 'Шаблон, созданный из страницы',
-          category: 'Мои шаблоны',
+          categoryId: 'cat-docs',
           accessLevel: 'private',
           pageTitleTemplate: 'Шаблон из страницы',
         }),

@@ -1,38 +1,38 @@
 import { IsIn, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 
-export const TEMPLATE_ACCESS_LEVELS = ['private', 'space', 'public'] as const;
-export type TemplateAccessLevelDto = (typeof TEMPLATE_ACCESS_LEVELS)[number];
+import { TEMPLATE_ACCESS_LEVELS, type TemplateAccessLevelDto } from './create-template.dto';
 
-export class CreateTemplateDto {
-  @IsString()
-  spaceId!: string;
-
+export class UpdateTemplateDto {
+  @IsOptional()
   @IsString()
   @MaxLength(255)
-  title!: string;
+  title?: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(500)
   summary?: string;
 
+  @IsOptional()
   @IsString()
   @MaxLength(255)
-  categoryId!: string;
+  categoryId?: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(64)
   icon?: string;
 
+  @IsOptional()
   @IsIn(TEMPLATE_ACCESS_LEVELS)
-  accessLevel!: TemplateAccessLevelDto;
+  accessLevel?: TemplateAccessLevelDto;
 
   @IsOptional()
   @IsString()
   @MaxLength(255)
   pageTitleTemplate?: string;
 
+  @IsOptional()
   @IsObject()
-  document!: Record<string, unknown>;
+  document?: Record<string, unknown>;
 }
