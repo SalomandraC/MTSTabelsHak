@@ -252,7 +252,7 @@ export class MwsService {
     params?: Record<string, unknown>,
     extraHeaders?: Record<string, string>,
   ) {
-    const token = user.mwsToken ?? user.authToken ?? this.configService.get<string>('MWS_TABLES_API_TOKEN');
+    const token = user.mwsToken ?? user.authToken;
     if (!token) {
       throw new UnauthorizedException('MWS Tables token is required');
     }
