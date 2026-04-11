@@ -22,6 +22,7 @@ type FloatingToolbarProps = {
   onOpenLinkModal: () => void;
   onCreateComment?: (editor: Editor) => void;
   pageTitle?: string;
+  isAiTransformEnabled?: boolean;
 };
 
 type ToolbarButtonProps = {
@@ -78,7 +79,13 @@ function ToolbarButton({
   );
 }
 
-export function FloatingToolbar({ editor, onOpenLinkModal, onCreateComment, pageTitle }: FloatingToolbarProps) {
+export function FloatingToolbar({
+  editor,
+  onOpenLinkModal,
+  onCreateComment,
+  pageTitle,
+  isAiTransformEnabled = true,
+}: FloatingToolbarProps) {
   const [visible, setVisible] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -380,24 +387,28 @@ export function FloatingToolbar({ editor, onOpenLinkModal, onCreateComment, page
         />
       ) : null}
 
-      <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+      {isAiTransformEnabled ? (
+        <>
+          <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
-      <ToolbarButton
-        icon={<span className="px-1 text-[11px] font-semibold">Улучшить</span>}
-        onClick={() => void runAiTransform('professional')}
-        disabled={isAiLoading}
-        isFirst={true}
-        isLast={false}
-        aria-label="Улучшить стиль"
-      />
-      <ToolbarButton
-        icon={<span className="px-1 text-[11px] font-semibold">Сократить</span>}
-        onClick={() => void runAiTransform('shorten')}
-        disabled={isAiLoading}
-        isFirst={false}
-        isLast={true}
-        aria-label="Сократить текст"
-      />
+          <ToolbarButton
+            icon={<span className="px-1 text-[11px] font-semibold">Улучшить</span>}
+            onClick={() => void runAiTransform('professional')}
+            disabled={isAiLoading}
+            isFirst={true}
+            isLast={false}
+            aria-label="Улучшить стиль"
+          />
+          <ToolbarButton
+            icon={<span className="px-1 text-[11px] font-semibold">Сократить</span>}
+            onClick={() => void runAiTransform('shorten')}
+            disabled={isAiLoading}
+            isFirst={false}
+            isLast={true}
+            aria-label="Сократить текст"
+          />
+        </>
+      ) : null}
     </div>
   );
 }

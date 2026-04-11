@@ -141,17 +141,17 @@ export function PluginsModal({
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-end justify-center bg-[rgba(17,24,39,0.38)] p-3 sm:items-center sm:p-6"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgba(17,24,39,0.38)] p-3 sm:p-6"
       onClick={onClose}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Каталог плагинов"
-        className="flex max-h-[min(90vh,48rem)] w-full max-w-4xl flex-col overflow-hidden rounded-[24px] bg-white shadow-[0_28px_80px_rgba(17,24,39,0.26)]"
+        className="flex h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-[24px] bg-white shadow-[0_28px_80px_rgba(17,24,39,0.26)]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="border-b border-[#b81235] bg-[#d81f44] px-4 py-5 text-white sm:px-6">
+        <div className="flex-shrink-0 border-b border-[#b81235] bg-[#d81f44] px-4 py-5 text-white sm:px-6">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/85">
@@ -175,11 +175,11 @@ export function PluginsModal({
         </div>
 
         {errorMessage ? (
-          <div className="border-b border-[#ffd2d9] bg-[#fff1f3] px-4 py-3 text-sm text-[#b00025] sm:px-6">{errorMessage}</div>
+          <div className="flex-shrink-0 border-b border-[#ffd2d9] bg-[#fff1f3] px-4 py-3 text-sm text-[#b00025] sm:px-6">{errorMessage}</div>
         ) : null}
 
-        <div className="grid min-h-0 flex-1 gap-0 overflow-hidden lg:grid-cols-[minmax(0,1fr)_18rem]">
-          <div className="min-h-0 overflow-y-auto bg-[#f6f7f9] px-4 py-4 sm:px-6">
+        <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,1fr)_18rem]">
+          <div className="min-h-0 overflow-y-auto bg-[#f6f7f9] px-4 py-4 pb-5 sm:px-6">
             {isLoading ? <p className="text-sm text-editor-text-tertiary">Загружаем каталог плагинов...</p> : null}
             {!isLoading && items.length === 0 ? <p className="text-sm text-editor-text-tertiary">Плагины пока не найдены.</p> : null}
             <div className="space-y-3">
@@ -258,7 +258,7 @@ export function PluginsModal({
             </div>
           </div>
 
-          <aside className="border-t border-editor-border-subtle bg-white p-4 lg:border-l lg:border-t-0">
+          <aside className="min-h-0 overflow-y-auto border-t border-editor-border-subtle bg-white p-4 lg:border-l lg:border-t-0">
             <div className="rounded-[20px] border border-editor-border-subtle bg-[#f8fafc] p-4">
               <h3 className="text-sm font-semibold text-editor-text-primary">Как это работает</h3>
               <p className="mt-2 text-sm leading-6 text-editor-text-tertiary">

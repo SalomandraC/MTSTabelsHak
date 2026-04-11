@@ -9,6 +9,7 @@ import {
   ROW_HEIGHT
 } from '../model/use-wiki-table-embed';
 import { Check, ChevronsUpDown, Download, Paperclip, X } from 'lucide-react';
+import { ScrollArea } from '../../../shared/ui';
 import { resolveTableGridHeight } from './table-grid-layout';
 
 export type TableGridProps = {
@@ -60,9 +61,10 @@ export function TableGridCanvas({
       : null;
 
   return (
-    <div
+    <ScrollArea
       ref={controller.registerScrollElement}
       onScroll={controller.handleCanvasScroll}
+      variant="table"
       className={[
         'relative overflow-auto bg-white',
         isExpanded ? 'min-h-0 flex-1' : ''
@@ -331,6 +333,6 @@ export function TableGridCanvas({
           </div>
         ) : null}
       </div>
-    </div>
+    </ScrollArea>
   );
 }
