@@ -1,5 +1,5 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
-export const WIKILIVE_SPACE_ID = import.meta.env.VITE_WIKILIVE_SPACE_ID ?? 'demo-space';
+export const DEFAULT_WIKILIVE_SPACE_ID = import.meta.env.VITE_WIKILIVE_SPACE_ID ?? 'demo-space';
 
 type RequestOptions = RequestInit & {
   query?: Record<string, string | number | boolean | null | undefined>;
@@ -22,6 +22,21 @@ export type MeResponse = {
 let accessToken: string | null = null;
 let activeUser: MeResponse['user'] | null = null;
 let refreshInFlight: Promise<string | null> | null = null;
+
+function getDemoUserFromUrl(): MeResponse['user'] | null {
+  const params = new URLSearchParams(window.location.search);
+  const userId = params.get('userId') ?? params.get('demoUserId');
+  const displayName = params.get('userName') ?? params.get('demoUserName');
+
+  if (!userId) {
+    return null;
+  }
+
+  return {
+    userId,
+    displayName: displayName ?? `User ${userId.slice(0, 8)}`,
+  };
+}
 
 export type PageSummary = {
   id: string;
@@ -76,6 +91,13 @@ export type WikiTreeNode = {
   children: WikiTreeNode[];
 };
 
+export type CreateFolderPayload = {
+  spaceId: string;
+  title: string;
+  parentNodeId?: string | null;
+  icon?: string | null;
+};
+
 export type Backlink = {
   pageId: string;
   title: string;
@@ -120,11 +142,19 @@ export type MwsNode = {
   id: string;
   name: string;
   type: string;
+  parentId?: string | null;
+  path?: string[];
   datasheetId?: string | null;
   dstId?: string | null;
   icon?: string | null;
   isFav?: boolean | null;
   permission?: number | null;
+  capabilities?: {
+    canRead?: boolean;
+    canInlineEdit?: boolean;
+    canCreateRecords?: boolean;
+    canDeleteRecords?: boolean;
+  };
   children?: MwsNode[];
 };
 
@@ -156,6 +186,16 @@ export type MwsRecordList = {
   total: number;
 };
 
+export type CreateMwsRecordsPayload = {
+  fieldKey: 'id' | 'name';
+  records: Array<{ fields: Record<string, unknown> }>;
+};
+
+export type UpdateMwsRecordsPayload = {
+  fieldKey: 'id' | 'name';
+  records: Array<{ recordId: string; fields: Record<string, unknown> }>;
+};
+
 export type ResolveTableEmbedRequest = {
   spaceId: string;
   nodeId: string;
@@ -173,8 +213,10 @@ export type ResolveTableEmbedResponse = {
     node: MwsNode;
     datasheetId: string;
     view?: MwsView | null;
+    views?: MwsView[];
     fields: MwsField[];
     preview: MwsRecordList;
+    total?: number;
     capabilities?: {
       canInlineEdit?: boolean;
       canCreateRecords?: boolean;
@@ -225,7 +267,7 @@ export function getAccessToken() {
 }
 
 export function getCurrentUser() {
-  return activeUser;
+  return activeUser ?? getDemoUserFromUrl();
 }
 
 function setAccessToken(token: string | null): void {
@@ -268,11 +310,20 @@ async function refreshAccessToken(): Promise<string | null> {
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { query, headers, body, skipAuthRetry, authMode = 'required', ...init } = options;
+  const demoUser = getDemoUserFromUrl();
 
   let requestHeaders: HeadersInit = {
     'Content-Type': 'application/json',
     ...(headers ?? {}),
   };
+
+  if (authMode === 'required' && !accessToken && demoUser) {
+    requestHeaders = {
+      ...requestHeaders,
+      'x-user-id': demoUser.userId,
+      'x-user-name': demoUser.displayName,
+    };
+  }
 
   if (authMode === 'required' && accessToken) {
     requestHeaders = {
@@ -337,28 +388,68 @@ export const wikiliveApi = {
   async restoreSession() {
     const token = await refreshAccessToken();
     if (!token) {
-      return null;
+      if (!getDemoUserFromUrl()) {
+        return null;
+      }
+
+      try {
+        const me = await this.getMe();
+        return me.user;
+      } catch {
+        return null;
+      }
     }
 
     const me = await this.getMe();
     return me.user;
   },
-  listPages(query = '') {
+  listPages(spaceId: string, query = '') {
     return request<{ items: PageSummary[] }>('/api/v1/pages', {
-      query: { spaceId: WIKILIVE_SPACE_ID, query, limit: 30 },
+      query: { spaceId, query, limit: 30 },
     });
   },
-  getWikiTree() {
-    return request<{ items: WikiTreeNode[] }>(`/api/v1/spaces/${WIKILIVE_SPACE_ID}/wiki/tree`);
+  getWikiTree(spaceId: string) {
+    return request<{ items: WikiTreeNode[] }>(`/api/v1/spaces/${spaceId}/wiki/tree`);
   },
-  createPage(title: string, parentNodeId?: string | null) {
+  createPage(spaceId: string, title: string, parentNodeId?: string | null) {
     return request<{ page: PageSummary }>('/api/v1/pages', {
       method: 'POST',
       body: JSON.stringify({
-        spaceId: WIKILIVE_SPACE_ID,
+        spaceId,
         title,
         icon: 'doc',
         parentNodeId: parentNodeId ?? null,
+      }),
+    });
+  },
+  createFolder(payload: CreateFolderPayload) {
+    return request<{ folder: WikiTreeNode }>('/api/v1/folders', {
+      method: 'POST',
+      body: JSON.stringify({
+        spaceId: payload.spaceId,
+        title: payload.title,
+        icon: payload.icon ?? 'folder',
+        parentNodeId: payload.parentNodeId ?? null,
+      }),
+    });
+  },
+  updateFolder(folderId: string, payload: { title?: string; icon?: string | null; isArchived?: boolean }) {
+    return request<{ folder: WikiTreeNode }>(`/api/v1/folders/${folderId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+  deleteFolder(folderId: string) {
+    return request<void>(`/api/v1/folders/${folderId}`, {
+      method: 'DELETE',
+    });
+  },
+  moveNode(nodeId: string, payload: { targetParentId?: string | null; position?: number }) {
+    return request<{ node: WikiTreeNode }>(`/api/v1/nodes/${nodeId}/move`, {
+      method: 'POST',
+      body: JSON.stringify({
+        targetParentId: payload.targetParentId ?? null,
+        position: payload.position,
       }),
     });
   },
@@ -371,6 +462,11 @@ export const wikiliveApi = {
     return request<{ page: WikiPage }>(`/api/v1/pages/${pageId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
+    });
+  },
+  deletePage(pageId: string) {
+    return request<void>(`/api/v1/pages/${pageId}`, {
+      method: 'DELETE',
     });
   },
   getBacklinks(pageId: string) {
@@ -420,9 +516,54 @@ export const wikiliveApi = {
   listMwsSpaces() {
     return request<{ items: MwsSpace[] }>('/api/v1/mws/spaces');
   },
-  listMwsNodes(spaceId: string) {
+  listMwsNodes(spaceId: string, type?: string) {
     return request<{ items: MwsNode[] }>(`/api/v1/mws/spaces/${spaceId}/nodes`, {
-      query: { includeChildren: true },
+      query: { includeChildren: true, type },
+    });
+  },
+  listMwsFields(datasheetId: string, viewId?: string | null) {
+    return request<{ items: MwsField[] }>(`/api/v1/mws/datasheets/${datasheetId}/fields`, {
+      query: { viewId },
+    });
+  },
+  listMwsViews(datasheetId: string) {
+    return request<{ items: MwsView[] }>(`/api/v1/mws/datasheets/${datasheetId}/views`);
+  },
+  listMwsRecords(datasheetId: string, query: {
+    viewId?: string | null;
+    pageSize?: number;
+    pageNum?: number;
+    fields?: string[];
+    filterByFormula?: string | null;
+  } = {}) {
+    return request<MwsRecordList>(`/api/v1/mws/datasheets/${datasheetId}/records`, {
+      query: {
+        viewId: query.viewId,
+        pageSize: query.pageSize,
+        pageNum: query.pageNum,
+        fields: query.fields?.join(','),
+        filterByFormula: query.filterByFormula,
+        fieldKey: 'id',
+        cellFormat: 'json',
+      },
+    });
+  },
+  createMwsRecords(datasheetId: string, payload: CreateMwsRecordsPayload) {
+    return request<{ items: MwsRecord[] }>(`/api/v1/mws/datasheets/${datasheetId}/records`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  updateMwsRecords(datasheetId: string, payload: UpdateMwsRecordsPayload) {
+    return request<{ items: MwsRecord[] }>(`/api/v1/mws/datasheets/${datasheetId}/records`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+  deleteMwsRecords(datasheetId: string, recordIds: string[]) {
+    return request<{ deleted: boolean }>(`/api/v1/mws/datasheets/${datasheetId}/records`, {
+      method: 'DELETE',
+      query: { recordIds: recordIds.join(',') },
     });
   },
   resolveTableEmbed(payload: ResolveTableEmbedRequest) {

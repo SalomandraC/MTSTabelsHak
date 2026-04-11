@@ -42,6 +42,7 @@ type CollabState = {
 };
 
 type UsePageEditorControllerOptions = {
+  spaceId: string;
   page: WikiPage | null;
   onRenamePage: (title: string) => Promise<void>;
   onCheckpoint: () => Promise<void>;
@@ -76,7 +77,47 @@ function getPersistentId(key: string, fallbackPrefix: string) {
   }
 }
 
-export function usePageEditorController({ page, onRenamePage, onCheckpoint }: UsePageEditorControllerOptions) {
+const collaborationColors = ['#ff0037', '#111827', '#b00025', '#505762', '#df0030'];
+
+function getCollaborationColor(seed: string) {
+  let hash = 0;
+
+  for (const char of seed) {
+    hash = (hash * 31 + char.charCodeAt(0)) % collaborationColors.length;
+  }
+
+  return collaborationColors[Math.abs(hash) % collaborationColors.length];
+}
+
+function getProviderUsers(provider: HocuspocusProvider): PresenceUser[] {
+  const awareness = (provider as unknown as { awareness?: { getStates?: () => Map<number, { user?: { id?: string; name?: string; color?: string } }> } }).awareness;
+  const states = awareness?.getStates?.();
+
+  if (!states) {
+    return [];
+  }
+
+  const users = new Map<string, PresenceUser>();
+
+  states.forEach((state, clientId) => {
+    const displayName = state.user?.name;
+
+    if (!displayName) {
+      return;
+    }
+
+    const userId = state.user?.id ?? `${displayName}-${clientId}`;
+    users.set(userId, {
+      userId,
+      displayName,
+      color: state.user?.color ?? getCollaborationColor(userId),
+    });
+  });
+
+  return [...users.values()];
+}
+
+export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpoint }: UsePageEditorControllerOptions) {
   const [slashState, setSlashState] = useState<SlashState>(baseSlashState);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [saveStatus, setSaveStatus] = useState('Ожидаем страницу');
@@ -104,7 +145,10 @@ export function usePageEditorController({ page, onRenamePage, onCheckpoint }: Us
   const slashStateRef = useRef(baseSlashState);
   const selectedIndexRef = useRef(0);
 
-  const userDisplayName = getCurrentUser()?.displayName ?? 'WikiLive User';
+  const currentUser = getCurrentUser();
+  const userDisplayName = currentUser?.displayName ?? 'WikiLive User';
+  const userId = currentUser?.userId ?? userDisplayName;
+  const userColor = getCollaborationColor(userId);
 
   useEffect(() => {
     if (!page) {
@@ -119,6 +163,7 @@ export function usePageEditorController({ page, onRenamePage, onCheckpoint }: Us
     let cancelled = false;
     let provider: HocuspocusProvider | null = null;
     let ydoc: Y.Doc | null = null;
+    let cleanupAwareness: (() => void) | null = null;
 
     setSaveStatus('Открываем collaboration session');
     setConnectionStatus('connecting');
@@ -173,6 +218,19 @@ export function usePageEditorController({ page, onRenamePage, onCheckpoint }: Us
         }
       });
 
+      const updateActiveUsers = () => {
+        if (!provider || cancelled) {
+          return;
+        }
+
+        const providerUsers = getProviderUsers(provider);
+        setActiveUsers(providerUsers.length > 0 ? providerUsers : session.awareness?.activeUsers ?? []);
+      };
+
+      provider.awareness?.on('update', updateActiveUsers);
+      cleanupAwareness = () => provider?.awareness?.off('update', updateActiveUsers);
+      updateActiveUsers();
+
       setCollabState({
         pageId: page.id,
         ydoc,
@@ -182,7 +240,6 @@ export function usePageEditorController({ page, onRenamePage, onCheckpoint }: Us
         activeUsers: session.awareness?.activeUsers ?? [],
       });
       setRecoveryMessage(restoredDraft);
-      setActiveUsers(session.awareness?.activeUsers ?? []);
       setSaveStatus('Документ подключен');
     })().catch((error) => {
       if (!cancelled) {
@@ -193,6 +250,7 @@ export function usePageEditorController({ page, onRenamePage, onCheckpoint }: Us
 
     return () => {
       cancelled = true;
+      cleanupAwareness?.();
       provider?.destroy();
       ydoc?.destroy();
     };
@@ -206,11 +264,12 @@ export function usePageEditorController({ page, onRenamePage, onCheckpoint }: Us
         ydoc: collabState?.ydoc,
         provider: collabState?.provider,
         user: {
+          id: userId,
           name: userDisplayName,
-          color: '#ff0037',
+          color: userColor,
         },
       }),
-    [collabState?.provider, collabState?.ydoc, userDisplayName],
+    [collabState?.provider, collabState?.ydoc, userColor, userDisplayName, userId],
   );
 
   const resetImageModalState = () => {
@@ -614,7 +673,16 @@ export function usePageEditorController({ page, onRenamePage, onCheckpoint }: Us
     setIsPagePickerOpen(false);
   };
 
-  const handleSelectTable = (table: { spaceId: string; nodeId: string; datasheetId: string; title: string }) => {
+  const handleSelectTable = (table: {
+    spaceId: string;
+    nodeId: string;
+    datasheetId: string;
+    title: string;
+    viewId: string | null;
+    selectedFieldIds: string[];
+    pageSize: number;
+    allowInlineEdit: boolean;
+  }) => {
     if (!editor) {
       return;
     }
@@ -624,12 +692,12 @@ export function usePageEditorController({ page, onRenamePage, onCheckpoint }: Us
       spaceId: table.spaceId,
       nodeId: table.nodeId,
       datasheetId: table.datasheetId,
-      viewId: null,
+      viewId: table.viewId,
       displayMode: 'table',
-      selectedFieldIds: [],
+      selectedFieldIds: table.selectedFieldIds,
       filterByFormula: null,
-      pageSize: 10,
-      allowInlineEdit: false,
+      pageSize: table.pageSize,
+      allowInlineEdit: table.allowInlineEdit,
     };
 
     const inserted = editor.commands.insertMwsTableEmbed(attrs);
@@ -745,12 +813,14 @@ export function usePageEditorController({ page, onRenamePage, onCheckpoint }: Us
     openImageModal,
     pagePicker: {
       isOpen: isPagePickerOpen,
+      spaceId,
       currentPageId: page?.id,
       onSelect: handleSelectPage,
       onClose: () => setIsPagePickerOpen(false),
     },
     tablePicker: {
       isOpen: isTablePickerOpen,
+      initialSpaceId: spaceId,
       onSelect: handleSelectTable,
       onClose: () => setIsTablePickerOpen(false),
     },

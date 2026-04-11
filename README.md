@@ -1,10 +1,12 @@
+Вот перевод на русский язык:
+
 # WikiLive
 
 WikiLive — это совместный вики-модуль для кейса хакатона `WikiLive: живые таблицы внутри текста`.
 
 Текущее состояние репозитория:
 - `backend/` содержит каркас бэкенда на NestJS с Prisma, PostgreSQL, Redis, BullMQ и Hocuspocus
-- `frontend/` содержит React + Tiptap workspace с wiki-навигацией, live embeds, backlinks и collaboration-подключением
+- `frontend/` содержит React + Tiptap workspace с переключением MWS-пространств, wiki-папками/страницами, backlinks и live embeds
 - `docs/openapi.yaml` содержит HTTP/WebSocket контракт
 - `docs/MWS_TABLES_API_ANALYSIS.md` описывает, как сущности MWS Tables встраиваются в редактор
 
@@ -17,6 +19,8 @@ WikiLive — это совместный вики-модуль для кейса
 - начальная загрузка сессии совместной работы для `Tiptap + Yjs`
 - персистентность CRDT с моментальными снимками, контрольными точками и журналом обновлений в режиме append-only
 - BFF-эндпоинты живых MWS Tables для пространств, узлов, таблиц, полей, представлений, записей и разрешения встраивания таблиц
+- picker MWS Tables поддерживает таблицы внутри папок, выбор view/полей и настройку live embed
+- MWS Tables embed отображается как scrollable live grid с догрузкой записей и inline-операциями над простыми ячейками/строками через BFF
 - кратковременный кэш на Redis и очередь обслуживания документов на BullMQ
 
 ## Быстрый старт
@@ -32,13 +36,6 @@ docker compose up --build
 - `redis` на порту `6379`
 - HTTP API бэкенда на порту `8080`
 - сервер совместной работы на порту `8081`
-- frontend Vite dev server на порту `5173`
-
-Откройте приложение по адресу:
-
-```bash
-http://localhost:5173
-```
 
 ## Локальная разработка
 
@@ -67,18 +64,9 @@ npx prisma migrate dev
 npm run start:dev
 ```
 
-Запуск фронтенда:
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
 ## Окружение
 
 Базовый пример конфигурации находится в [backend/.env.example](/Users/nikitababicenko/PhpstormProjects/truetecharena/backend/.env.example).
-Базовый пример frontend-конфигурации находится в [frontend/.env.example](/Users/nikitababicenko/PhpstormProjects/truetecharena/frontend/.env.example).
 
 Важные переменные:
 - `DATABASE_URL`
@@ -101,6 +89,12 @@ npm run dev
 - refresh token живет 8 часов и хранится только в `HttpOnly` cookie
 - frontend держит access token только в памяти и делает silent refresh каждые 10 минут
 - по умолчанию `AUTH_REQUIRED=true`; для демо-режима можно вручную выставить `AUTH_REQUIRED=false`
+
+Совместная работа и шаринг страницы:
+- каждая открытая страница синхронизирует URL в формате `/spaces/:spaceId/pages/:pageId`
+- кнопку `Скопировать ссылку` можно использовать, чтобы открыть тот же документ во втором окне или отправить другому пользователю
+- для проверки разных реальных пользователей откройте ссылку в другом браузерном профиле/инкогнито и войдите другим MWS API-ключом
+- в демо-режиме с `AUTH_REQUIRED=false` можно открыть ссылку с query params `?userId=demo-user-2&userName=Demo%20User%202`, чтобы backend выдал отдельного demo-пользователя через `x-user-id`/`x-user-name`
 
 ## API и документация
 
@@ -143,13 +137,5 @@ npm test -- --runInBand
 
 ```bash
 cd backend
-npm run build
-```
-
-Проверка фронтенда:
-
-```bash
-cd frontend
-npm run lint
 npm run build
 ```
