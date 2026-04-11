@@ -1,6 +1,16 @@
 import type { Editor } from '@tiptap/core';
+import { createElement as h, type ReactNode } from 'react';
 
 import type { SlashMenuItem } from '../../slash-menu';
+
+import Sit from '../../../app/images/Sitate.svg';
+import Pic from '../../../app/images/Picture.svg';
+
+import {
+  List,
+  ListOrdered,
+  ListChecks,
+} from 'lucide-react';
 
 export type PageEditorSlashCommandItem = SlashMenuItem & {
   run: (editor: Editor) => void;
@@ -24,7 +34,6 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     keywords: ['ссылка', 'линк', 'link', 'url', 'href', 'гиперссылка'],
     icon: 'L',
     run: () => {
-      // Handled in PageEditor with modal flow.
     },
   },
   {
@@ -32,7 +41,7 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     label: 'Чеклист',
     hint: 'Создать список задач с чекбоксами',
     keywords: ['checklist', 'task', 'todo', 'чеклист', 'задача', 'список задач', 'checkbox'],
-    icon: '[]',
+    icon: h(ListChecks, { size: 18 }),
     run: (editor) => {
       editor.chain().focus().toggleTaskList().run();
     },
@@ -42,9 +51,8 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     label: 'Изображение',
     hint: 'Загрузить изображение в документ',
     keywords: ['image', 'img', 'photo', 'картинка', 'изображение', 'фото', 'рисунок'],
-    icon: '🖼',
+    icon: h('img', { src: Pic, alt: "Картинка", className: "h-4 w-4" }), 
     run: () => {
-      // Handled in PageEditor with modal flow.
     },
   },
   {
@@ -74,7 +82,7 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     label: 'Маркированный список',
     hint: 'Создать список с маркерами',
     keywords: ['list', 'bullet', 'ul', 'unordered', 'маркированный', 'список'],
-    icon: 'UL',
+    icon: h(List, { size: 18 }),
     run: (editor) => {
       editor.chain().focus().toggleBulletList().run();
     },
@@ -84,7 +92,7 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     label: 'Нумерованный список',
     hint: 'Создать список с номерами',
     keywords: ['list', 'numbered', 'ol', 'ordered', 'нумерованный', 'список'],
-    icon: 'OL',
+    icon: h(ListOrdered, { size: 18 }),
     run: (editor) => {
       editor.chain().focus().toggleOrderedList().run();
     },
@@ -94,7 +102,7 @@ export const slashCommandItems: PageEditorSlashCommandItem[] = [
     label: 'Цитата',
     hint: 'Вставить блок цитаты',
     keywords: ['quote', 'blockquote', 'цитата', 'цитирование'],
-    icon: '"',
+    icon: h('img', { src: Sit, alt: "Цитата", className: "h-4 w-4" }), 
     run: (editor) => {
       editor.chain().focus().toggleBlockquote().run();
     },
