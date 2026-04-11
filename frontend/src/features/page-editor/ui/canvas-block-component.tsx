@@ -7,267 +7,181 @@ type CanvasLine = {
   id: string;
   color: string;
   size: number;
-  points: [number, number][]; // relative 0..1 coords
+  points: [number, number][];
 };
 
-const COLOR_PALETTE = [
-  '#A975FF',
-  '#FB5151',
-  '#FD9170',
-  '#FFCB6B',
-  '#68CEF8',
-  '#80CBC4',
-  '#9DEF8F',
-];
+const COLORS = ['#A975FF','#FB5151','#FD9170','#FFCB6B','#68CEF8','#80CBC4','#9DEF8F'];
+const pick = <T,>(a: T[]): T => a[Math.floor(Math.random() * a.length)];
 
-const getRandomElement = <T,>(list: T[]): T =>
-  list[Math.floor(Math.random() * list.length)];
-
-/** Smooth catmull-rom → canvas bezier path */
-function drawSmoothLine(
-  ctx: CanvasRenderingContext2D,
-  points: [number, number][],
-) {
-  if (points.length < 2) return;
-
+function drawLine(ctx: CanvasRenderingContext2D, pts: [number, number][]) {
+  if (pts.length < 2) return;
   ctx.beginPath();
-  ctx.moveTo(points[0][0], points[0][1]);
-
-  if (points.length === 2) {
-    ctx.lineTo(points[1][0], points[1][1]);
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  if (pts.length === 2) {
+    ctx.lineTo(pts[1][0], pts[1][1]);
   } else {
-    for (let i = 1; i < points.length - 2; i += 1) {
-      const [cx, cy] = [
-        (points[i][0] + points[i + 1][0]) / 2,
-        (points[i][1] + points[i + 1][1]) / 2,
-      ];
-      ctx.quadraticCurveTo(points[i][0], points[i][1], cx, cy);
+    for (let i = 1; i < pts.length - 2; i++) {
+      const mx = (pts[i][0] + pts[i + 1][0]) / 2;
+      const my = (pts[i][1] + pts[i + 1][1]) / 2;
+      ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
     }
-    const last = points.length - 1;
-    ctx.quadraticCurveTo(
-      points[last - 1][0],
-      points[last - 1][1],
-      points[last][0],
-      points[last][1],
-    );
+    const l = pts.length - 1;
+    ctx.quadraticCurveTo(pts[l - 1][0], pts[l - 1][1], pts[l][0], pts[l][1]);
   }
   ctx.stroke();
 }
 
-/** Redraw all lines onto the canvas */
-function redrawAll(
-  canvas: HTMLCanvasElement,
-  lines: CanvasLine[],
-  bgColor: string,
-) {
+function paint(canvas: HTMLCanvasElement | null, lines: CanvasLine[]) {
+  if (!canvas) return;
   const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-
+  const r = canvas.getBoundingClientRect();
+  if (r.width === 0 || r.height === 0) return;
+  canvas.width = r.width * dpr;
+  canvas.height = r.height * dpr;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   ctx.scale(dpr, dpr);
-
-  ctx.fillStyle = bgColor;
-  ctx.fillRect(0, 0, rect.width, rect.height);
-
-  for (const line of lines) {
-    if (line.points.length < 2) continue;
-    const px = line.points.map(([x, y]) => [
-      x * rect.width,
-      y * rect.height,
-    ]) as [number, number][];
-
-    ctx.strokeStyle = line.color;
-    ctx.lineWidth = line.size;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    drawSmoothLine(ctx, px);
+  ctx.fillStyle = '#f1f3f5';
+  ctx.fillRect(0, 0, r.width, r.height);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const ln of lines) {
+    if (ln.points.length < 2) continue;
+    const px = ln.points.map(([x, y]) => [x * r.width, y * r.height]) as [number, number][];
+    ctx.strokeStyle = ln.color;
+    ctx.lineWidth = ln.size;
+    drawLine(ctx, px);
   }
 }
 
-export function CanvasBlockComponent({
-  node,
-  updateAttributes,
-  selected,
-}: NodeViewProps) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const pointsRef = useRef<[number, number][]>([]);
+export function CanvasBlockComponent({ node, updateAttributes, selected }: NodeViewProps) {
+  const cvRef = useRef<HTMLCanvasElement>(null);
+  const ptsRef = useRef<[number, number][]>([]);
   const drawingRef = useRef(false);
-  const currentIdRef = useRef(uuidv4());
+  // mutable refs — never stale in closures
+  const colorRef = useRef(pick(COLORS));
+  const sizeRef = useRef(Math.ceil(Math.random() * 10));
 
-  const [color, setColor] = useState(() => getRandomElement(COLOR_PALETTE));
-  const [size, setSize] = useState(() => Math.ceil(Math.random() * 10));
+  const [color, setColor] = useState(colorRef.current);
+  const [size, setSize] = useState(sizeRef.current);
+  colorRef.current = color;
+  sizeRef.current = size;
 
   const lines = (node.attrs.lines as CanvasLine[]) ?? [];
 
-  /* ---- redraw whenever attrs change ---- */
+  /* ---- redraw when lines change (not while drawing) ---- */
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    redrawAll(canvas, lines, '#f1f3f5');
+    if (!drawingRef.current) {
+      paint(cvRef.current, lines);
+    }
+  }, [lines, selected]);
+
+  /* ---- relayout on resize ---- */
+  useEffect(() => {
+    const obs = new ResizeObserver(() => {
+      if (!drawingRef.current) paint(cvRef.current, lines);
+    });
+    if (cvRef.current) obs.observe(cvRef.current);
+    return () => obs.disconnect();
   }, [lines]);
 
   /* ---- pointer handlers ---- */
-  const getRelativePoint = useCallback(
-    (e: PointerEvent): [number, number] => {
-      const canvas = canvasRef.current!;
-      const rect = canvas.getBoundingClientRect();
-      return [
-        (e.clientX - rect.left) / rect.width,
-        (e.clientY - rect.top) / rect.height,
-      ];
-    },
-    [],
-  );
+  const rel = useCallback((e: PointerEvent): [number, number] => {
+    const r = cvRef.current!.getBoundingClientRect();
+    return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
+  }, []);
 
-  const onPointerDown = useCallback((e: PointerEvent) => {
-    // only left button or touch
+  const onDown = useCallback((e: PointerEvent) => {
     if (e.button !== 0 && e.pointerType !== 'touch') return;
+    e.stopPropagation();
     drawingRef.current = true;
-    pointsRef.current = [getRelativePoint(e)];
-  }, [getRelativePoint]);
+    ptsRef.current = [rel(e)];
+  }, [rel]);
 
-  const onPointerMove = useCallback(
-    (e: PointerEvent) => {
-      if (!drawingRef.current) return;
-      e.preventDefault();
-      e.stopPropagation(); // prevent ProseMirror from stealing the event
-      pointsRef.current.push(getRelativePoint(e));
+  const onMove = useCallback((e: PointerEvent) => {
+    if (!drawingRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    ptsRef.current.push(rel(e));
+    const cv = cvRef.current;
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    if (!ctx) return;
+    const r = cv.getBoundingClientRect();
+    const px = ptsRef.current.map(([x, y]) => [x * r.width, y * r.height]) as [number, number][];
+    ctx.strokeStyle = colorRef.current;
+    ctx.lineWidth = sizeRef.current;
+    drawLine(ctx, px);
+  }, [rel]);
 
-      // draw current stroke in real-time
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const rect = canvas.getBoundingClientRect();
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      const px = pointsRef.current.map(([x, y]) => [
-        x * rect.width,
-        y * rect.height,
-      ]) as [number, number][];
-
-      ctx.strokeStyle = color;
-      ctx.lineWidth = size;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      drawSmoothLine(ctx, px);
-    },
-    [color, size, getRelativePoint],
-  );
-
-  const onPointerUp = useCallback(() => {
+  const onUp = useCallback(() => {
     if (!drawingRef.current) return;
     drawingRef.current = false;
-
-    const pts = pointsRef.current;
+    const pts = ptsRef.current;
     if (pts.length >= 2) {
-      const prev = lines.filter((l) => l.id !== currentIdRef.current);
-      updateAttributes({
-        lines: [
-          ...prev,
-          {
-            id: currentIdRef.current,
-            color,
-            size,
-            points: [...pts],
-          },
-        ],
-      });
+      const id = uuidv4();
+      // read LATEST lines from node attrs at call time
+      const currentLines = (node.attrs.lines as CanvasLine[]) ?? [];
+      const next = [...currentLines.filter(l => l.id !== id), {
+        id, color: colorRef.current, size: sizeRef.current, points: [...pts],
+      }];
+      updateAttributes({ lines: next });
     }
+    ptsRef.current = [];
+  }, [node.attrs.lines, updateAttributes]);
 
-    currentIdRef.current = uuidv4();
-    pointsRef.current = [];
-
-    // full redraw to commit the saved line
-    const canvas = canvasRef.current;
-    if (canvas) redrawAll(canvas, lines, '#f1f3f5');
-  }, [lines, color, size, updateAttributes]);
-
-  /* ---- attach listeners to canvas ---- */
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    canvas.addEventListener('pointerdown', onPointerDown);
-    canvas.addEventListener('pointermove', onPointerMove);
-    canvas.addEventListener('pointerup', onPointerUp);
-    canvas.addEventListener('pointercancel', onPointerUp);
-
+    const cv = cvRef.current;
+    if (!cv) return;
+    cv.addEventListener('pointerdown', onDown);
+    cv.addEventListener('pointermove', onMove);
+    cv.addEventListener('pointerup', onUp);
+    cv.addEventListener('pointercancel', onUp);
     return () => {
-      canvas.removeEventListener('pointerdown', onPointerDown);
-      canvas.removeEventListener('pointermove', onPointerMove);
-      canvas.removeEventListener('pointerup', onPointerUp);
-      canvas.removeEventListener('pointercancel', onPointerUp);
+      cv.removeEventListener('pointerdown', onDown);
+      cv.removeEventListener('pointermove', onMove);
+      cv.removeEventListener('pointerup', onUp);
+      cv.removeEventListener('pointercancel', onUp);
     };
-  }, [onPointerDown, onPointerMove, onPointerUp]);
-
-  const clearCanvas = useCallback(() => {
-    updateAttributes({ lines: [] });
-  }, [updateAttributes]);
+  }, [onDown, onMove, onUp]);
 
   return (
-    <NodeViewWrapper
-      className="canvas-block-node"
-      data-type="canvasBlock"
-      contentEditable={false}
-    >
+    <NodeViewWrapper className="canvas-block-node" data-type="canvasBlock">
       <div
         className={[
           'mb-2 rounded-lg border-2 border-editor-border-control bg-white shadow-sm transition-colors',
           selected ? 'border-red-400 shadow-md' : 'border-gray-200',
         ].join(' ')}
       >
-        {/* controls */}
         <div
           className="flex items-center gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2"
           contentEditable={false}
+          onPointerDown={e => e.stopPropagation()}
         >
-          <div className="flex items-center gap-2">
-            <label className="text-xs font-medium text-gray-600" htmlFor="canvas-color">
-              Цвет:
-            </label>
-            <input
-              id="canvas-color"
-              type="color"
-              value={color}
-              onChange={(e) => setColor(e.target.value)}
-              className="h-7 w-10 cursor-pointer rounded border border-gray-300"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label className="text-xs font-medium text-gray-600" htmlFor="canvas-size">
-              Размер:
-            </label>
-            <input
-              id="canvas-size"
-              type="number"
-              min={1}
-              max={10}
-              value={size}
-              onChange={(e) => setSize(Math.min(10, Math.max(1, Number(e.target.value))))}
-              className="h-7 w-14 rounded border border-gray-300 px-2 text-xs"
-            />
-          </div>
-
-          <div className="ml-auto">
-            <button
-              type="button"
-              onClick={clearCanvas}
-              className="rounded-md bg-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-300"
-            >
-              Очистить
-            </button>
-          </div>
+          <label className="flex items-center gap-1 text-xs font-medium text-gray-600">
+            Цвет:
+            <input type="color" value={color}
+              onChange={e => setColor(e.target.value)}
+              className="h-7 w-10 cursor-pointer rounded border border-gray-300" />
+          </label>
+          <label className="flex items-center gap-1 text-xs font-medium text-gray-600">
+            Размер:
+            <input type="number" min={1} max={10} value={size}
+              onChange={e => setSize(Math.min(10, Math.max(1, +e.target.value)))}
+              className="h-7 w-14 rounded border border-gray-300 px-2 text-xs" />
+          </label>
+          <button
+            className="ml-auto rounded-md bg-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-300"
+            onClick={() => updateAttributes({ lines: [] })}
+          >
+            Очистить
+          </button>
         </div>
 
-        {/* canvas */}
         <canvas
-          ref={canvasRef}
+          ref={cvRef}
           className="block w-full cursor-crosshair touch-none"
-          style={{ height: '400px', background: '#f1f3f5' }}
+          style={{ height: '300px', background: '#f1f3f5' }}
         />
 
         <div className="px-3 py-1.5 text-center text-xs text-gray-400">
