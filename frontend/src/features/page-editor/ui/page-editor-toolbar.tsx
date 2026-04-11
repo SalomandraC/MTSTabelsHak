@@ -25,6 +25,7 @@ import {
   BrushCleaning,
   ListChecks,
   MessageSquare,
+  History,
   TextAlignEnd,
   TextAlignStart,
   TextAlignCenter,
@@ -37,6 +38,7 @@ type PageEditorToolbarProps = {
   onOpenLinkModal: (position?: { top: number; left: number }) => void;
   onOpenImageModal: () => void;
   onCreateComment?: (editor: Editor) => void;
+  onOpenTimeMachine?: () => void;
   commentCount?: number;
 };
 
@@ -171,7 +173,14 @@ function ToolbarButton({
   );
 }
 
-export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal, onCreateComment, commentCount = 0 }: PageEditorToolbarProps) {
+export function PageEditorToolbar({
+  editor,
+  onOpenLinkModal,
+  onOpenImageModal,
+  onCreateComment,
+  onOpenTimeMachine,
+  commentCount = 0,
+}: PageEditorToolbarProps) {
   const state =
     useEditorState({
       editor,
@@ -507,6 +516,17 @@ export function PageEditorToolbar({ editor, onOpenLinkModal, onOpenImageModal, o
             isLast={true}
             isInGroup={true}
             aria-label="Комментировать выделение"
+          />
+        ) : null}
+
+        {onOpenTimeMachine ? (
+          <ToolbarButton
+            icon={<History className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
+            onClick={onOpenTimeMachine}
+            isFirst={true}
+            isLast={true}
+            isInGroup={true}
+            aria-label="Открыть машину времени"
           />
         ) : null}
 

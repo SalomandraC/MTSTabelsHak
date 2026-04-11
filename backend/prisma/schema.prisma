@@ -22,6 +22,7 @@ enum CheckpointTrigger {
   manual
   reconnect
   collab_store
+  restore
 }
 
 enum PluginScopeType {
@@ -116,10 +117,13 @@ model PageCheckpoint {
   stateVector   Bytes             @map("state_vector")
   trigger       CheckpointTrigger
   createdBy     String?           @map("created_by")
+  createdByName String?           @map("created_by_name")
+  restoredFromCheckpointId String? @map("restored_from_checkpoint_id")
   createdAt     DateTime          @default(now()) @map("created_at")
   page          WikiPage          @relation(fields: [pageId], references: [nodeId], onDelete: Cascade)
 
   @@index([pageId, createdAt])
+  @@index([restoredFromCheckpointId])
   @@map("page_checkpoints")
 }
 

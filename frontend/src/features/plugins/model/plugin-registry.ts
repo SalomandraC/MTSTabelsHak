@@ -16,6 +16,9 @@ export const runtimePluginRegistry: RuntimePluginDefinition[] = [
     id: 'comments',
   },
   {
+    id: 'time-machine',
+  },
+  {
     id: 'ai-assist',
   },
 ];

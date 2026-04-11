@@ -147,7 +147,13 @@ export class CollabPersistenceService {
     }
   }
 
-  async createCheckpoint(pageId: string, value: string, user: UserContext, trigger: string) {
+  async createCheckpoint(
+    pageId: string,
+    value: string,
+    user: UserContext,
+    trigger: string,
+    restoredFromCheckpointId?: string,
+  ) {
     const document = await this.prisma.pageDocument.findUnique({
       where: { pageId },
       select: { serverVersion: true },
@@ -170,6 +176,8 @@ export class CollabPersistenceService {
         stateVector: new Uint8Array(stateVector),
         trigger: this.mapTrigger(trigger),
         createdBy: user.userId,
+        createdByName: user.displayName,
+        restoredFromCheckpointId: restoredFromCheckpointId ?? null,
       },
     });
 
@@ -270,6 +278,8 @@ export class CollabPersistenceService {
         return CheckpointTrigger.manual;
       case 'reconnect':
         return CheckpointTrigger.reconnect;
+      case 'restore':
+        return CheckpointTrigger.restore;
       default:
         return CheckpointTrigger.manual;
     }

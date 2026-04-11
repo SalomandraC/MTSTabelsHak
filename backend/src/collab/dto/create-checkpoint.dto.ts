@@ -1,4 +1,4 @@
-import { IsEnum, IsString, ValidateNested } from 'class-validator';
+import { IsEnum, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export enum CheckpointTriggerDto {
@@ -6,6 +6,7 @@ export enum CheckpointTriggerDto {
   BEFORE_UNLOAD = 'before-unload',
   MANUAL = 'manual',
   RECONNECT = 'reconnect',
+  RESTORE = 'restore',
 }
 
 class DocumentStateDto {
@@ -19,6 +20,10 @@ class DocumentStateDto {
 export class CreateCheckpointDto {
   @IsEnum(CheckpointTriggerDto)
   trigger!: CheckpointTriggerDto;
+
+  @IsOptional()
+  @IsString()
+  restoredFromCheckpointId?: string;
 
   @ValidateNested()
   @Type(() => DocumentStateDto)

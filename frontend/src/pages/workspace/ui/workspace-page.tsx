@@ -6,6 +6,8 @@ import {
   Database,
   FileText,
   Folder,
+  History,
+  MessageSquare,
   Plus,
   Search,
   Send,
@@ -18,7 +20,9 @@ import {
 
 import { PageEditor } from '../../../features/page-editor';
 import { usePageComments, type CommentThreadView } from '../../../features/page-editor/model/use-page-comments';
+import { usePageHistory } from '../../../features/page-editor/model/use-page-history';
 import { CommentsPanel } from '../../../features/page-editor/ui/comments-panel';
+import { TimeMachinePanel } from '../../../features/page-editor/ui/time-machine-panel';
 import { PluginsModal, usePlugins } from '../../../features/plugins';
 import {
   DEFAULT_WIKILIVE_SPACE_ID,
@@ -155,6 +159,8 @@ type ChatMessage = {
   role: 'user' | 'assistant';
   text: string;
 };
+
+type RightPanelMode = 'links' | 'comments' | 'timeMachine';
 
 function getEditorMarkdown(editor: Editor | null): string {
   if (!editor) {
@@ -517,16 +523,24 @@ export function WorkspacePage() {
   const [shareStatus, setShareStatus] = useState('');
   const [isPluginsModalOpen, setIsPluginsModalOpen] = useState(false);
   const [activeEditor, setActiveEditor] = useState<Editor | null>(null);
+  const [documentStateEncoder, setDocumentStateEncoder] = useState<(() => string | null) | null>(null);
+  const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>('links');
 
   const visibleTree = useMemo(() => filterWorkspaceTree(tree, searchQuery), [searchQuery, tree]);
   const hasSearch = searchQuery.trim().length > 0;
   const isDocumentGraphEnabled = isWorkspaceSidebarEnabled('document-graph');
   const isCommentsEnabled = isPluginEnabled('comments');
+  const isTimeMachineEnabled = isPluginEnabled('time-machine');
   const comments = usePageComments({
     pageId: activePageId,
     editor: activeEditor,
     enabled: isCommentsEnabled && Boolean(activePage),
   });
+  const {
+    startThreadFromSelection,
+    openThread,
+    closePanel: closeCommentsPanel,
+  } = comments;
   const editorCommentThreads = useMemo<CommentThreadView[]>(() => {
     if (!comments.activeThread?.isDraft) {
       return comments.openThreads;
@@ -598,6 +612,18 @@ export function WorkspacePage() {
     setActivePage(response.page);
     await refreshLinks(pageId);
   };
+
+  const history = usePageHistory({
+    pageId: activePageId,
+    editor: activeEditor,
+    enabled: isTimeMachineEnabled && Boolean(activePage) && rightPanelMode === 'timeMachine',
+    getDocumentStateValue: documentStateEncoder,
+    onRestored: async () => {
+      if (activePageId) {
+        await Promise.all([refreshActivePage(activePageId), refreshTree(selectedSpaceId, activePageId)]);
+      }
+    },
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -726,6 +752,7 @@ export function WorkspacePage() {
     if (!activePageId) {
       setActivePage(null);
       setIsPageLoading(false);
+      setRightPanelMode('links');
       return;
     }
 
@@ -935,6 +962,29 @@ export function WorkspacePage() {
     await Promise.all([refreshActivePage(activePageId), refreshTree(selectedSpaceId, activePageId)]);
   };
 
+  const handleCreateComment = useCallback((editor: Editor) => {
+    startThreadFromSelection(editor);
+    setRightPanelMode('comments');
+  }, [startThreadFromSelection]);
+
+  const handleOpenCommentThread = useCallback((threadId: string) => {
+    openThread(threadId);
+    setRightPanelMode('comments');
+  }, [openThread]);
+
+  const handleCloseComments = useCallback(() => {
+    closeCommentsPanel();
+    setRightPanelMode('links');
+  }, [closeCommentsPanel]);
+
+  const handleOpenTimeMachine = useCallback(() => {
+    setRightPanelMode('timeMachine');
+  }, []);
+
+  const handleDocumentStateEncoderChange = useCallback((encoder: (() => string | null) | null) => {
+    setDocumentStateEncoder(() => encoder);
+  }, []);
+
   return (
     <main className="flex min-h-screen bg-[#f2f5fb] text-editor-text-primary">
       <aside className="flex w-[296px] shrink-0 flex-col border-r border-[#e5e6eb] bg-white">
@@ -1087,30 +1137,71 @@ export function WorkspacePage() {
           onRenamePage={handleRenamePage}
           onCheckpoint={handleCheckpoint}
           onEditorChange={setActiveEditor}
-          onCreateComment={isCommentsEnabled ? comments.startThreadFromSelection : undefined}
-          onOpenCommentThread={isCommentsEnabled ? comments.openThread : undefined}
+          onDocumentStateEncoderChange={handleDocumentStateEncoderChange}
+          onCreateComment={isCommentsEnabled ? handleCreateComment : undefined}
+          onOpenCommentThread={isCommentsEnabled ? handleOpenCommentThread : undefined}
+          onOpenTimeMachine={isTimeMachineEnabled ? handleOpenTimeMachine : undefined}
           commentThreads={editorCommentThreads}
           activeCommentThreadId={comments.activeThreadId}
           commentCount={comments.commentCount}
         />
       </section>
 
-      {isCommentsEnabled && comments.isPanelOpen ? (
+      {isCommentsEnabled && rightPanelMode === 'comments' ? (
         <CommentsPanel
           activeThread={comments.activeThread}
           activeThreadId={comments.activeThreadId}
           isLoading={comments.isLoading}
           errorMessage={comments.errorMessage}
           onRetry={() => void comments.refreshComments()}
-          onClose={comments.closePanel}
+          onClose={handleCloseComments}
           onSubmitMessage={comments.submitMessage}
           onEditMessage={comments.editMessage}
           onDeleteMessage={comments.deleteMessage}
           onResolveThread={comments.resolveThread}
         />
+      ) : isTimeMachineEnabled && rightPanelMode === 'timeMachine' ? (
+        <TimeMachinePanel
+          items={history.items}
+          selectedCheckpoint={history.selectedCheckpoint}
+          selectedCheckpointId={history.selectedCheckpointId}
+          isLoading={history.isLoading}
+          isLoadingCheckpoint={history.isLoadingCheckpoint}
+          isRestoring={history.isRestoring}
+          errorMessage={history.errorMessage}
+          onOpenCheckpoint={(checkpointId) => void history.openCheckpoint(checkpointId)}
+          onRestoreCheckpoint={history.restoreCheckpoint}
+          onRetry={() => void history.refreshHistory()}
+          onClose={() => setRightPanelMode('links')}
+        />
       ) : (
       <aside className="hidden w-80 shrink-0 flex-col border-l border-editor-border-subtle bg-white/95 xl:flex">
         <div className="border-b border-editor-border-subtle p-4">
+          <div className="mb-4 flex rounded-md bg-[#f1f2f4] p-0.5">
+            {isCommentsEnabled ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setRightPanelMode('comments');
+                  void comments.refreshComments();
+                }}
+                className="flex h-8 flex-1 items-center justify-center gap-1 rounded-[5px] text-xs font-semibold text-[#505762] hover:bg-white"
+              >
+                <MessageSquare size={14} />
+                Комментарии{comments.commentCount > 0 ? ` ${comments.commentCount}` : ''}
+              </button>
+            ) : null}
+            {isTimeMachineEnabled ? (
+              <button
+                type="button"
+                onClick={handleOpenTimeMachine}
+                className="flex h-8 flex-1 items-center justify-center gap-1 rounded-[5px] text-xs font-semibold text-[#505762] hover:bg-white"
+              >
+                <History size={14} />
+                Машина времени
+              </button>
+            ) : null}
+          </div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">Связи</p>
           <h2 className="mt-1 font-wide text-base font-semibold">{activePage?.title ?? 'Страница не выбрана'}</h2>
           <button

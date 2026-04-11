@@ -106,6 +106,17 @@ export const pluginDefinitions: PluginDefinition[] = [
     placement: ['Боковая панель редактора'],
   },
   {
+    id: 'time-machine',
+    title: 'Машина времени',
+    description: 'История изменений документа с просмотром checkpoint-версий и восстановлением состояния страницы.',
+    category: 'insights',
+    kind: 'optional',
+    defaultEnabled: true,
+    implemented: true,
+    requiredPlans: ['pro', 'enterprise'],
+    placement: ['Правая панель'],
+  },
+  {
     id: 'ai-assist',
     title: 'AI-помощник',
     description: 'Контекстные AI-действия для суммаризации, черновиков и помощи при работе с текстом.',

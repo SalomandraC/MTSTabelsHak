@@ -22,8 +22,10 @@ type PageEditorProps = {
   onRenamePage: (title: string) => Promise<void>;
   onCheckpoint: () => Promise<void>;
   onEditorChange?: (editor: Editor | null) => void;
+  onDocumentStateEncoderChange?: (encoder: (() => string | null) | null) => void;
   onCreateComment?: (editor: Editor) => void;
   onOpenCommentThread?: (threadId: string) => void;
+  onOpenTimeMachine?: () => void;
   commentThreads?: CommentThreadView[];
   activeCommentThreadId?: string | null;
   commentCount?: number;
@@ -84,8 +86,10 @@ export function PageEditor({
   onRenamePage,
   onCheckpoint,
   onEditorChange,
+  onDocumentStateEncoderChange,
   onCreateComment,
   onOpenCommentThread,
+  onOpenTimeMachine,
   commentThreads = [],
   activeCommentThreadId = null,
   commentCount = 0,
@@ -99,6 +103,14 @@ export function PageEditor({
       onEditorChange?.(null);
     };
   }, [controller.editor, isLoading, onEditorChange, page]);
+
+  useEffect(() => {
+    onDocumentStateEncoderChange?.(isLoading || !page ? null : controller.getCurrentDocumentStateValue);
+
+    return () => {
+      onDocumentStateEncoderChange?.(null);
+    };
+  }, [controller.getCurrentDocumentStateValue, isLoading, onDocumentStateEncoderChange, page]);
 
   if (isLoading) {
     return <PageEditorLoadingSkeleton />;
@@ -134,6 +146,7 @@ export function PageEditor({
           onOpenLinkModal={controller.openLinkModal}
           onOpenImageModal={controller.openImageModal}
           onCreateComment={onCreateComment}
+          onOpenTimeMachine={onOpenTimeMachine}
           commentCount={commentCount}
         />
 

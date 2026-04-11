@@ -84,6 +84,28 @@ export type PageDocumentState = {
   persistedAt: string | null;
 };
 
+export type PageHistoryTrigger = 'editor_idle' | 'before_unload' | 'manual' | 'reconnect' | 'collab_store' | 'restore';
+
+export type PageHistoryItem = {
+  id: string;
+  serverVersion: number;
+  trigger: PageHistoryTrigger;
+  createdBy: string | null;
+  createdByName: string | null;
+  createdAt: string;
+  excerpt: string | null;
+  restoredFromCheckpointId: string | null;
+};
+
+export type PageHistoryCheckpoint = {
+  checkpoint: PageHistoryItem;
+  documentState: PageDocumentState;
+  document: {
+    type: string;
+    content?: unknown[];
+  };
+};
+
 export type PageEmbed = {
   id: string;
   type: 'mwsTableEmbed';
@@ -701,13 +723,19 @@ export const wikiliveApi = {
       }),
     });
   },
-  createCheckpoint(pageId: string, value: string, trigger: 'editor-idle' | 'manual' | 'before-unload' | 'reconnect' = 'editor-idle') {
+  createCheckpoint(
+    pageId: string,
+    value: string,
+    trigger: 'editor-idle' | 'manual' | 'before-unload' | 'reconnect' | 'restore' = 'editor-idle',
+    restoredFromCheckpointId?: string | null,
+  ) {
     return request<{ checkpointId: string; persistedAt: string; serverVersion: number }>(
       `/api/v1/pages/${pageId}/checkpoints`,
       {
         method: 'POST',
         body: JSON.stringify({
           trigger,
+          restoredFromCheckpointId: restoredFromCheckpointId ?? undefined,
           documentState: {
             encoding: 'base64-yjs-update-v2',
             value,
@@ -715,6 +743,14 @@ export const wikiliveApi = {
         }),
       },
     );
+  },
+  listPageHistory(pageId: string, limit = 50) {
+    return request<{ items: PageHistoryItem[] }>(`/api/v1/pages/${pageId}/history`, {
+      query: { limit },
+    });
+  },
+  getPageHistoryCheckpoint(pageId: string, checkpointId: string) {
+    return request<PageHistoryCheckpoint>(`/api/v1/pages/${pageId}/history/${checkpointId}`);
   },
   listMwsSpaces() {
     return request<{ items: MwsSpace[] }>('/api/v1/mws/spaces');

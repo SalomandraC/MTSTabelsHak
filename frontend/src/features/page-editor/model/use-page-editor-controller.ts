@@ -318,6 +318,14 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
     setImagePreviewSrc('');
   }, []);
 
+  const getCurrentDocumentStateValue = useCallback(() => {
+    if (!collabState) {
+      return null;
+    }
+
+    return bytesToBase64(Y.encodeStateAsUpdate(collabState.ydoc));
+  }, [collabState]);
+
   const editor = useEditor(
     {
       extensions,
@@ -897,5 +905,6 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
       onFileSelect: handleSelectImageFile,
       onConfirm: handleConfirmImageInsert,
     },
+    getCurrentDocumentStateValue,
   };
 }
