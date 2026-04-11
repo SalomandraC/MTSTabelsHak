@@ -1,9 +1,12 @@
+import type { Editor } from '@tiptap/core';
 import { EditorContent } from '@tiptap/react';
+import { useEffect } from 'react';
 
 import { SlashMenu } from '../../slash-menu';
 import type { PresenceUser, WikiPage } from '../../../shared/api/wikilive';
 import { usePageEditorController } from '../model/use-page-editor-controller';
 import { FloatingToolbar } from './floating-toolbar';
+import { AIBubbleMenu } from './ai-bubble-menu';
 import { PageEditorHeader } from './page-editor-header';
 import { PageImageModal } from './page-image-modal';
 import { PageLinkModal } from './page-link-modal';
@@ -16,6 +19,7 @@ type PageEditorProps = {
   page: WikiPage | null;
   onRenamePage: (title: string) => Promise<void>;
   onCheckpoint: () => Promise<void>;
+  onEditorChange?: (editor: Editor | null) => void;
 };
 
 function PresenceStrip({ users }: { users: PresenceUser[] }) {
@@ -43,8 +47,16 @@ function PresenceStrip({ users }: { users: PresenceUser[] }) {
   );
 }
 
-export function PageEditor({ spaceId, page, onRenamePage, onCheckpoint }: PageEditorProps) {
+export function PageEditor({ spaceId, page, onRenamePage, onCheckpoint, onEditorChange }: PageEditorProps) {
   const controller = usePageEditorController({ spaceId, page, onRenamePage, onCheckpoint });
+
+  useEffect(() => {
+    onEditorChange?.(controller.editor);
+
+    return () => {
+      onEditorChange?.(null);
+    };
+  }, [controller.editor, onEditorChange]);
 
   if (!page) {
     return (
@@ -85,6 +97,7 @@ export function PageEditor({ spaceId, page, onRenamePage, onCheckpoint }: PageEd
               onOpenLinkModal={() => controller.openLinkModal()}
             />
           )}
+          {controller.editor && <AIBubbleMenu editor={controller.editor} pageTitle={controller.title} />}
           <SlashMenu
             isOpen={controller.slashState.isOpen}
             items={controller.filteredItems}

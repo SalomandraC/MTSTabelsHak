@@ -227,6 +227,50 @@ export type ResolveTableEmbedResponse = {
   };
 };
 
+export type AiTransformType = 'professional' | 'shorten' | 'expand' | 'fix_grammar';
+
+export type AiAutocompletePayload = {
+  currentText: string;
+  pageTitle?: string;
+  pageSnapshot?: Record<string, unknown>;
+};
+
+export type AiGeneratePayload = {
+  prompt: string;
+  pageTitle?: string;
+  pageSnapshot?: Record<string, unknown>;
+};
+
+export type AiTransformPayload = {
+  text: string;
+  transformation: AiTransformType;
+  pageTitle?: string;
+  pageSnapshot?: Record<string, unknown>;
+};
+
+export type AiChatPayload = {
+  question: string;
+  pageId?: string;
+  datasheetId?: string;
+  viewId?: string;
+  pageTitle?: string;
+  pageSnapshot?: Record<string, unknown>;
+};
+
+export type AiGenerateResponse = {
+  document: {
+    type: 'doc';
+    content: unknown[];
+  };
+};
+
+export type AiChatResponse = {
+  answer: string;
+  usedTools?: Array<{ toolName: string; args: Record<string, unknown> }>;
+  contextMarkdown?: string;
+  references?: Array<Record<string, unknown>>;
+};
+
 function toQueryString(query: RequestOptions['query']) {
   const params = new URLSearchParams();
 
@@ -568,6 +612,30 @@ export const wikiliveApi = {
   },
   resolveTableEmbed(payload: ResolveTableEmbedRequest) {
     return request<ResolveTableEmbedResponse>('/api/v1/mws/table-embeds/resolve', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiAutocomplete(payload: AiAutocompletePayload) {
+    return request<{ text: string }>('/api/v1/ai/autocomplete', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiGenerate(payload: AiGeneratePayload) {
+    return request<AiGenerateResponse>('/api/v1/ai/generate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiTransform(payload: AiTransformPayload) {
+    return request<{ text: string }>('/api/v1/ai/transform', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiChat(payload: AiChatPayload) {
+    return request<AiChatResponse>('/api/v1/ai/chat', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
