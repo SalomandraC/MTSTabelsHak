@@ -1462,7 +1462,7 @@ export function WorkspacePage() {
           <button
             type="button"
             onClick={rightSidebar.expand}
-            className="absolute right-3 top-24 z-40 hidden h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40 xl:flex"
+            className="absolute right-3 top-24 z-40 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
             aria-label="Показать правое меню"
             title="Показать правое меню"
           >
@@ -1499,7 +1499,7 @@ export function WorkspacePage() {
 
       {!rightSidebar.isCollapsed ? (
         <aside
-          className="relative hidden h-full shrink-0 flex flex-col border-l border-editor-border-subtle bg-white/95 xl:flex"
+          className="relative h-full shrink-0 flex flex-col border-l border-editor-border-subtle bg-white/95"
           style={{ width: `${rightSidebar.width}px` }}
         >
           <div

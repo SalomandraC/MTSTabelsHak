@@ -86,6 +86,7 @@ function CommentMessageItem({
         {isEditing ? (
           <div className="space-y-2">
             <textarea
+              title="Редактирование комментария"
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               className="min-h-20 w-full resize-none rounded-md border border-editor-border-control bg-white px-3 py-2 text-sm outline-none focus:border-[#907ff0]"
@@ -198,7 +199,7 @@ export function CommentsPanel({
   }, [activeThread, activeThreadId, currentUserId, errorMessage, isLoading, onDeleteMessage, onEditMessage, onRetry]);
 
   return (
-    <aside className="hidden h-screen w-[340px] shrink-0 flex-col border-l border-editor-border-subtle bg-white text-editor-text-primary xl:flex">
+    <div className="min-h-0 flex flex-1 flex-col overflow-hidden bg-white text-editor-text-primary">
       <header className="border-b border-editor-border-subtle px-6 py-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -257,6 +258,7 @@ export function CommentsPanel({
           <div className="flex items-end gap-2 rounded-md border border-editor-border-control bg-white px-3 py-2 focus-within:border-[#907ff0]">
             <textarea
               id="comment-reply-input"
+              title="Комментарий"
               value={body}
               onChange={(event) => setBody(event.target.value)}
               placeholder={activeThread.isDraft ? 'Напишите комментарий' : 'Ответить'}
@@ -274,6 +276,6 @@ export function CommentsPanel({
           </div>
         </form>
       ) : null}
-    </aside>
+    </div>
   );
 }
