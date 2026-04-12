@@ -72,7 +72,7 @@ export function usePageHistory({
 
   const openCheckpoint = useCallback(async (checkpointId: string) => {
     if (!pageId) {
-      return;
+      return null;
     }
 
     setSelectedCheckpointId(checkpointId);
@@ -82,8 +82,10 @@ export function usePageHistory({
     try {
       const checkpoint = await wikiliveApi.getPageHistoryCheckpoint(pageId, checkpointId);
       setSelectedCheckpoint(checkpoint);
+      return checkpoint;
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Не удалось открыть версию');
+      return null;
     } finally {
       setIsLoadingCheckpoint(false);
     }

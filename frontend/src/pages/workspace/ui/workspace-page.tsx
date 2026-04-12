@@ -34,6 +34,7 @@ import {
   type DocumentAccessPolicy,
   type MwsSpace,
   type OutgoingLink,
+  type PageHistoryCheckpoint,
   type TemplateCategorySummary,
   type TemplateListQuery,
   type PageTemplateSummary,
@@ -614,6 +615,7 @@ export function WorkspacePage() {
   const [activeEditor, setActiveEditor] = useState<Editor | null>(null);
   const [documentStateEncoder, setDocumentStateEncoder] = useState<(() => string | null) | null>(null);
   const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>('links');
+  const [historyPreviewCheckpoint, setHistoryPreviewCheckpoint] = useState<PageHistoryCheckpoint | null>(null);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isEditingDisplayName, setIsEditingDisplayName] = useState(false);
@@ -669,6 +671,7 @@ export function WorkspacePage() {
   const hasSearch = searchQuery.trim().length > 0;
   const canManageAccess = activePage?.access?.capabilities.canManageAccess ?? false;
   const canEditActivePage = activePage?.access?.capabilities.canEdit ?? true;
+  const isHistoryPreviewActive = Boolean(historyPreviewCheckpoint);
   const hasAccessChanges = Boolean(
     accessDraft &&
       activePage?.access?.policy &&
@@ -786,11 +789,22 @@ export function WorkspacePage() {
     enabled: isTimeMachineEnabled && Boolean(activePage) && rightPanelMode === 'timeMachine',
     getDocumentStateValue: documentStateEncoder,
     onRestored: async () => {
+      setHistoryPreviewCheckpoint(null);
       if (activePageId) {
         await Promise.all([refreshActivePage(activePageId), refreshTree(selectedSpaceId, activePageId)]);
       }
     },
   });
+
+  useEffect(() => {
+    if (rightPanelMode !== 'timeMachine') {
+      setHistoryPreviewCheckpoint(null);
+    }
+  }, [rightPanelMode]);
+
+  useEffect(() => {
+    setHistoryPreviewCheckpoint(null);
+  }, [activePageId]);
 
   useEffect(() => {
     setDisplayNameDraft(displayName);
@@ -1372,6 +1386,24 @@ export function WorkspacePage() {
     setRightPanelMode('timeMachine');
   }, []);
 
+  const handleOpenHistoryCheckpoint = useCallback(async (checkpointId: string) => {
+    const checkpoint = await history.openCheckpoint(checkpointId);
+
+    if (checkpoint) {
+      setHistoryPreviewCheckpoint(checkpoint);
+    }
+  }, [history]);
+
+  const handleShowCurrentVersion = useCallback(() => {
+    setHistoryPreviewCheckpoint(null);
+  }, []);
+
+  const handleShowSelectedVersion = useCallback(() => {
+    if (history.selectedCheckpoint) {
+      setHistoryPreviewCheckpoint(history.selectedCheckpoint);
+    }
+  }, [history.selectedCheckpoint]);
+
   const handleDocumentStateEncoderChange = useCallback((encoder: (() => string | null) | null) => {
     setDocumentStateEncoder(() => encoder);
   }, []);
@@ -1666,12 +1698,13 @@ export function WorkspacePage() {
             onCheckpoint={handleCheckpoint}
             onEditorChange={setActiveEditor}
             onDocumentStateEncoderChange={handleDocumentStateEncoderChange}
-            onCreateComment={isCommentsEnabled ? handleCreateComment : undefined}
-            onOpenCommentThread={isCommentsEnabled ? handleOpenCommentThread : undefined}
-            onOpenTimeMachine={isTimeMachineEnabled ? handleOpenTimeMachine : undefined}
+            onCreateComment={isCommentsEnabled && !isHistoryPreviewActive ? handleCreateComment : undefined}
+            onOpenCommentThread={isCommentsEnabled && !isHistoryPreviewActive ? handleOpenCommentThread : undefined}
+            onOpenTimeMachine={isTimeMachineEnabled && !isHistoryPreviewActive ? handleOpenTimeMachine : undefined}
             commentThreads={editorCommentThreads}
             activeCommentThreadId={comments.activeThreadId}
             commentCount={comments.commentCount}
+            historyPreview={historyPreviewCheckpoint}
           />
         </ScrollArea>
       </section>
@@ -1721,11 +1754,14 @@ export function WorkspacePage() {
                 items={history.items}
                 selectedCheckpoint={history.selectedCheckpoint}
                 selectedCheckpointId={history.selectedCheckpointId}
+                isPreviewActive={isHistoryPreviewActive}
                 isLoading={history.isLoading}
                 isLoadingCheckpoint={history.isLoadingCheckpoint}
                 isRestoring={history.isRestoring}
                 errorMessage={history.errorMessage}
-                onOpenCheckpoint={(checkpointId) => void history.openCheckpoint(checkpointId)}
+                onOpenCheckpoint={handleOpenHistoryCheckpoint}
+                onShowCurrentVersion={handleShowCurrentVersion}
+                onShowSelectedVersion={handleShowSelectedVersion}
                 onRestoreCheckpoint={history.restoreCheckpoint}
                 onRetry={() => void history.refreshHistory()}
                 onClose={() => setRightPanelMode('links')}

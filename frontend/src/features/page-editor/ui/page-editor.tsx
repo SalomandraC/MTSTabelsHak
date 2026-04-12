@@ -1,12 +1,13 @@
-import type { Editor } from '@tiptap/core';
-import { EditorContent } from '@tiptap/react';
+import type { Content, Editor } from '@tiptap/core';
+import { EditorContent, useEditor } from '@tiptap/react';
 import { useEffect } from 'react';
 
 import { SlashMenu } from '../../slash-menu';
 import { WikiTablePickerModal } from '../../wiki-tables';
 import { usePlugins } from '../../plugins';
-import type { WikiPage } from '../../../shared/api/wikilive';
+import type { PageHistoryCheckpoint, WikiPage } from '../../../shared/api/wikilive';
 import type { CommentThreadView } from '../model/use-page-comments';
+import { createPageEditorExtensions } from '../model/editor-config';
 import { usePageEditorController } from '../model/use-page-editor-controller';
 import { CommentAnchorOverlay } from './comment-anchor-overlay';
 import { FloatingToolbar } from './floating-toolbar';
@@ -31,7 +32,79 @@ type PageEditorProps = {
   commentThreads?: CommentThreadView[];
   activeCommentThreadId?: string | null;
   commentCount?: number;
+  historyPreview?: PageHistoryCheckpoint | null;
 };
+
+function formatHistoryPreviewDate(value: string) {
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
+
+function ReadOnlyPreviewEditor({
+  page,
+  checkpoint,
+}: {
+  page: WikiPage;
+  checkpoint: PageHistoryCheckpoint;
+}) {
+  const editor = useEditor({
+    extensions: createPageEditorExtensions(),
+    content: checkpoint.document as Content,
+    editable: false,
+    editorProps: {
+      attributes: {
+        class: 'tiptap h-full min-h-full',
+        spellcheck: 'false',
+        autocorrect: 'off',
+        autocapitalize: 'off',
+        autocomplete: 'off',
+        writingsuggestions: 'false',
+        translate: 'no',
+        'data-gramm': 'false',
+        'data-gramm_editor': 'false',
+        'data-enable-grammarly': 'false',
+        'data-lt-active': 'false',
+      },
+    },
+  });
+
+  useEffect(() => {
+    if (!editor) {
+      return;
+    }
+
+    editor.commands.setContent(checkpoint.document as Content);
+  }, [checkpoint, editor]);
+
+  return (
+    <main className="flex h-full min-h-0 flex-col bg-editor-bg-page px-0 py-0">
+      <section className="flex min-h-0 w-full flex-1 flex-col bg-editor-bg-page">
+        <PageEditorHeader
+          title={page.title}
+          description={`Версия от ${formatHistoryPreviewDate(checkpoint.checkpoint.createdAt)}`}
+          editable={false}
+          saveStatus="Read-only preview"
+          recoveryMessage="Редактирование и синхронизация отключены для сохраненной версии"
+          activeUsers={[]}
+        />
+        <div className="border-b border-editor-border-subtle bg-[#fff7e8] px-4 py-3 text-sm text-[#8a5a00]">
+          Открыт предпросмотр сохраненной версии. Вернитесь к текущей версии, чтобы продолжить редактирование.
+        </div>
+        <div
+          className="relative mx-auto w-full max-w-4xl flex-1 px-2 pb-4 pt-4 sm:px-6 sm:pb-10 sm:pt-5"
+          data-page-editor-surface
+        >
+          <EditorContent editor={editor} />
+        </div>
+      </section>
+    </main>
+  );
+}
 
 function PageEditorLoadingSkeleton() {
   return (
@@ -70,11 +143,63 @@ export function PageEditor({
   commentThreads = [],
   activeCommentThreadId = null,
   commentCount = 0,
+  historyPreview = null,
 }: PageEditorProps) {
+  if (isLoading) {
+    return <PageEditorLoadingSkeleton />;
+  }
+
+  if (!page) {
+    return (
+      <main className="flex h-full min-h-0 items-center justify-center bg-editor-bg-page">
+        <div className="rounded-2xl border border-editor-border-subtle bg-white p-8 text-center shadow-sm">
+          <h2 className="font-wide text-xl font-semibold">Выберите страницу</h2>
+          <p className="mt-2 text-sm text-editor-text-tertiary">Или создайте новую страницу в sidebar.</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (historyPreview) {
+    return <ReadOnlyPreviewEditor page={page} checkpoint={historyPreview} />;
+  }
+
+  return (
+    <LivePageEditor
+      spaceId={spaceId}
+      page={page}
+      onRenamePage={onRenamePage}
+      onCheckpoint={onCheckpoint}
+      onEditorChange={onEditorChange}
+      onDocumentStateEncoderChange={onDocumentStateEncoderChange}
+      onCreateComment={onCreateComment}
+      onOpenCommentThread={onOpenCommentThread}
+      onOpenTimeMachine={onOpenTimeMachine}
+      commentThreads={commentThreads}
+      activeCommentThreadId={activeCommentThreadId}
+      commentCount={commentCount}
+    />
+  );
+}
+
+function LivePageEditor({
+  spaceId,
+  page,
+  onRenamePage,
+  onCheckpoint,
+  onEditorChange,
+  onDocumentStateEncoderChange,
+  onCreateComment,
+  onOpenCommentThread,
+  onOpenTimeMachine,
+  commentThreads = [],
+  activeCommentThreadId = null,
+  commentCount = 0,
+}: Omit<PageEditorProps, 'isLoading' | 'historyPreview'> & { page: WikiPage }) {
   const { isEditorSlotEnabled } = usePlugins();
-  const canEdit = page?.access?.capabilities.canEdit ?? true;
-  const canComment = page?.access?.capabilities.canComment ?? true;
-  const canUseAi = page?.access?.capabilities.canUseAi ?? true;
+  const canEdit = page.access?.capabilities.canEdit ?? true;
+  const canComment = page.access?.capabilities.canComment ?? true;
+  const canUseAi = page.access?.capabilities.canUseAi ?? true;
   const isAiSlashEnabled = isEditorSlotEnabled('slash_menu') && canUseAi;
   const isAiToolbarEnabled = isEditorSlotEnabled('toolbar_bubble') && canUseAi;
   const isAiExtensionEnabled = isEditorSlotEnabled('editor_extension') && canUseAi;
@@ -91,35 +216,20 @@ export function PageEditor({
   });
 
   useEffect(() => {
-    onEditorChange?.(isLoading || !page ? null : controller.editor);
+    onEditorChange?.(controller.editor);
 
     return () => {
       onEditorChange?.(null);
     };
-  }, [controller.editor, isLoading, onEditorChange, page]);
+  }, [controller.editor, onEditorChange]);
 
   useEffect(() => {
-    onDocumentStateEncoderChange?.(isLoading || !page ? null : controller.getCurrentDocumentStateValue);
+    onDocumentStateEncoderChange?.(controller.getCurrentDocumentStateValue);
 
     return () => {
       onDocumentStateEncoderChange?.(null);
     };
-  }, [controller.getCurrentDocumentStateValue, isLoading, onDocumentStateEncoderChange, page]);
-
-  if (isLoading) {
-    return <PageEditorLoadingSkeleton />;
-  }
-
-  if (!page) {
-    return (
-      <main className="flex h-full min-h-0 items-center justify-center bg-editor-bg-page">
-        <div className="rounded-2xl border border-editor-border-subtle bg-white p-8 text-center shadow-sm">
-          <h2 className="font-wide text-xl font-semibold">Выберите страницу</h2>
-          <p className="mt-2 text-sm text-editor-text-tertiary">Или создайте новую страницу в sidebar.</p>
-        </div>
-      </main>
-    );
-  }
+  }, [controller.getCurrentDocumentStateValue, onDocumentStateEncoderChange]);
 
   return (
     <main className="flex h-full min-h-0 flex-col bg-editor-bg-page px-0 py-0">

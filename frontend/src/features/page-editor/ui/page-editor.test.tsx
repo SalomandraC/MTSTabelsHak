@@ -11,6 +11,11 @@ const usePageEditorControllerSpy = vi.fn();
 
 vi.mock('@tiptap/react', () => ({
   EditorContent: () => <div data-testid="editor-content" />,
+  useEditor: () => ({
+    commands: {
+      setContent: vi.fn(),
+    },
+  }),
 }));
 
 vi.mock('../../plugins', () => ({
@@ -44,6 +49,7 @@ vi.mock('../../slash-menu', () => ({
 
 vi.mock('../../wiki-tables', () => ({
   WikiTablePickerModal: () => null,
+  MwsTableEmbed: {},
 }));
 
 vi.mock('./comment-anchor-overlay', () => ({
@@ -161,5 +167,76 @@ describe('PageEditor', () => {
       }),
     );
     expect(screen.queryByTestId('slash-menu')).not.toBeInTheDocument();
+  });
+
+  it('renders history preview without opening live editor controller', () => {
+    render(
+      <PageEditor
+        spaceId="space-1"
+        page={{
+          id: 'page-1',
+          title: 'Документ',
+          icon: null,
+          isArchived: false,
+          createdAt: '2026-04-12T10:00:00.000Z',
+          updatedAt: '2026-04-12T10:00:00.000Z',
+          plainTextPreview: 'Описание',
+          outgoingLinksCount: 0,
+          backlinksCount: 0,
+          embeds: [],
+          access: {
+            role: 'owner',
+            principal: 'authenticated',
+            isSpaceMember: true,
+            isOwner: true,
+            capabilities: {
+              canView: true,
+              canEdit: true,
+              canComment: true,
+              canDelete: true,
+              canManageAccess: true,
+              canUseAi: true,
+              canUseAdvancedPlugins: true,
+            },
+            policy: {
+              ownerUserId: 'owner-1',
+              viewAccess: 'space_members',
+              commentAccess: 'space_members',
+              editAccess: 'space_members',
+            },
+          },
+        }}
+        historyPreview={{
+          checkpoint: {
+            id: 'cp-1',
+            serverVersion: 7,
+            trigger: 'manual',
+            createdBy: 'owner-1',
+            createdByName: 'Owner',
+            createdAt: '2026-04-12T11:00:00.000Z',
+            excerpt: 'Сохраненная версия',
+            restoredFromCheckpointId: null,
+          },
+          documentState: {
+            encoding: 'base64-yjs-update-v2',
+            value: 'encoded',
+            serverVersion: 7,
+            checkpointId: 'cp-1',
+            persistedAt: '2026-04-12T11:00:00.000Z',
+          },
+          document: {
+            type: 'doc',
+            content: [],
+          },
+        }}
+        onRenamePage={vi.fn(async () => undefined)}
+        onCheckpoint={vi.fn(async () => undefined)}
+      />,
+    );
+
+    expect(usePageEditorControllerSpy).not.toHaveBeenCalled();
+    expect(screen.getByText(/предпросмотр сохраненной версии/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('page-editor-toolbar')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('floating-toolbar')).not.toBeInTheDocument();
   });
 });

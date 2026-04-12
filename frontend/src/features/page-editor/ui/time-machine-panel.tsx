@@ -6,11 +6,14 @@ type TimeMachinePanelProps = {
   items: PageHistoryItem[];
   selectedCheckpoint: PageHistoryCheckpoint | null;
   selectedCheckpointId: string | null;
+  isPreviewActive: boolean;
   isLoading: boolean;
   isLoadingCheckpoint: boolean;
   isRestoring: boolean;
   errorMessage: string;
-  onOpenCheckpoint: (checkpointId: string) => void;
+  onOpenCheckpoint: (checkpointId: string) => Promise<void>;
+  onShowCurrentVersion: () => void;
+  onShowSelectedVersion: () => void;
   onRestoreCheckpoint: () => Promise<void>;
   onRetry: () => void;
   onClose: () => void;
@@ -74,11 +77,14 @@ export function TimeMachinePanel({
   items,
   selectedCheckpoint,
   selectedCheckpointId,
+  isPreviewActive,
   isLoading,
   isLoadingCheckpoint,
   isRestoring,
   errorMessage,
   onOpenCheckpoint,
+  onShowCurrentVersion,
+  onShowSelectedVersion,
   onRestoreCheckpoint,
   onRetry,
   onClose,
@@ -131,6 +137,41 @@ export function TimeMachinePanel({
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="border-b border-editor-border-subtle px-6 py-4">
+              <div className="inline-flex w-full rounded-lg border border-editor-border-subtle bg-[#f8fafc] p-0.5">
+                <button
+                  type="button"
+                  onClick={onShowCurrentVersion}
+                  className={[
+                    'flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors',
+                    !isPreviewActive
+                      ? 'bg-white text-[#1d2023] shadow-sm'
+                      : 'text-[#5f3647] hover:bg-white/80 hover:text-[#1d2023]',
+                  ].join(' ')}
+                >
+                  Текущая версия
+                </button>
+                <button
+                  type="button"
+                  onClick={onShowSelectedVersion}
+                  disabled={!selectedCheckpoint || isLoadingCheckpoint}
+                  className={[
+                    'flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors',
+                    isPreviewActive
+                      ? 'bg-white text-[#1d2023] shadow-sm'
+                      : 'text-[#5f3647] hover:bg-white/80 hover:text-[#1d2023]',
+                    !selectedCheckpoint || isLoadingCheckpoint ? 'cursor-not-allowed opacity-50' : '',
+                  ].join(' ')}
+                >
+                  Выбранная версия
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-[#7b5061]">
+                {isPreviewActive
+                  ? 'Открыт read-only предпросмотр сохраненной версии.'
+                  : 'Редактирование доступно только для текущей версии страницы.'}
+              </p>
+            </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
               <div className="space-y-2">
                 {items.map((item) => {
@@ -140,7 +181,7 @@ export function TimeMachinePanel({
                     <button
                       key={item.id}
                       type="button"
-                      onClick={() => onOpenCheckpoint(item.id)}
+                      onClick={() => void onOpenCheckpoint(item.id)}
                       className={[
                         'w-full rounded-md border p-3 text-left text-sm transition-colors duration-200 ease-out',
                         isSelected
