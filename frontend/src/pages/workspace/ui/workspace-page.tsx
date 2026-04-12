@@ -1244,6 +1244,7 @@ export function WorkspacePage() {
       event.preventDefault();
 
       const wrapperRect = workbenchTreeWrapperRef.current?.getBoundingClientRect();
+      const sidebarRect = workbenchTreeWrapperRef.current?.closest('aside')?.getBoundingClientRect();
 
       if (!wrapperRect) {
         return;
@@ -1251,13 +1252,13 @@ export function WorkspacePage() {
 
       const estimatedWidth = 236;
       const estimatedHeight = 96;
-      const left = Math.max(
-        8,
-        Math.min(event.clientX - wrapperRect.left, Math.max(8, wrapperRect.width - estimatedWidth - 8)),
-      );
+      const left = event.clientX - wrapperRect.left;
       const top = Math.max(
         8,
-        Math.min(event.clientY - wrapperRect.top, Math.max(8, wrapperRect.height - estimatedHeight - 8)),
+        Math.min(
+          event.clientY - wrapperRect.top,
+          Math.max(8, (sidebarRect?.height ?? wrapperRect.height) - estimatedHeight - 8),
+        ),
       );
 
       setBlankAreaCreateTitle('');
@@ -1784,7 +1785,7 @@ export function WorkspacePage() {
                       data-workspace-inline-create="true"
                       role="menu"
                       aria-label="Действия в пустой области проводника"
-                      className="absolute z-20 w-[236px] max-w-[calc(100%-16px)] rounded-xl border border-editor-border-subtle bg-white p-2 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
+                      className="absolute z-[120] w-[236px] rounded-xl border border-editor-border-subtle bg-white p-2 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
                       style={{
                         left: blankAreaCreatePosition.left,
                         top: blankAreaCreatePosition.top,
