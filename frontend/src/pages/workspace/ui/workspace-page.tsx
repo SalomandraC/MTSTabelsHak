@@ -4,13 +4,8 @@ import {
   ChevronLeft,
   ChevronDown,
   ChevronRight,
-  Database,
   FileDown,
-  FileLock2,
-  FilePenLine,
   FileUp,
-  FileText,
-  Folder,
   History,
   LogOut,
   MoreHorizontal,
@@ -19,7 +14,6 @@ import {
   Plus,
   Search,
   Sparkles,
-  Table2,
   Trash2,
   Users,
   X,
@@ -50,7 +44,10 @@ import {
 } from '../../../shared/api/wikilive';
 import { DocumentLinkGraph, type DocumentGraphEdge, type DocumentGraphPage } from './document-link-graph';
 import { CreateTemplateFromPageModal } from './create-template-from-page-modal';
+import { WorkspaceAccessSummary } from './workspace-access-summary';
 import { PageTemplateMarketplaceModal } from './page-template-marketplace-modal';
+import { shouldShowWorkspacePageActions } from './workspace-node-permissions';
+import { getWorkspaceNodeIcon } from './workspace-node-icon';
 import { readWorkspaceRoute, resolveAccessibleSpaceId, writeWorkspaceRoute } from '../../../shared/lib/workspace-route';
 import {
   LEFT_SIDEBAR_MAX_WIDTH,
@@ -131,34 +128,6 @@ function WorkspaceLogo() {
   );
 }
 
-function getWorkspaceNodeIcon(node: WorkspaceTreeNode) {
-  if (node.kind === 'mwsFolder') {
-    return <Folder size={18} strokeWidth={1.8} />;
-  }
-
-  if (node.kind === 'mwsTable') {
-    return <Table2 size={17} strokeWidth={1.9} />;
-  }
-
-  if (node.kind === 'mwsNode') {
-    return <Database size={17} strokeWidth={1.8} />;
-  }
-
-  if (node.kind === 'wikiPage') {
-    if (node.wikiPage?.isLocked) {
-      return <FileLock2 size={17} strokeWidth={1.8} />;
-    }
-
-    if (node.wikiPage?.role === 'editor') {
-      return <FilePenLine size={17} strokeWidth={1.8} />;
-    }
-
-    return <FileText size={17} strokeWidth={1.8} />;
-  }
-
-  return <FileText size={17} strokeWidth={1.8} />;
-}
-
 function WorkspaceTreeSkeleton() {
   return (
     <div className="space-y-2 px-2 py-2" aria-hidden="true">
@@ -204,7 +173,6 @@ function WorkspaceTreeItem({
   onSelectMwsTable,
   onToggleFolder,
   onDeletePage,
-  onCreateTemplateFromPage,
 }: {
   node: WorkspaceTreeNode;
   depth: number;
@@ -215,7 +183,6 @@ function WorkspaceTreeItem({
   onSelectMwsTable: (node: WorkspaceTreeNode) => void;
   onToggleFolder: (folderId: string) => void;
   onDeletePage: (pageId: string, title: string) => void;
-  onCreateTemplateFromPage: (pageId: string, title: string) => void;
 }) {
   const actionsMenuRef = useRef<HTMLDivElement | null>(null);
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
@@ -314,7 +281,7 @@ function WorkspaceTreeItem({
           <span className="truncate">{node.title}</span>
         </button>
 
-        {node.kind === 'wikiPage' && node.linkedPageId ? (
+        {shouldShowWorkspacePageActions(node) ? (
           <div ref={actionsMenuRef} className="relative ml-1 shrink-0">
             <button
               type="button"
@@ -348,18 +315,6 @@ function WorkspaceTreeItem({
                   className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
                 >
                   Редактировать
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setIsActionsMenuOpen(false);
-                    onCreateTemplateFromPage(node.linkedPageId!, node.title);
-                  }}
-                  className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
-                >
-                  Создать шаблон
                 </button>
                 {canDeletePage ? (
                   <button
@@ -395,7 +350,6 @@ function WorkspaceTreeItem({
               onSelectMwsTable={onSelectMwsTable}
               onToggleFolder={onToggleFolder}
               onDeletePage={onDeletePage}
-              onCreateTemplateFromPage={onCreateTemplateFromPage}
             />
           ))}
         </ul>
@@ -698,7 +652,7 @@ export function WorkspacePage() {
       const pages = flattenWorkspacePages(nextTree);
       let nextActivePageId: string | null = null;
 
-      if (preferredPageId && pages.some((page) => page.id === preferredPageId)) {
+      if (preferredPageId) {
         nextActivePageId = preferredPageId;
       } else if (!nextActivePageId || !pages.some((page) => page.id === nextActivePageId)) {
         nextActivePageId = pages[0]?.id ?? null;
@@ -784,6 +738,7 @@ export function WorkspacePage() {
           routeSpaceId,
           storedSpaceId,
           DEFAULT_WIKILIVE_SPACE_ID,
+          initialRoute.pageId,
         );
 
         setSpaces(nextSpaces);
@@ -867,7 +822,7 @@ export function WorkspacePage() {
     localStorage.setItem(SELECTED_SPACE_STORAGE_KEY, selectedSpaceId);
     setActivePage(null);
     setIsPageLoading(false);
-    setActivePageId(null);
+    setActivePageId(pendingRoutePageIdRef.current);
     setSelectedTableNode(null);
     setBacklinks([]);
     setOutgoingLinks([]);
@@ -1178,35 +1133,6 @@ export function WorkspacePage() {
     setEditingTemplate(template);
     setIsCreateTemplateModalOpen(true);
   };
-
-  const openCreateTemplateFromPage = (pageId: string, title: string) => {
-    setEditingTemplate(null);
-    setPendingTemplateSource({ pageId, title });
-
-    if (pageId !== activePageId) {
-      setSelectedTableNode(null);
-      setActivePageId(pageId);
-      writeWorkspaceRoute(selectedSpaceId, pageId, 'push');
-      return;
-    }
-
-    if (activeEditor) {
-      setIsCreateTemplateModalOpen(true);
-    }
-  };
-
-  useEffect(() => {
-    if (!pendingTemplateSource) {
-      return;
-    }
-
-    if (pendingTemplateSource.pageId !== activePageId || !activeEditor) {
-      return;
-    }
-
-    setIsCreateTemplateModalOpen(true);
-    setPendingTemplateSource(null);
-  }, [activeEditor, activePageId, pendingTemplateSource]);
 
   const handleCreateTablePage = async () => {
     if (!selectedTableNode?.mwsNode) {
@@ -1555,7 +1481,6 @@ export function WorkspacePage() {
                         onSelectMwsTable={handleSelectMwsTable}
                         onToggleFolder={handleToggleFolder}
                         onDeletePage={(pageId, title) => void handleDeletePage(pageId, title)}
-                        onCreateTemplateFromPage={(pageId, title) => openCreateTemplateFromPage(pageId, title)}
                       />
                     ))}
                   </ul>
@@ -1727,163 +1652,167 @@ export function WorkspacePage() {
             </div>
           ) : (
             <>
-              <div className="border-b border-editor-border-subtle p-4">
-                <div className="mb-4 flex rounded-md bg-[#f1f2f4] p-0.5">
-                  {isCommentsEnabled ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRightPanelMode('comments');
-                        void comments.refreshComments();
-                      }}
-                      className="flex h-8 flex-1 items-center justify-center gap-1 rounded-[5px] text-xs font-semibold text-[#505762] hover:bg-white"
-                    >
-                      <MessageSquare size={14} />
-                      Комментарии{comments.commentCount > 0 ? ` ${comments.commentCount}` : ''}
-                    </button>
-                  ) : null}
-                  {isTimeMachineEnabled ? (
-                    <button
-                      type="button"
-                      onClick={handleOpenTimeMachine}
-                      className="flex h-8 flex-1 items-center justify-center gap-1 rounded-[5px] text-xs font-semibold text-[#505762] hover:bg-white"
-                    >
-                      <History size={14} />
-                      Машина времени
-                    </button>
-                  ) : null}
-                </div>
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">Связи</p>
-                <h2 className="mt-1 font-wide text-base font-semibold">{activePage?.title ?? 'Страница не выбрана'}</h2>
-                <button
-                  type="button"
-                  onClick={() => void handleCopyShareLink()}
-                  disabled={!activePageId}
-                  className="mt-3 w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm font-semibold text-editor-text-secondary transition-colors hover:bg-editor-bg-control disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {shareStatus || 'Скопировать ссылку'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingTemplate(null);
-                    setIsCreateTemplateModalOpen(true);
-                  }}
-                  disabled={!activeEditor || !canEditActivePage}
-                  className="mt-2 w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm font-semibold text-editor-text-secondary transition-colors hover:bg-editor-bg-control disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <span className="inline-flex items-center gap-2">
-                    <FileUp size={15} strokeWidth={2.2} />
-                    Сохранить как шаблон
-                  </span>
-                </button>
-                {activePageId && (activePage?.access?.capabilities.canDelete ?? true) ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleDeletePage(activePageId, activePage?.title ?? 'Без названия')}
-                    disabled={isDeletingPage}
-                    className="mt-2 w-full rounded-lg border border-[#ffd2d9] bg-[#fff7f8] px-3 py-2 text-sm font-semibold text-[#b00025] transition-colors hover:border-[#d70032] hover:bg-[#fff1f3] disabled:cursor-wait disabled:opacity-60"
-                  >
-                    {isDeletingPage ? 'Удаляем страницу...' : 'Удалить страницу'}
-                  </button>
-                ) : null}
-                {canManageAccess && accessDraft ? (
-                  <div className="mt-3 rounded-xl border border-editor-border-subtle bg-[#fafbfc] p-3">
-                    <button
-                      type="button"
-                      onClick={() => setIsAccessPanelOpen((current) => !current)}
-                      className="flex w-full items-center justify-between gap-3 text-left"
-                      aria-expanded={isAccessPanelOpen}
-                      aria-controls="workspace-access-settings"
-                    >
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">Доступ</p>
-                      {isAccessPanelOpen ? <ChevronDown size={15} strokeWidth={2.3} /> : <ChevronRight size={15} strokeWidth={2.3} />}
-                    </button>
-                    {isAccessPanelOpen ? (
-                      <div id="workspace-access-settings" className="mt-3 space-y-3">
-                        <label className="block text-xs text-editor-text-secondary">
-                        <span className="mb-1 block font-semibold">Кто может просматривать</span>
-                        <select
-                          value={accessDraft.viewAccess}
-                          onChange={(event) =>
-                            setAccessDraft((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    viewAccess: event.target.value as DocumentAccessPolicy['viewAccess'],
-                                  }
-                                : current
-                            )
-                          }
-                          className="w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm text-editor-text-primary outline-none"
-                        >
-                          {ACCESS_SCOPE_OPTIONS.map((option) => (
-                            <option key={`view-${option.value}`} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                        </label>
-                        <label className="block text-xs text-editor-text-secondary">
-                        <span className="mb-1 block font-semibold">Кто может комментировать</span>
-                        <select
-                          value={accessDraft.commentAccess}
-                          onChange={(event) =>
-                            setAccessDraft((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    commentAccess: event.target.value as DocumentAccessPolicy['commentAccess'],
-                                  }
-                                : current
-                            )
-                          }
-                          className="w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm text-editor-text-primary outline-none"
-                        >
-                          {ACCESS_SCOPE_OPTIONS.map((option) => (
-                            <option key={`comment-${option.value}`} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                        </label>
-                        <label className="block text-xs text-editor-text-secondary">
-                        <span className="mb-1 block font-semibold">Кто может редактировать</span>
-                        <select
-                          value={accessDraft.editAccess}
-                          onChange={(event) =>
-                            setAccessDraft((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    editAccess: event.target.value as DocumentAccessPolicy['editAccess'],
-                                  }
-                                : current
-                            )
-                          }
-                          className="w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm text-editor-text-primary outline-none"
-                        >
-                          {ACCESS_SCOPE_OPTIONS.map((option) => (
-                            <option key={`edit-${option.value}`} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                        </label>
-                        <button
+              <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                <section className="border-b border-editor-border-subtle pb-4">
+                  <div className="mb-4 flex rounded-md bg-[#f1f2f4] p-0.5">
+                    {isCommentsEnabled ? (
+                      <button
                         type="button"
-                        onClick={() => void handleSaveAccessSettings()}
-                        disabled={!hasAccessChanges || isUpdatingAccess}
-                        className="w-full rounded-lg bg-[#d70032] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#b8002b] disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => {
+                          setRightPanelMode('comments');
+                          void comments.refreshComments();
+                        }}
+                        className="flex h-8 flex-1 items-center justify-center gap-1 rounded-[5px] text-xs font-semibold text-[#505762] hover:bg-white"
                       >
-                        {isUpdatingAccess ? 'Сохраняем доступ...' : 'Сохранить доступ'}
+                        <MessageSquare size={14} />
+                        Комментарии{comments.commentCount > 0 ? ` ${comments.commentCount}` : ''}
                       </button>
-                      </div>
+                    ) : null}
+                    {isTimeMachineEnabled ? (
+                      <button
+                        type="button"
+                        onClick={handleOpenTimeMachine}
+                        className="flex h-8 flex-1 items-center justify-center gap-1 rounded-[5px] text-xs font-semibold text-[#505762] hover:bg-white"
+                      >
+                        <History size={14} />
+                        Машина времени
+                      </button>
                     ) : null}
                   </div>
-                ) : null}
-              </div>
-              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">Связи</p>
+                  <h2 className="mt-1 font-wide text-base font-semibold">{activePage?.title ?? 'Страница не выбрана'}</h2>
+                  <button
+                    type="button"
+                    onClick={() => void handleCopyShareLink()}
+                    disabled={!activePageId}
+                    className="mt-3 w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm font-semibold text-editor-text-secondary transition-colors hover:bg-editor-bg-control disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {shareStatus || 'Скопировать ссылку'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingTemplate(null);
+                      setIsCreateTemplateModalOpen(true);
+                    }}
+                    disabled={!activeEditor || !canEditActivePage}
+                    className="mt-2 w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm font-semibold text-editor-text-secondary transition-colors hover:bg-editor-bg-control disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <FileUp size={15} strokeWidth={2.2} />
+                      Сохранить как шаблон
+                    </span>
+                  </button>
+                  {activePageId && (activePage?.access?.capabilities.canDelete ?? true) ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleDeletePage(activePageId, activePage?.title ?? 'Без названия')}
+                      disabled={isDeletingPage}
+                      className="mt-2 w-full rounded-lg border border-[#ffd2d9] bg-[#fff7f8] px-3 py-2 text-sm font-semibold text-[#b00025] transition-colors hover:border-[#d70032] hover:bg-[#fff1f3] disabled:cursor-wait disabled:opacity-60"
+                    >
+                      {isDeletingPage ? 'Удаляем страницу...' : 'Удалить страницу'}
+                    </button>
+                  ) : null}
+                  {canManageAccess && accessDraft ? (
+                    <div className="mt-3 rounded-2xl border border-[#d7e2f2] bg-[#f7fafe] p-3">
+                      <button
+                        type="button"
+                        onClick={() => setIsAccessPanelOpen((current) => !current)}
+                        className="flex w-full items-center justify-between gap-3 text-left"
+                        aria-expanded={isAccessPanelOpen}
+                        aria-controls="workspace-access-settings"
+                      >
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#556987]">Доступ</p>
+                        {isAccessPanelOpen ? <ChevronDown size={15} strokeWidth={2.3} /> : <ChevronRight size={15} strokeWidth={2.3} />}
+                      </button>
+                      {isAccessPanelOpen ? (
+                        <div id="workspace-access-settings" className="mt-3 space-y-3">
+                          <label className="block text-xs text-[#5f7189]">
+                            <span className="mb-1 block font-semibold">Кто может просматривать</span>
+                            <select
+                              value={accessDraft.viewAccess}
+                              onChange={(event) =>
+                                setAccessDraft((current) =>
+                                  current
+                                    ? {
+                                        ...current,
+                                        viewAccess: event.target.value as DocumentAccessPolicy['viewAccess'],
+                                      }
+                                    : current
+                                )
+                              }
+                              className="w-full rounded-lg border border-[#d4deec] bg-white px-3 py-2 text-sm text-editor-text-primary outline-none"
+                            >
+                              {ACCESS_SCOPE_OPTIONS.map((option) => (
+                                <option key={`view-${option.value}`} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="block text-xs text-[#5f7189]">
+                            <span className="mb-1 block font-semibold">Кто может комментировать</span>
+                            <select
+                              value={accessDraft.commentAccess}
+                              onChange={(event) =>
+                                setAccessDraft((current) =>
+                                  current
+                                    ? {
+                                        ...current,
+                                        commentAccess: event.target.value as DocumentAccessPolicy['commentAccess'],
+                                      }
+                                    : current
+                                )
+                              }
+                              className="w-full rounded-lg border border-[#d4deec] bg-white px-3 py-2 text-sm text-editor-text-primary outline-none"
+                            >
+                              {ACCESS_SCOPE_OPTIONS.map((option) => (
+                                <option key={`comment-${option.value}`} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="block text-xs text-[#5f7189]">
+                            <span className="mb-1 block font-semibold">Кто может редактировать</span>
+                            <select
+                              value={accessDraft.editAccess}
+                              onChange={(event) =>
+                                setAccessDraft((current) =>
+                                  current
+                                    ? {
+                                        ...current,
+                                        editAccess: event.target.value as DocumentAccessPolicy['editAccess'],
+                                      }
+                                    : current
+                                )
+                              }
+                              className="w-full rounded-lg border border-[#d4deec] bg-white px-3 py-2 text-sm text-editor-text-primary outline-none"
+                            >
+                              {ACCESS_SCOPE_OPTIONS.map((option) => (
+                                <option key={`edit-${option.value}`} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => void handleSaveAccessSettings()}
+                            disabled={!hasAccessChanges || isUpdatingAccess}
+                            className="w-full rounded-lg bg-[#d70032] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#b8002b] disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {isUpdatingAccess ? 'Сохраняем доступ...' : 'Сохранить доступ'}
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <WorkspaceAccessSummary access={activePage?.access} />
+                  )}
+                </section>
+
+                <div className="mt-5 space-y-5">
             <section>
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-sm font-semibold">Граф страниц</h3>
@@ -1957,6 +1886,7 @@ export function WorkspacePage() {
                 ))}
               </div>
             </section>
+                </div>
               </div>
             </>
           )}

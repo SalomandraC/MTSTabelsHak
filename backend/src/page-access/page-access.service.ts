@@ -94,7 +94,26 @@ export class PageAccessService {
       editAccess: DocumentAccessScope.space_members,
     };
 
-    const isOwner = Boolean(user?.userId && policy.ownerUserId === user.userId);
+    if (!user?.userId) {
+      return {
+        role: null,
+        capabilities: {
+          canView: false,
+          canEdit: false,
+          canComment: false,
+          canManageAccess: false,
+          canDelete: false,
+          canUseAi: false,
+          canUseAdvancedPlugins: false,
+        },
+        policy,
+        principal: 'anonymous',
+        isSpaceMember: false,
+        isOwner: false,
+      };
+    }
+
+    const isOwner = policy.ownerUserId === user.userId;
     const isSpaceMember = isOwner ? true : await this.isSpaceMember(page.spaceId, user);
 
     const canView = isOwner || this.matchesScope(policy.viewAccess, isSpaceMember, user);

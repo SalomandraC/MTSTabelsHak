@@ -46,7 +46,12 @@ export function resolveAccessibleSpaceId(
   routeSpaceId: string | null,
   storedSpaceId: string | null,
   fallbackSpaceId: string,
+  routePageId: string | null = null,
 ) {
+  if (routePageId && routeSpaceId) {
+    return routeSpaceId;
+  }
+
   if (routeSpaceId && spaces.some((space) => space.id === routeSpaceId)) {
     return routeSpaceId;
   }

@@ -16,6 +16,10 @@ describe('resolveAccessibleSpaceId', () => {
     expect(resolveAccessibleSpaceId(spaces, 'foreign-space', 'space-a', 'demo-space')).toBe('space-a');
   });
 
+  it('keeps the route space for deep links that target a page', () => {
+    expect(resolveAccessibleSpaceId(spaces, 'foreign-space', 'space-a', 'demo-space', 'page-1')).toBe('foreign-space');
+  });
+
   it('falls back to the first accessible space when both route and storage are stale', () => {
     expect(resolveAccessibleSpaceId(spaces, 'foreign-space', 'stale-space', 'demo-space')).toBe('space-a');
   });

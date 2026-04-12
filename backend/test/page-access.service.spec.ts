@@ -118,7 +118,7 @@ describe('PageAccessService', () => {
     expect(mwsService.listSpaces).not.toHaveBeenCalled();
   });
 
-  it('allows anonymous viewers for link_holders but keeps them read-only when edit/comment are closed', async () => {
+  it('rejects anonymous viewers even when the page is shared via link_holders', async () => {
     prisma.wikiNode.findUnique.mockResolvedValue({
       id: 'page-4',
       spaceId: 'space-1',
@@ -138,12 +138,47 @@ describe('PageAccessService', () => {
     const result = await service.resolvePageAccess('page-4');
 
     expect(result.principal).toBe('anonymous');
-    expect(result.role).toBe('guest');
     expect(result.capabilities).toMatchObject({
-      canView: true,
+      canView: false,
       canComment: false,
       canEdit: false,
       canUseAi: false,
+    });
+  });
+
+  it('allows authenticated non-members to access link_holders pages', async () => {
+    mwsService.listSpaces.mockResolvedValue({
+      items: [{ id: 'space-2', name: 'Other space' }],
+    });
+    prisma.wikiNode.findUnique.mockResolvedValue({
+      id: 'page-4b',
+      spaceId: 'space-1',
+      createdBy: 'owner-1',
+      type: WikiNodeType.page,
+      isArchived: false,
+      page: {
+        accessPolicy: {
+          ownerUserId: 'owner-1',
+          viewAccess: DocumentAccessScope.link_holders,
+          commentAccess: DocumentAccessScope.link_holders,
+          editAccess: DocumentAccessScope.link_holders,
+        },
+      },
+    });
+
+    const result = await service.resolvePageAccess('page-4b', {
+      userId: 'user-9',
+      displayName: 'Guest but authenticated',
+      mwsToken: 'token',
+    });
+
+    expect(result.principal).toBe('authenticated');
+    expect(result.isSpaceMember).toBe(false);
+    expect(result.role).toBe('editor');
+    expect(result.capabilities).toMatchObject({
+      canView: true,
+      canComment: true,
+      canEdit: true,
     });
   });
 
