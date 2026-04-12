@@ -22,6 +22,7 @@ const AI_ASSISTANT_FEATURE_LABELS: Array<{ slot: AiAssistantFeatureSlot; label: 
   { slot: 'ghost_text', label: 'Подсказки при наборе (ghost)' },
   { slot: 'inline_chat', label: 'Inline chat' },
   { slot: 'text_transform', label: 'Сократить и улучшить' },
+  { slot: 'document_structure', label: 'Автоструктурирование документа' },
 ];
 
 function getStatusLabel(item: PluginCatalogItem) {
@@ -294,47 +295,6 @@ export function PluginsModal({
                               onToggleSettings(item.id, next);
                             }}
                           />
-                        ) : null}
-                        {item.id === 'page-navigation' && item.enabled && item.settings ? (
-                          (() => {
-                            const settings = item.settings;
-
-                            return (
-                          <div className="mt-3 rounded-xl border border-editor-border-subtle bg-white/60 px-3 py-2.5">
-                            <p className="text-xs font-medium text-editor-text-secondary">Автоматическая разметка:</p>
-                            <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm text-editor-text-primary">
-                              <span
-                                role="checkbox"
-                                tabIndex={0}
-                                aria-checked={settings['auto-markup'] !== false}
-                                className={[
-                                  'flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors',
-                                  settings['auto-markup'] !== false
-                                    ? 'border-[#d81f44] bg-[#d81f44] text-white'
-                                    : 'border-editor-border-control bg-white',
-                                  isPending ? 'opacity-50' : '',
-                                ].join(' ')}
-                                onClick={() => {
-                                  const next = { ...settings, 'auto-markup': !settings['auto-markup'] };
-                                  onToggleSettings(item.id, next);
-                                }}
-                                onKeyDown={(event) => {
-                                  if (event.key === 'Enter' || event.key === ' ') {
-                                    const next = { ...settings, 'auto-markup': !settings['auto-markup'] };
-                                    onToggleSettings(item.id, next);
-                                  }
-                                }}
-                              >
-                                {settings['auto-markup'] !== false ? <Check size={14} strokeWidth={3} /> : null}
-                              </span>
-                              Автозаголовки без подтверждения
-                            </label>
-                            <p className="mt-2 text-[11px] leading-5 text-editor-text-tertiary">
-                              Если выключить, кнопка автоматической разметки в навигации и в AI-копилоте будет скрыта.
-                            </p>
-                          </div>
-                            );
-                          })()
                         ) : null}
                         <div className="mt-4 flex flex-wrap gap-2 text-xs">
                           <span className="rounded-full border border-editor-border-subtle bg-white px-2.5 py-1 font-semibold text-editor-text-secondary">

@@ -125,9 +125,6 @@ export const pluginDefinitions: PluginDefinition[] = [
     kind: 'optional',
     defaultEnabled: true,
     implemented: true,
-    defaultSettings: {
-      'auto-markup': true,
-    },
     placement: ['Правая панель', 'Редактор'],
   },
   {

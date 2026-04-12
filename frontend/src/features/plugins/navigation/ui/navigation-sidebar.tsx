@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { usePlugins } from '../../model/plugins-context';
 import { collectNavigationOutline, type NavigationOutlineNode } from '../model/navigation-outline';
-import { getPageNavigationSettings } from '../../model/plugin-registry';
 import { runAutomaticMarkup } from '../model/auto-markup';
 
 type NavigationSidebarProps = {
@@ -79,7 +78,8 @@ export function NavigationSidebar({ editor, enabled, onClose }: NavigationSideba
   const [version, setVersion] = useState(0);
   const [isAutoMarkupRunning, setIsAutoMarkupRunning] = useState(false);
   const [autoMarkupStatus, setAutoMarkupStatus] = useState('');
-  const { items: plugins } = usePlugins();
+  const [autoMarkupInstruction, setAutoMarkupInstruction] = useState('');
+  const { isAiAssistantFeatureEnabled } = usePlugins();
 
   useEffect(() => {
     if (!editor) {
@@ -97,8 +97,7 @@ export function NavigationSidebar({ editor, enabled, onClose }: NavigationSideba
   }, [editor]);
 
   const outline = useMemo(() => collectNavigationOutline(editor), [editor, version]);
-  const pageNavigationSettings = getPageNavigationSettings(plugins);
-  const isAutoMarkupEnabled = pageNavigationSettings['auto-markup'] !== false;
+  const isAutoMarkupEnabled = isAiAssistantFeatureEnabled('document_structure');
   const activePos = useMemo(() => {
     if (!editor) {
       return null;
@@ -141,7 +140,9 @@ export function NavigationSidebar({ editor, enabled, onClose }: NavigationSideba
     setAutoMarkupStatus('Строю структуру...');
 
     try {
-      const insertedCount = await runAutomaticMarkup(editor);
+      const insertedCount = await runAutomaticMarkup(editor, {
+        instruction: autoMarkupInstruction,
+      });
       setAutoMarkupStatus(insertedCount > 0 ? `Вставлено заголовков: ${insertedCount}` : 'Не нашел подходящих мест для разметки');
     } catch (error) {
       setAutoMarkupStatus(error instanceof Error ? error.message : 'Не удалось выполнить автоматическую разметку');
@@ -172,15 +173,24 @@ export function NavigationSidebar({ editor, enabled, onClose }: NavigationSideba
           </button>
         </div>
         {isAutoMarkupEnabled ? (
-          <button
-            type="button"
-            onClick={() => void handleAutomaticMarkup()}
-            disabled={!editor || isAutoMarkupRunning}
-            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#d8e2ff] bg-[#eef4ff] px-3 py-2.5 text-sm font-semibold text-[#25468d] transition-colors hover:bg-[#e2ebff] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Sparkles size={15} strokeWidth={2.2} />
-            {isAutoMarkupRunning ? 'Автоматическая разметка...' : 'Автоматическая разметка'}
-          </button>
+          <div className="mt-4 space-y-2">
+            <input
+              type="text"
+              value={autoMarkupInstruction}
+              onChange={(event) => setAutoMarkupInstruction(event.target.value)}
+              placeholder="Например: в введении редко, в разделе API часто"
+              className="w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-xs text-editor-text-primary outline-none focus:border-[#5586ff]"
+            />
+            <button
+              type="button"
+              onClick={() => void handleAutomaticMarkup()}
+              disabled={!editor || isAutoMarkupRunning}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#d8e2ff] bg-[#eef4ff] px-3 py-2.5 text-sm font-semibold text-[#25468d] transition-colors hover:bg-[#e2ebff] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Sparkles size={15} strokeWidth={2.2} />
+              {isAutoMarkupRunning ? 'Автоматическая разметка...' : 'Автоматическая разметка'}
+            </button>
+          </div>
         ) : null}
         {autoMarkupStatus ? <p className="mt-3 text-xs leading-5 text-[#5f3647]">{autoMarkupStatus}</p> : null}
       </header>

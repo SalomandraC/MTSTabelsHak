@@ -410,7 +410,7 @@ export function AiInlineCopilot({
   pageId,
   pageTitle,
   isPageNavigationEnabled,
-  isPageNavigationAutoMarkupEnabled,
+  isDocumentStructureEnabled,
   onClose,
 }: {
   enabled: boolean;
@@ -421,7 +421,7 @@ export function AiInlineCopilot({
   pageId: string | null;
   pageTitle?: string;
   isPageNavigationEnabled: boolean;
-  isPageNavigationAutoMarkupEnabled: boolean;
+  isDocumentStructureEnabled: boolean;
   onClose: () => void;
 }) {
   const [prompt, setPrompt] = useState('');
@@ -1053,6 +1053,10 @@ export function AiInlineCopilot({
           'Правила:',
           'anchor — это первые 5-7 слов абзаца, перед которым нужно поставить заголовок.',
           'title — это текст заголовка, который ты придумал. НЕ добавляй в него цифры (1., 1.1.), система сделает это сама.',
+          'Плотность заголовков может отличаться по частям документа.',
+          'Если пользователь просит для одной части редкую структуру, а для другой частую, следуй этому буквально:',
+          '- редкая: только крупные разделы;',
+          '- частая: более детальные подзаголовки и дробление больших блоков.',
           wantsNoNumbers
             ? 'Если пользователь просит без нумерации, просто делай заголовки.'
             : 'По умолчанию используй заголовки без цифр. Нумерация, если она нужна, будет добавлена системой автоматически.',
@@ -1205,7 +1209,7 @@ export function AiInlineCopilot({
           Анализ
         </button>
 
-        {isPageNavigationEnabled && isPageNavigationAutoMarkupEnabled ? (
+        {isDocumentStructureEnabled ? (
           <button
             type="button"
             className="rounded-md border border-editor-border-subtle bg-white px-2 py-1 text-xs hover:bg-editor-bg-control disabled:opacity-50"

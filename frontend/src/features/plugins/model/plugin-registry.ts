@@ -81,19 +81,6 @@ export function getIframeEmbedSettings(items: PluginCatalogItem[]): Record<strin
   };
 }
 
-/**
- * Return settings map for the page-navigation plugin, or defaults if not found.
- * Keys: 'auto-markup'
- */
-export function getPageNavigationSettings(items: PluginCatalogItem[]): Record<string, boolean> {
-  const safeItems = items ?? [];
-  const plugin = safeItems.find((item) => item.id === 'page-navigation');
-  if (!plugin?.enabled) return {};
-  return plugin.settings ?? {
-    'auto-markup': true,
-  };
-}
-
 export function isEditorSlotEnabled(items: PluginCatalogItem[], slot: EditorSlot) {
   return runtimePluginRegistry.some((definition) => {
     return definition.editorSlots?.includes(slot) && isPluginRuntimeEnabled(items, definition.id);

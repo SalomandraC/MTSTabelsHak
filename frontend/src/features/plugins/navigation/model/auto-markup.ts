@@ -8,6 +8,10 @@ export type StructureInstruction = {
   level: 1 | 2 | 3;
 };
 
+type RunAutomaticMarkupOptions = {
+  instruction?: string;
+};
+
 function stripMarkdownFence(value: string): string {
   const trimmed = value.trim();
   const fenced = trimmed.match(/^```(?:json|markdown)?\s*([\s\S]*?)\s*```$/i);
@@ -135,9 +139,10 @@ function findAnchorPosition(editor: Editor, anchor: string): number | null {
   return foundPos;
 }
 
-export async function runAutomaticMarkup(editor: Editor): Promise<number> {
+export async function runAutomaticMarkup(editor: Editor, options?: RunAutomaticMarkupOptions): Promise<number> {
   const sourceBlocks = collectStructureSourceBlocks(editor);
   const sourceText = sourceBlocks.map((block) => block.text).join('\n\n');
+  const instruction = options?.instruction?.trim() ?? '';
 
   if (!sourceText.trim()) {
     return 0;
@@ -153,7 +158,12 @@ export async function runAutomaticMarkup(editor: Editor): Promise<number> {
       'anchor — это первые 5-7 слов абзаца, перед которым нужно поставить заголовок.',
       'title — это текст заголовка, который ты придумал. НЕ добавляй в него цифры (1., 1.1.), система сделает это сама.',
       'По умолчанию используй заголовки без цифр. Нумерация, если она нужна, будет добавлена системой автоматически.',
+      'Плотность заголовков можно менять по частям документа.',
+      'Если пользователь пишет "в разделе X редко, в разделе Y часто", то:',
+      '- редко: ставь только крупные заголовки для больших блоков;',
+      '- часто: ставь более детальные подзаголовки внутри выбранной части.',
       'Если в тексте уже есть заголовки, возвращай только новые места для вставки.',
+      instruction ? `Запрос пользователя по плотности/частям: ${instruction}` : '',
       `Абзацы для анализа:\n${sourceBlocks
         .map((block, index) => `${index + 1}. ${block.text.slice(0, 220)}`)
         .join('\n\n')}`,
