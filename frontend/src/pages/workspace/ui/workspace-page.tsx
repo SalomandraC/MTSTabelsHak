@@ -841,7 +841,11 @@ export function WorkspacePage() {
     onRestored: async () => {
       setHistoryPreviewCheckpoint(null);
       if (activePageId) {
-        await Promise.all([refreshActivePage(activePageId), refreshTree(selectedSpaceId, activePageId)]);
+        await Promise.all([
+          refreshActivePage(activePageId),
+          refreshTree(selectedSpaceId, activePageId),
+          isCommentsEnabled ? comments.refreshComments(true) : Promise.resolve(),
+        ]);
       }
     },
   });
