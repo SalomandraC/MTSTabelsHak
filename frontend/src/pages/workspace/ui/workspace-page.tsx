@@ -2033,7 +2033,7 @@ export function WorkspacePage() {
           <button
             type="button"
             onClick={rightSidebar.collapse}
-            className="absolute -left-4 top-[136px] z-30 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
+            className="absolute -left-5 top-[136px] z-30 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
             aria-label="Скрыть правое меню"
             title="Скрыть правое меню"
           >
@@ -2044,7 +2044,7 @@ export function WorkspacePage() {
               type="button"
               onClick={() => setRightPanelMode((current) => (current === 'navigation' ? 'links' : 'navigation'))}
               className={[
-                'absolute -left-4 top-[176px] z-30 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40',
+                'absolute -left-5 top-[176px] z-30 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40',
                 rightPanelMode === 'navigation'
                   ? 'border-[#d8e2ff] bg-[#eef4ff] text-[#3058b7]'
                   : 'border-editor-border-subtle bg-white text-editor-text-primary hover:bg-editor-bg-control',
