@@ -300,6 +300,11 @@ export function usePageEditorController({
         provider: collabState?.provider,
         enableGhostText: isAiEditorExtensionEnabled,
         requestAutocomplete: async (currentText: string) => {
+          const globalFlags = window as unknown as { __wikiliveCopilotOpen?: boolean };
+          if (globalFlags.__wikiliveCopilotOpen) {
+            return '';
+          }
+
           if (!isAiEditorExtensionEnabled) {
             return '';
           }

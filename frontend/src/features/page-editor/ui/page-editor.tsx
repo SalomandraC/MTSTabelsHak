@@ -1,6 +1,6 @@
 import type { Editor } from '@tiptap/core';
 import { EditorContent } from '@tiptap/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { SlashMenu } from '../../slash-menu';
 import { AiInlineCopilot } from '../../plugins/ai-assistant';
@@ -174,6 +174,7 @@ export function PageEditor({
   const isAiToolbarEnabled = isEditorSlotEnabled('toolbar_bubble');
   const isAiExtensionEnabled = isEditorSlotEnabled('editor_extension');
   const [copilotAnchor, setCopilotAnchor] = useState<CopilotAnchor | null>(null);
+  const isCopilotOpen = Boolean(copilotAnchor);
   const editorSurfaceRef = useRef<HTMLDivElement | null>(null);
 
   const controller = usePageEditorController({
@@ -185,6 +186,17 @@ export function PageEditor({
     isAiSlashEnabled,
     isAiEditorExtensionEnabled: isAiExtensionEnabled,
   });
+
+  useEffect(() => {
+    const globalFlags = window as unknown as { __wikiliveCopilotOpen?: boolean };
+    globalFlags.__wikiliveCopilotOpen = isCopilotOpen;
+    window.dispatchEvent(new CustomEvent('wikilive:copilot-visibility', { detail: { open: isCopilotOpen } }));
+
+    return () => {
+      globalFlags.__wikiliveCopilotOpen = false;
+      window.dispatchEvent(new CustomEvent('wikilive:copilot-visibility', { detail: { open: false } }));
+    };
+  }, [isCopilotOpen]);
 
   useEffect(() => {
     onEditorChange?.(isLoading || !page ? null : controller.editor);
@@ -201,8 +213,6 @@ export function PageEditor({
       onDocumentStateEncoderChange?.(null);
     };
   }, [controller.getCurrentDocumentStateValue, isLoading, onDocumentStateEncoderChange, page]);
-
-  const isCopilotOpen = useMemo(() => Boolean(copilotAnchor), [copilotAnchor]);
 
   useEffect(() => {
     if (!isAiExtensionEnabled || isLoading || !page) {
