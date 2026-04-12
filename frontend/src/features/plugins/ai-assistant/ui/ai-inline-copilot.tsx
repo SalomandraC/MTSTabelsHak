@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Editor } from '@tiptap/core';
 
 import { type MwsField, type MwsRecord, wikiliveApi } from '../../../../shared/api/wikilive';
+import { AiOutputView } from '../model/ai-output-renderer';
 import { getEditorMarkdown } from '../model/editor-markdown';
 import { useAiTableContext } from '../model/use-ai-table-context';
 
@@ -782,7 +783,7 @@ export function AiInlineCopilot({
       {status ? <p className="mb-2 text-xs text-editor-text-tertiary">{status}</p> : null}
 
       <div className="max-h-44 overflow-auto rounded-md border border-editor-border-subtle bg-[#fafbfd] p-2 text-xs text-editor-text-primary">
-        {output ? <pre className="whitespace-pre-wrap font-sans">{output}</pre> : <p>Ответ AI или статус выполнения появится здесь.</p>}
+        {output ? <AiOutputView text={output} /> : <p>Ответ AI или статус выполнения появится здесь.</p>}
         {createdPage ? (
           <p className="mt-2">
             Создана страница:{' '}
