@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Editor } from '@tiptap/core';
 import {
   ChevronLeft,
@@ -155,6 +155,45 @@ function WorkspaceTreeSkeleton() {
 }
 
 type RightPanelMode = 'links' | 'comments' | 'timeMachine';
+
+function BlankAreaMenuItem({
+  icon,
+  label,
+  shortcut,
+  disabled = false,
+  destructive = false,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  shortcut?: string;
+  disabled?: boolean;
+  destructive?: boolean;
+  onClick?: () => void;
+}) {
+  const toneClass = disabled
+    ? 'cursor-default text-[#a4acb7]'
+    : destructive
+      ? 'text-[#d70032] hover:bg-[#fff1f3]'
+      : 'text-[#1f1f1f] hover:bg-[#f5f7fa]';
+
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      disabled={disabled}
+      className={[
+        'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[15px] transition-colors',
+        toneClass,
+      ].join(' ')}
+    >
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {shortcut ? <span className="shrink-0 text-[13px] text-[#9aa3af]">{shortcut}</span> : null}
+    </button>
+  );
+}
 
 const ACCESS_SCOPE_OPTIONS: Array<{
   value: DocumentAccessPolicy['viewAccess'];
@@ -598,6 +637,9 @@ export function WorkspacePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [workbenchTab, setWorkbenchTab] = useState<'catalog' | 'favorite'>('catalog');
+  const workbenchTreeWrapperRef = useRef<HTMLDivElement>(null);
+  const blankAreaCreateRef = useRef<HTMLDivElement>(null);
+  const blankAreaCreateInputRef = useRef<HTMLInputElement>(null);
   const [activePageId, setActivePageId] = useState<string | null>(null);
   const [selectedTableNode, setSelectedTableNode] = useState<WorkspaceTreeNode | null>(null);
   const [activePage, setActivePage] = useState<WikiPage | null>(null);
@@ -609,6 +651,12 @@ export function WorkspacePage() {
   const [isCreatingTablePage, setIsCreatingTablePage] = useState(false);
   const [isDeletingTable, setIsDeletingTable] = useState(false);
   const [isDeletingPage, setIsDeletingPage] = useState(false);
+  const [isBlankAreaCreateOpen, setIsBlankAreaCreateOpen] = useState(false);
+  const [isBlankAreaCreateMode, setIsBlankAreaCreateMode] = useState(false);
+  const [isBlankAreaCreatingPage, setIsBlankAreaCreatingPage] = useState(false);
+  const [blankAreaCreateTitle, setBlankAreaCreateTitle] = useState('');
+  const [blankAreaCreateError, setBlankAreaCreateError] = useState('');
+  const [blankAreaCreatePosition, setBlankAreaCreatePosition] = useState<{ left: number; top: number } | null>(null);
   const [statusMessage, setStatusMessage] = useState('Загружаем wiki workspace');
   const [errorMessage, setErrorMessage] = useState('');
   const [shareStatus, setShareStatus] = useState('');
@@ -1062,6 +1110,10 @@ export function WorkspacePage() {
   }, [activePageId]);
 
   const handleSelectPage = (pageId: string) => {
+    if (pageId === activePageId && !selectedTableNode) {
+      return;
+    }
+
     setSelectedTableNode(null);
     setActivePage(null);
     setActivePageId(pageId);
@@ -1105,6 +1157,24 @@ export function WorkspacePage() {
     setSelectedTableNode(node);
   };
 
+  const closeBlankAreaCreate = useCallback(() => {
+    setIsBlankAreaCreateOpen(false);
+    setIsBlankAreaCreateMode(false);
+    setIsBlankAreaCreatingPage(false);
+    setBlankAreaCreateTitle('');
+    setBlankAreaCreateError('');
+    setBlankAreaCreatePosition(null);
+  }, []);
+
+  const openTemplateMarketplace = useCallback(() => {
+    setIsTemplateModalOpen(true);
+    void ensureTemplateCategoriesLoaded().catch((error) => {
+      setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить категории шаблонов');
+    });
+    void refreshTemplates(selectedSpaceId, { page: 1 });
+    closeBlankAreaCreate();
+  }, [closeBlankAreaCreate, ensureTemplateCategoriesLoaded, refreshTemplates, selectedSpaceId]);
+
   const handleCreatePage = async (title?: string, parentNodeId?: string | null) => {
     const normalizedTitle = title?.trim();
     const resolvedTitle =
@@ -1118,12 +1188,121 @@ export function WorkspacePage() {
       await refreshTree(selectedSpaceId, created.page.id);
       setActivePageId(created.page.id);
       writeWorkspaceRoute(selectedSpaceId, created.page.id, 'push');
+      return { ok: true as const, error: null };
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Не удалось создать страницу');
+      const message = error instanceof Error ? error.message : 'Не удалось создать страницу';
+      setErrorMessage(message);
+      return { ok: false as const, error: message };
     } finally {
       setStatusMessage('');
     }
   };
+
+  const handleBlankAreaCreateSubmit = useCallback(async () => {
+    const normalizedTitle = blankAreaCreateTitle.trim();
+
+    if (!normalizedTitle) {
+      setBlankAreaCreateError('Введите название страницы');
+      return;
+    }
+
+    setBlankAreaCreateError('');
+    setIsBlankAreaCreatingPage(true);
+
+    const result = await handleCreatePage(normalizedTitle, null);
+
+    if (result.ok) {
+      closeBlankAreaCreate();
+      return;
+    }
+
+    setBlankAreaCreateError(result.error || 'Не удалось создать страницу');
+    setIsBlankAreaCreatingPage(false);
+  }, [blankAreaCreateTitle, closeBlankAreaCreate, handleCreatePage]);
+
+  const openBlankAreaCreateMode = useCallback(() => {
+    setBlankAreaCreateTitle('');
+    setBlankAreaCreateError('');
+    setIsBlankAreaCreateMode(true);
+  }, []);
+
+  const handleWorkbenchBlankAreaContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      if (workbenchTab !== 'catalog' || isLoading) {
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+
+      if (
+        target?.closest('[data-test-id="workspaceTreeNodeItem"]') ||
+        target?.closest('[data-workspace-inline-create="true"]')
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+
+      const wrapperRect = workbenchTreeWrapperRef.current?.getBoundingClientRect();
+
+      if (!wrapperRect) {
+        return;
+      }
+
+      const estimatedWidth = 236;
+      const estimatedHeight = 96;
+      const left = Math.max(
+        8,
+        Math.min(event.clientX - wrapperRect.left, Math.max(8, wrapperRect.width - estimatedWidth - 8)),
+      );
+      const top = Math.max(
+        8,
+        Math.min(event.clientY - wrapperRect.top, Math.max(8, wrapperRect.height - estimatedHeight - 8)),
+      );
+
+      setBlankAreaCreateTitle('');
+      setBlankAreaCreateError('');
+      setBlankAreaCreatePosition({ left, top });
+      setIsBlankAreaCreateOpen(true);
+      setIsBlankAreaCreateMode(false);
+    },
+    [isLoading, workbenchTab],
+  );
+
+  useEffect(() => {
+    if (!isBlankAreaCreateOpen || !isBlankAreaCreateMode) {
+      return;
+    }
+
+    blankAreaCreateInputRef.current?.focus();
+    blankAreaCreateInputRef.current?.select();
+  }, [isBlankAreaCreateMode, isBlankAreaCreateOpen]);
+
+  useEffect(() => {
+    if (!isBlankAreaCreateOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (blankAreaCreateRef.current && !blankAreaCreateRef.current.contains(event.target as Node)) {
+        closeBlankAreaCreate();
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeBlankAreaCreate();
+      }
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleEscape);
+
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [closeBlankAreaCreate, isBlankAreaCreateOpen]);
 
   const handleInstantiateTemplate = async (payload: {
     templateId: string;
@@ -1554,13 +1733,7 @@ export function WorkspacePage() {
           <div className="mt-2 px-3">
             <button
               type="button"
-              onClick={() => {
-                setIsTemplateModalOpen(true);
-                void ensureTemplateCategoriesLoaded().catch((error) => {
-                  setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить категории шаблонов');
-                });
-                void refreshTemplates(selectedSpaceId, { page: 1 });
-              }}
+              onClick={openTemplateMarketplace}
               disabled={isTemplatesLoading}
               className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-editor-border-subtle bg-white px-3 text-sm font-semibold text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa] disabled:cursor-wait disabled:opacity-60"
             >
@@ -1569,7 +1742,12 @@ export function WorkspacePage() {
             </button>
           </div>
 
-          <div className="mt-2 min-h-0 flex-1 overflow-y-auto px-2 pb-2" id="WORKBENCH_SIDE_NODE_WRAPPER">
+          <div
+            ref={workbenchTreeWrapperRef}
+            className="relative mt-2 min-h-0 flex-1 overflow-y-auto px-2 pb-2"
+            id="WORKBENCH_SIDE_NODE_WRAPPER"
+            onContextMenu={handleWorkbenchBlankAreaContextMenu}
+          >
             {workbenchTab === 'favorite' ? (
               <div className="px-3 py-6 text-sm text-[#969fa8]">Закрепленных страниц пока нет</div>
             ) : (
@@ -1594,10 +1772,91 @@ export function WorkspacePage() {
                         onSelectMwsTable={handleSelectMwsTable}
                         onToggleFolder={handleToggleFolder}
                         onDeletePage={(pageId, title) => void handleDeletePage(pageId, title)}
-                        onCreatePage={(title, parentNodeId) => handleCreatePage(title, parentNodeId)}
+                        onCreatePage={async (title, parentNodeId) => {
+                          await handleCreatePage(title, parentNodeId);
+                        }}
                       />
                     ))}
                   </ul>
+                  {isBlankAreaCreateOpen && blankAreaCreatePosition ? (
+                    <div
+                      ref={blankAreaCreateRef}
+                      data-workspace-inline-create="true"
+                      role="menu"
+                      aria-label="Действия в пустой области проводника"
+                      className="absolute z-20 w-[236px] max-w-[calc(100%-16px)] rounded-xl border border-editor-border-subtle bg-white p-2 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
+                      style={{
+                        left: blankAreaCreatePosition.left,
+                        top: blankAreaCreatePosition.top,
+                      }}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      {isBlankAreaCreateMode ? (
+                        <div className="space-y-2 p-1">
+                          <p className="px-2 pt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b94a3]">Новая страница</p>
+                          <input
+                            ref={blankAreaCreateInputRef}
+                            value={blankAreaCreateTitle}
+                            onChange={(event) => {
+                              setBlankAreaCreateTitle(event.target.value);
+                              if (blankAreaCreateError) {
+                                setBlankAreaCreateError('');
+                              }
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault();
+                                void handleBlankAreaCreateSubmit();
+                              }
+
+                              if (event.key === 'Escape') {
+                                event.preventDefault();
+                                setIsBlankAreaCreateMode(false);
+                                setBlankAreaCreateError('');
+                              }
+                            }}
+                            placeholder="Введите название страницы"
+                            disabled={isBlankAreaCreatingPage}
+                            className="h-10 w-full rounded-lg border border-editor-border-subtle bg-white px-3 text-sm text-[#1f1f1f] outline-none transition-colors focus:border-[#5586ff]"
+                          />
+                          {blankAreaCreateError ? <p className="px-1 text-xs text-[#d70032]">{blankAreaCreateError}</p> : null}
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsBlankAreaCreateMode(false);
+                                setBlankAreaCreateError('');
+                              }}
+                              className="flex-1 rounded-lg border border-editor-border-subtle px-3 py-2 text-xs font-semibold text-[#4b5563] transition-colors hover:bg-[#f7f8fa]"
+                            >
+                              Назад
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleBlankAreaCreateSubmit()}
+                              disabled={isBlankAreaCreatingPage}
+                              className="flex-1 rounded-lg bg-[#d70032] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#b8002b] disabled:cursor-wait disabled:opacity-70"
+                            >
+                              {isBlankAreaCreatingPage ? 'Создаем...' : 'Создать'}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <BlankAreaMenuItem
+                            icon={<Pencil size={15} strokeWidth={2.1} />}
+                            label="Новая страница"
+                            onClick={openBlankAreaCreateMode}
+                          />
+                          <BlankAreaMenuItem
+                            icon={<FileDown size={16} strokeWidth={2.2} />}
+                            label="Создать из шаблона"
+                            onClick={openTemplateMarketplace}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
                 </>
               )
             )}

@@ -1,7 +1,11 @@
 import type { NodeViewProps } from '@tiptap/react';
 import { NodeViewWrapper } from '@tiptap/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { v4 as uuidv4 } from 'uuid';
+// Use browser-native randomUUID when available, fallback to a short random string.
+const uuidv4 = () =>
+  (globalThis.crypto && typeof (globalThis.crypto as any).randomUUID === 'function')
+    ? (globalThis.crypto as any).randomUUID()
+    : Math.random().toString(36).slice(2, 10);
 
 type CanvasLine = {
   id: string;
