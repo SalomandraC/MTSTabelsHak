@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { AuthSessionContext } from '../model/auth-session-context';
 import { useAuthSession } from '../model/use-auth-session';
 import { AuthLoginCard } from './auth-login-card';
 
@@ -7,16 +8,8 @@ type AuthGateProps = {
 };
 
 export function AuthGate({ children }: AuthGateProps) {
-  const {
-    authState,
-    apiKey,
-    setApiKey,
-    isSubmitting,
-    errorMessage,
-    displayName,
-    handleLogin,
-    handleLogout,
-  } = useAuthSession();
+  const authSession = useAuthSession();
+  const { authState, apiKey, setApiKey, isSubmitting, errorMessage, handleLogin } = authSession;
 
   if (authState === 'bootstrapping') {
     return (
@@ -38,16 +31,5 @@ export function AuthGate({ children }: AuthGateProps) {
     );
   }
 
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={handleLogout}
-        className="absolute right-4 top-4 z-20 rounded-lg border border-editor-border-subtle bg-white px-3 py-1.5 text-xs font-semibold text-editor-text-secondary shadow-sm transition-colors hover:bg-editor-bg-control"
-      >
-        {displayName ? `${displayName} • Выйти` : 'Выйти'}
-      </button>
-      {children}
-    </div>
-  );
+  return <AuthSessionContext.Provider value={authSession}>{children}</AuthSessionContext.Provider>;
 }

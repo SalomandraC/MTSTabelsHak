@@ -14,7 +14,9 @@ import {
   wikiliveApi,
 } from '../../../shared/api/wikilive';
 import {
+  isEditorSlotEnabled,
   isWorkspaceSidebarSlotEnabled,
+  type EditorSlot,
   type WorkspaceSidebarSlot,
 } from './plugin-registry';
 
@@ -29,6 +31,7 @@ type PluginsContextValue = {
   updatePluginSettings: (pluginId: string, settings: Record<string, boolean>) => Promise<void>;
   isPluginEnabled: (pluginId: string) => boolean;
   isWorkspaceSidebarEnabled: (slot: WorkspaceSidebarSlot) => boolean;
+  isEditorSlotEnabled: (slot: EditorSlot) => boolean;
 };
 
 const PluginsContext = createContext<PluginsContextValue | null>(null);
@@ -109,6 +112,7 @@ export function PluginsProvider({ children }: { children: ReactNode }) {
     updatePluginSettings,
     isPluginEnabled: (pluginId: string) => catalog.items.some((item) => item.id === pluginId && item.enabled),
     isWorkspaceSidebarEnabled: (slot: WorkspaceSidebarSlot) => isWorkspaceSidebarSlotEnabled(catalog.items, slot),
+    isEditorSlotEnabled: (slot: EditorSlot) => isEditorSlotEnabled(catalog.items, slot),
   }), [catalog.items, catalog.plan, errorMessage, isLoading, pendingPluginId, refreshCatalog, togglePlugin, updatePluginSettings]);
 
   return <PluginsContext.Provider value={value}>{children}</PluginsContext.Provider>;

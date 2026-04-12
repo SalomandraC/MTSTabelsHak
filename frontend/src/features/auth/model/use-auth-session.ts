@@ -2,6 +2,15 @@ import { FormEvent, useEffect, useState } from 'react';
 import { wikiliveApi } from '../../../shared/api/wikilive';
 
 export type AuthState = 'bootstrapping' | 'unauthorized' | 'authorized';
+const FALLBACK_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
+
+function getRefreshIntervalMs(expiresInSec: number | null | undefined): number {
+  if (!expiresInSec || expiresInSec <= 60) {
+    return FALLBACK_REFRESH_INTERVAL_MS;
+  }
+
+  return Math.max(60_000, (expiresInSec - 60) * 1000);
+}
 
 export function useAuthSession() {
   const [authState, setAuthState] = useState<AuthState>('bootstrapping');
@@ -9,26 +18,30 @@ export function useAuthSession() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [refreshIntervalMs, setRefreshIntervalMs] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     void (async () => {
       try {
-        const user = await wikiliveApi.restoreSession();
+        const session = await wikiliveApi.restoreSession();
         if (cancelled) {
           return;
         }
 
-        if (user) {
-          setDisplayName(user.displayName);
+        if (session) {
+          setDisplayName(session.user.displayName);
+          setRefreshIntervalMs(getRefreshIntervalMs(session.expiresInSec));
           setAuthState('authorized');
           return;
         }
 
+        setRefreshIntervalMs(null);
         setAuthState('unauthorized');
       } catch {
         if (!cancelled) {
+          setRefreshIntervalMs(null);
           setAuthState('unauthorized');
         }
       }
@@ -40,24 +53,28 @@ export function useAuthSession() {
   }, []);
 
   useEffect(() => {
-    if (authState !== 'authorized') {
+    if (authState !== 'authorized' || !refreshIntervalMs) {
       return;
     }
 
     const timer = window.setInterval(() => {
-      void wikiliveApi.refreshSession().then((token) => {
-        if (!token) {
+      void wikiliveApi.refreshSession().then((session) => {
+        if (!session) {
           setAuthState('unauthorized');
           setDisplayName('');
+          setRefreshIntervalMs(null);
           setErrorMessage('Сессия истекла. Введите API-ключ снова.');
+          return;
         }
+
+        setRefreshIntervalMs(getRefreshIntervalMs(session.expiresInSec));
       });
-    }, 10 * 60 * 1000);
+    }, refreshIntervalMs);
 
     return () => {
       window.clearInterval(timer);
     };
-  }, [authState]);
+  }, [authState, refreshIntervalMs]);
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -72,13 +89,14 @@ export function useAuthSession() {
 
     try {
       await wikiliveApi.login(trimmed);
-      const token = await wikiliveApi.refreshSession();
-      if (!token) {
+      const session = await wikiliveApi.refreshSession();
+      if (!session) {
         throw new Error('Не удалось получить access token');
       }
 
       const me = await wikiliveApi.getMe();
       setDisplayName(me.user.displayName);
+      setRefreshIntervalMs(getRefreshIntervalMs(session.expiresInSec));
       setApiKey('');
       setAuthState('authorized');
     } catch (error) {
@@ -93,6 +111,7 @@ export function useAuthSession() {
       await wikiliveApi.logout();
     } finally {
       setDisplayName('');
+      setRefreshIntervalMs(null);
       setAuthState('unauthorized');
     }
   };

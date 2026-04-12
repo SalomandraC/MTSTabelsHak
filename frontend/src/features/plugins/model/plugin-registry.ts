@@ -2,11 +2,13 @@ export type { PluginCatalogItem } from '../../../shared/api/wikilive';
 
 import type { PluginCatalogItem } from '../../../shared/api/wikilive';
 
-export type WorkspaceSidebarSlot = 'document-graph';
+export type WorkspaceSidebarSlot = 'document-graph' | 'sidebar';
+export type EditorSlot = 'toolbar_bubble' | 'editor_extension' | 'slash_menu';
 
 type RuntimePluginDefinition = {
   id: string;
   workspaceSidebarSlots?: WorkspaceSidebarSlot[];
+  editorSlots?: EditorSlot[];
 };
 
 export const runtimePluginRegistry: RuntimePluginDefinition[] = [
@@ -18,7 +20,12 @@ export const runtimePluginRegistry: RuntimePluginDefinition[] = [
     id: 'comments',
   },
   {
-    id: 'ai-assist',
+    id: 'time-machine',
+  },
+  {
+    id: 'ai-assistant',
+    workspaceSidebarSlots: ['sidebar'],
+    editorSlots: ['toolbar_bubble', 'editor_extension', 'slash_menu'],
   },
 ];
 
@@ -45,4 +52,10 @@ export function getCanvasDrawSettings(items: PluginCatalogItem[]): Record<string
     'floating-toolbar': true,
     'slash-menu': true,
   };
+}
+
+export function isEditorSlotEnabled(items: PluginCatalogItem[], slot: EditorSlot) {
+  return runtimePluginRegistry.some((definition) => {
+    return definition.editorSlots?.includes(slot) && isPluginRuntimeEnabled(items, definition.id);
+  });
 }

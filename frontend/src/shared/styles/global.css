@@ -1,6 +1,23 @@
 @import 'tailwindcss';
 @import 'highlight.js/styles/atom-one-dark.css';
 
+@theme inline {
+  --font-sans: var(--editor-font-sans);
+  --font-compact: var(--editor-font-compact);
+  --font-wide: var(--editor-font-wide);
+  --color-editor-brand: var(--editor-brand);
+  --color-editor-bg-page: var(--editor-bg-page);
+  --color-editor-bg-toolbar: var(--editor-bg-toolbar);
+  --color-editor-bg-control: var(--editor-bg-control);
+  --color-editor-bg-input: var(--editor-bg-input);
+  --color-editor-border-subtle: var(--editor-border-subtle);
+  --color-editor-border-control: var(--editor-border-control);
+  --color-editor-icon: var(--editor-icon);
+  --color-editor-text-primary: var(--editor-text-primary);
+  --color-editor-text-secondary: var(--editor-text-secondary);
+  --color-editor-text-tertiary: var(--editor-text-tertiary);
+}
+
 @font-face {
   font-family: 'MTSWide';
   src: url('/fonts/MTSWide-Bold-XQ34CV62.ttf') format('truetype');
@@ -26,20 +43,22 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     /* Font stacks */
-    --font-sans: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
-    --font-compact: 'MTS Compact', var(--font-sans);
-    --font-wide: 'MTS Wide', var(--font-sans);
+    --editor-font-sans: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+    --editor-font-compact: 'MTS Compact', var(--editor-font-sans);
+    --editor-font-wide: 'MTS Wide', var(--editor-font-sans);
 
     /* Color tokens (editor) */
-    --color-editor-brand: #7B67EE;
-    --color-editor-bg-page: #FFFFFF;
-    --color-editor-bg-toolbar: #F5F7FA;
-    --color-editor-bg-control: #F0F1F3;
-    --color-editor-border-subtle: #E0E0E0;
-    --color-editor-border-control: #D7D9DD;
-    --color-editor-icon: #505762;
-    --color-editor-text-primary: #1D2023;
-    --color-editor-text-tertiary: #969FA8;
+    --editor-brand: #7B67EE;
+    --editor-bg-page: #FFFFFF;
+    --editor-bg-toolbar: #F5F7FA;
+    --editor-bg-control: #F0F1F3;
+    --editor-bg-input: #FFFFFF;
+    --editor-border-subtle: #E0E0E0;
+    --editor-border-control: #D7D9DD;
+    --editor-icon: #505762;
+    --editor-text-primary: #1D2023;
+    --editor-text-secondary: #505762;
+    --editor-text-tertiary: #969FA8;
     --link-color: #7b67ee;
     --color-modal-primary-bg: #ff0037;
     --color-modal-primary-text: #ffffff;
@@ -60,9 +79,9 @@
 
   body {
     min-height: 100vh;
-    font-family: var(--font-sans);
-    background-color: var(--color-editor-bg-page);
-    color: var(--color-editor-text-primary);
+    font-family: var(--editor-font-sans);
+    background-color: var(--editor-bg-page);
+    color: var(--editor-text-primary);
   }
   
 @font-face {
@@ -99,10 +118,10 @@
   .tiptap {
     outline: none;
     min-height: 100%;
-    font-family: var(--font-compact);
+    font-family: var(--editor-font-compact);
     font-size: 1.0625rem;
     line-height: 1.65;
-    color: var(--color-editor-text-primary);
+    color: var(--editor-text-primary);
   }
 
   .tiptap > *:first-child {
@@ -111,7 +130,7 @@
 
   .tiptap p.is-editor-empty:first-child::before {
     content: attr(data-placeholder);
-    color: var(--color-editor-text-tertiary);
+    color: var(--editor-text-tertiary);
     pointer-events: none;
     height: 0;
     float: left;
@@ -127,7 +146,7 @@
     margin-top: 1.8rem;
     margin-bottom: 0.8rem;
     text-wrap: pretty;
-    font-family: var(--font-wide);
+    font-family: var(--editor-font-wide);
   }
 
   .tiptap h1 {
@@ -185,7 +204,7 @@
   }
 
   .tiptap blockquote {
-    border-left: 3px solid var(--color-editor-border-subtle);
+    border-left: 3px solid var(--editor-border-subtle);
     margin: 1.25rem 0;
     padding-left: 0.95rem;
     color: #596273;
@@ -193,7 +212,7 @@
 
   .tiptap hr {
     border: none;
-    border-top: 1px solid var(--color-editor-border-subtle);
+    border-top: 1px solid var(--editor-border-subtle);
     margin: 1.9rem 0;
   }
 
@@ -232,13 +251,49 @@
     outline-offset: 2px;
   }
 
+  .tiptap .template-variable-chip {
+    display: inline-flex;
+    align-items: center;
+    max-width: 20rem;
+    border: 1px dashed #f3a0b2;
+    border-radius: 0.7rem;
+    background: #fff3f6;
+    color: #b00025;
+    font-size: 0.92em;
+    font-weight: 700;
+    line-height: 1.35;
+    padding: 0.08rem 0.5rem;
+    vertical-align: baseline;
+    white-space: nowrap;
+  }
+
+  .tiptap .template-variable-chip.ProseMirror-selectednode {
+    outline: 2px solid #d70032;
+    outline-offset: 2px;
+  }
+
+  .tiptap .comment-anchor {
+    border-radius: 0.2rem;
+    background: color-mix(in srgb, #907ff0 13%, transparent);
+    box-shadow: inset 0 -2px 0 #d8d2fc;
+    cursor: pointer;
+    transition:
+      background-color 120ms ease,
+      box-shadow 120ms ease;
+  }
+
+  .tiptap .comment-anchor:hover {
+    background: color-mix(in srgb, #907ff0 22%, transparent);
+    box-shadow: inset 0 -2px 0 #907ff0;
+  }
+
   .tiptap img {
     display: block;
     max-width: min(100%, 42rem);
     height: auto;
     border-radius: 0.75rem;
     margin: 1rem 0;
-    border: 1px solid var(--color-editor-border-subtle);
+    border: 1px solid var(--editor-border-subtle);
     cursor: pointer;
   }
 
@@ -366,6 +421,45 @@
 }
 
 @layer components {
+  .scroll-area {
+    scrollbar-width: thin;
+    scrollbar-color: #d3d3d8 transparent;
+  }
+
+  .scroll-area::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .scroll-area::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 999px;
+  }
+
+  .scroll-area::-webkit-scrollbar-thumb {
+    background: #d3d3d8;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 999px;
+  }
+
+  .scroll-area::-webkit-scrollbar-thumb:hover {
+    background: #c6c6cc;
+    background-clip: padding-box;
+  }
+
+  .scroll-area::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  .scroll-area--page {
+    scrollbar-color: #d3d3d8 transparent;
+  }
+
+  .scroll-area--table {
+    scrollbar-color: #d3d3d8 transparent;
+  }
+
   .slash-menu-scroll {
     scrollbar-width: thin;
     scrollbar-color: #c4cedf #eef2f8;

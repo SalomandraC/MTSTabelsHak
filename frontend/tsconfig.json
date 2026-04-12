@@ -15,6 +15,13 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
+    "ignoreDeprecations": "5.0",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@types/*": ["./src/types/*"],
+      "cytoscape-cola": ["./src/types/cytoscape-cola-module.d.ts"]
+    },
+    "typeRoots": ["./node_modules/@types", "./src/types"],
     "allowImportingTsExtensions": true
   },
   "include": ["src"],

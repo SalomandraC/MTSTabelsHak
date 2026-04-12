@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { HocuspocusProvider } from '@hocuspocus/provider';
+import type { Content } from '@tiptap/core';
 import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
 
@@ -48,6 +49,9 @@ type UsePageEditorControllerOptions = {
   page: WikiPage | null;
   onRenamePage: (title: string) => Promise<void>;
   onCheckpoint: () => Promise<void>;
+  onOpenCommentThread?: (threadId: string) => void;
+  isAiSlashEnabled: boolean;
+  isAiEditorExtensionEnabled: boolean;
 };
 
 const baseSlashState: SlashState = {
@@ -129,7 +133,24 @@ function getEditorMarkdown(editor: NonNullable<ReturnType<typeof useEditor>>): s
   return editor.getText();
 }
 
-export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpoint }: UsePageEditorControllerOptions) {
+function normalizeTemplateKey(label: string): string {
+  return label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-zа-я0-9]+/gi, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40) || `template_${Math.random().toString(16).slice(2, 8)}`;
+}
+
+export function usePageEditorController({
+  spaceId,
+  page,
+  onRenamePage,
+  onCheckpoint,
+  onOpenCommentThread,
+  isAiSlashEnabled,
+  isAiEditorExtensionEnabled,
+}: UsePageEditorControllerOptions) {
   const { items: plugins } = usePlugins();
   const [slashState, setSlashState] = useState<SlashState>(baseSlashState);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -153,6 +174,9 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
 
   const [isPagePickerOpen, setIsPagePickerOpen] = useState(false);
   const [isTablePickerOpen, setIsTablePickerOpen] = useState(false);
+  const [isTemplateVariableModalOpen, setIsTemplateVariableModalOpen] = useState(false);
+  const [templateVariableLabel, setTemplateVariableLabel] = useState('');
+  const [templateVariableDescription, setTemplateVariableDescription] = useState('');
   const [collabState, setCollabState] = useState<CollabState | null>(null);
 
   const slashStateRef = useRef(baseSlashState);
@@ -276,7 +300,12 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
       createPageEditorExtensions({
         ydoc: collabState?.ydoc,
         provider: collabState?.provider,
+        enableGhostText: isAiEditorExtensionEnabled,
         requestAutocomplete: async (currentText: string) => {
+          if (!isAiEditorExtensionEnabled) {
+            return '';
+          }
+
           const response = await wikiliveApi.aiAutocomplete({
             currentText,
             pageTitle: page?.title,
@@ -292,8 +321,18 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
           name: userDisplayName,
           color: userColor,
         },
+        onOpenCommentThread,
       }),
-    [collabState?.provider, collabState?.ydoc, page?.title, userColor, userDisplayName, userId],
+    [
+      collabState?.provider,
+      collabState?.ydoc,
+      isAiEditorExtensionEnabled,
+      onOpenCommentThread,
+      page?.title,
+      userColor,
+      userDisplayName,
+      userId,
+    ],
   );
 
   const resetImageModalState = () => {
@@ -316,6 +355,14 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
     setImageFileSizeLabel('');
     setImagePreviewSrc('');
   }, []);
+
+  const getCurrentDocumentStateValue = useCallback(() => {
+    if (!collabState) {
+      return null;
+    }
+
+    return bytesToBase64(Y.encodeStateAsUpdate(collabState.ydoc));
+  }, [collabState]);
 
   const editor = useEditor(
     {
@@ -491,19 +538,23 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
   const slashItems = useMemo(() => getSlashCommandItems(plugins), [plugins]);
 
   const filteredItems = useMemo(() => {
+    const availableItems = isAiSlashEnabled
+      ? slashItems
+      : slashItems.filter((item) => item.id !== 'ai-generate');
+
     if (!slashState.query) {
-      return slashItems;
+      return availableItems;
     }
 
     const normalized = slashState.query.toLowerCase().trim();
 
-    return slashItems.filter((item) => {
+    return availableItems.filter((item) => {
       return (
         item.label.toLowerCase().includes(normalized) ||
         item.keywords.some((keyword) => keyword.toLowerCase().includes(normalized))
       );
     });
-  }, [slashState.query]);
+  }, [isAiSlashEnabled, slashState.query]);
 
   const filteredItemsRef = useRef(filteredItems);
 
@@ -642,6 +693,35 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
     closeImageModal();
   };
 
+  const openTemplateVariableModal = (defaultLabel = '', defaultDescription = '') => {
+    setTemplateVariableLabel(defaultLabel);
+    setTemplateVariableDescription(defaultDescription);
+    setIsTemplateVariableModalOpen(true);
+  };
+
+  const closeTemplateVariableModal = () => {
+    setIsTemplateVariableModalOpen(false);
+  };
+
+  const handleInsertTemplateVariable = () => {
+    if (!editor) {
+      return;
+    }
+
+    const label = templateVariableLabel.trim();
+    if (!label) {
+      return;
+    }
+
+    editor.chain().focus().insertTemplateVariable({
+      key: normalizeTemplateKey(label),
+      label,
+      description: templateVariableDescription.trim(),
+    }).run();
+
+    closeTemplateVariableModal();
+  };
+
   const deleteSlashRange = () => {
     if (!editor || !slashStateRef.current.isOpen) {
       return;
@@ -681,6 +761,11 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
     }
 
     if (item.id === 'ai-generate') {
+      if (!isAiSlashEnabled) {
+        setSlashState(baseSlashState);
+        return;
+      }
+
       setSlashState(baseSlashState);
 
       const prompt = window.prompt('Введите запрос для AI генерации', 'Сформулируй краткий план текущей секции')?.trim();
@@ -698,15 +783,21 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
         const generatedContent = response.document?.content;
 
         if (Array.isArray(generatedContent) && generatedContent.length > 0) {
-          editor.chain().focus().insertContent(generatedContent as any).run();
+          editor.chain().focus().insertContent(generatedContent as Content).run();
           return;
         }
 
-        editor.chain().focus().insertContent(response.document as any).run();
+        editor.chain().focus().insertContent(response.document as Content).run();
       }).catch((error) => {
         setSaveStatus(error instanceof Error ? `AI generate error: ${error.message}` : 'AI generate error');
       });
 
+      return;
+    }
+
+    if (item.id === 'template-variable') {
+      setSlashState(baseSlashState);
+      openTemplateVariableModal('', '');
       return;
     }
 
@@ -781,6 +872,12 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
         return;
       }
 
+      if (isTemplateVariableModalOpen && event.key === 'Escape') {
+        event.preventDefault();
+        closeTemplateVariableModal();
+        return;
+      }
+
       if (!slashStateRef.current.isOpen || !editor) {
         return;
       }
@@ -842,7 +939,7 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [closeImageModal, editor, isImageModalOpen, isLinkModalOpen]);
+  }, [closeImageModal, editor, isImageModalOpen, isLinkModalOpen, isTemplateVariableModalOpen]);
 
   return {
     editor,
@@ -898,5 +995,16 @@ export function usePageEditorController({ spaceId, page, onRenamePage, onCheckpo
       onFileSelect: handleSelectImageFile,
       onConfirm: handleConfirmImageInsert,
     },
+    templateVariableModal: {
+      isOpen: isTemplateVariableModalOpen,
+      label: templateVariableLabel,
+      description: templateVariableDescription,
+      isSubmitDisabled: templateVariableLabel.trim().length === 0,
+      onLabelChange: setTemplateVariableLabel,
+      onDescriptionChange: setTemplateVariableDescription,
+      onSubmit: handleInsertTemplateVariable,
+      onClose: closeTemplateVariableModal,
+    },
+    getCurrentDocumentStateValue,
   };
 }

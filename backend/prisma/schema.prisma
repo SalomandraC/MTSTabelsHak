@@ -22,10 +22,32 @@ enum CheckpointTrigger {
   manual
   reconnect
   collab_store
+  restore
 }
 
 enum PluginScopeType {
   user
+}
+
+enum TemplateAccessLevel {
+  private
+  space
+  public
+}
+
+model TemplateCategory {
+  id         String        @id @default(uuid())
+  title      String        @unique
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
+  templates  PageTemplate[]
+
+  @@map("template_categories")
+}
+
+enum CommentThreadStatus {
+  open
+  resolved
 }
 
 model WikiNode {
@@ -52,6 +74,7 @@ model WikiNode {
   targetLinks PageLink[]   @relation("TargetLinks")
   embeds      PageEmbed[]
   sessions    CollabSession[]
+  commentThreads PageCommentThread[]
 
   @@index([spaceId, parentId, position])
   @@index([spaceId, type, isArchived])
@@ -110,10 +133,13 @@ model PageCheckpoint {
   stateVector   Bytes             @map("state_vector")
   trigger       CheckpointTrigger
   createdBy     String?           @map("created_by")
+  createdByName String?           @map("created_by_name")
+  restoredFromCheckpointId String? @map("restored_from_checkpoint_id")
   createdAt     DateTime          @default(now()) @map("created_at")
   page          WikiPage          @relation(fields: [pageId], references: [nodeId], onDelete: Cascade)
 
   @@index([pageId, createdAt])
+  @@index([restoredFromCheckpointId])
   @@map("page_checkpoints")
 }
 
@@ -153,6 +179,39 @@ model PageEmbed {
   @@map("page_embeds")
 }
 
+model PageCommentThread {
+  id            String              @id
+  pageId        String              @map("page_id")
+  anchorText    String              @map("anchor_text")
+  status        CommentThreadStatus @default(open)
+  createdBy     String              @map("created_by")
+  createdByName String              @map("created_by_name")
+  resolvedBy    String?             @map("resolved_by")
+  resolvedAt    DateTime?           @map("resolved_at")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+  page          WikiNode            @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  messages      PageCommentMessage[]
+
+  @@index([pageId, status, updatedAt])
+  @@map("page_comment_threads")
+}
+
+model PageCommentMessage {
+  id            String            @id @default(uuid())
+  threadId      String            @map("thread_id")
+  body          String
+  createdBy     String            @map("created_by")
+  createdByName String            @map("created_by_name")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  deletedAt     DateTime?         @map("deleted_at")
+  thread        PageCommentThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+  @@map("page_comment_messages")
+}
+
 model CollabSession {
   id             String    @id @default(uuid())
   pageId         String    @map("page_id")
@@ -184,4 +243,29 @@ model PluginActivation {
   @@unique([pluginId, scopeType, userId])
   @@index([userId, scopeType])
   @@map("plugin_activations")
+}
+
+model PageTemplate {
+  id                String              @id @default(uuid())
+  spaceId           String              @map("space_id")
+  ownerUserId       String              @map("owner_user_id")
+  title             String
+  summary           String
+  categoryLegacy    String              @map("category")
+  categoryId        String?             @map("category_id")
+  icon              String              @default("sparkles")
+  accessLevel       TemplateAccessLevel  @default(private) @map("access_level")
+  pageTitleTemplate String              @map("page_title_template")
+  usageCount        Int                 @default(0) @map("usage_count")
+  fields            Json                @map("fields")
+  document          Json                @map("document")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+  category          TemplateCategory?    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([spaceId, accessLevel])
+  @@index([ownerUserId, accessLevel])
+  @@index([categoryId])
+  @@index([usageCount])
+  @@map("page_templates")
 }

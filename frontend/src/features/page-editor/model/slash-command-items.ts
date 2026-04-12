@@ -1,6 +1,15 @@
+import React from 'react';
 import type { Editor } from '@tiptap/core';
 import type { PluginCatalogItem } from '../../plugins/model/plugin-registry';
 import type { SlashMenuItem } from '../../slash-menu';
+
+import List from '../../../app/images/list.svg';
+import ListOrdered from '../../../app/images/list-ordered.svg';
+import ListChecks from '../../../app/images/list-checks.svg';
+import Quote from '../../../app/images/quote.svg';
+import AtSign from '../../../app/images/at-sign.svg';
+import Picture from '../../../app/images/Picture.svg';
+import Table from '../../../app/images/logo.svg';
 
 export type PageEditorSlashCommandItem = SlashMenuItem & {
   run: (editor: Editor) => void;
@@ -17,7 +26,9 @@ export function getSlashCommandItems(plugins: PluginCatalogItem[]): PageEditorSl
       hint: 'Начать ввод с обычного текста',
       keywords: ['text', 'paragraph', 'body', 'текст', 'абзац', 'параграф'],
       icon: 'T',
-      run: (editor: Editor) => { editor.chain().focus().setParagraph().run(); },
+      run: (editor) => {
+        editor.chain().focus().setParagraph().run();
+      },
     },
     {
       id: 'link',
@@ -32,16 +43,28 @@ export function getSlashCommandItems(plugins: PluginCatalogItem[]): PageEditorSl
       label: 'Страница',
       hint: 'Вставить ссылку на wiki-страницу',
       keywords: ['page', 'wiki', 'страница', 'вики', 'backlink', 'связь'],
-      icon: '@',
-      run: () => { /* handled by controller */ },
+      icon: React.createElement('img', {
+        src: AtSign,
+        alt: 'Собачка',
+        className: 'h-4 w-4',
+      }),
+      run: () => {
+        // Handled in PageEditor with page picker flow.
+      },
     },
     {
       id: 'mws-table',
       label: 'MWS таблица',
       hint: 'Вставить live embed существующей таблицы',
       keywords: ['table', 'mws', 'таблица', 'embed', 'live', 'datasheet'],
-      icon: 'Tbl',
-      run: () => { /* handled by controller */ },
+      icon: React.createElement('img', {
+        src: Table,
+        alt: 'Список с чекбоксами',
+        className: 'h-4 w-4',
+      }),
+      run: () => {
+        // Handled in PageEditor with table picker flow.
+      },
     },
     {
       id: 'ai-generate',
@@ -52,20 +75,42 @@ export function getSlashCommandItems(plugins: PluginCatalogItem[]): PageEditorSl
       run: () => { /* handled by controller */ },
     },
     {
+      id: 'template-variable',
+      label: 'Параметр шаблона',
+      hint: 'Вставить placeholder для будущего шаблона',
+      keywords: ['template', 'variable', 'placeholder', 'шаблон', 'параметр', 'placeholder'],
+      icon: '{{$}}',
+      run: () => {
+        // Handled in PageEditor controller with prompt flow.
+      },
+    },
+    {
       id: 'task-list',
       label: 'Чеклист',
       hint: 'Создать список задач с чекбоксами',
       keywords: ['checklist', 'task', 'todo', 'чеклист', 'задача', 'список задач', 'checkbox'],
-      icon: '[]',
-      run: (editor: Editor) => { editor.chain().focus().toggleTaskList().run(); },
+      icon: React.createElement('img', {
+        src: ListChecks,
+        alt: 'Список с чекбоксами',
+        className: 'h-4 w-4',
+      }),
+      run: (editor) => {
+        editor.chain().focus().toggleTaskList().run();
+      },
     },
     {
       id: 'image',
       label: 'Изображение',
       hint: 'Загрузить изображение в документ',
       keywords: ['image', 'img', 'photo', 'картинка', 'изображение', 'фото', 'рисунок'],
-      icon: '🖼',
-      run: () => { /* handled by controller */ },
+      icon: React.createElement('img', {
+        src: Picture,
+        alt: 'Картинка',
+        className: 'h-4 w-4',
+      }),
+      run: () => {
+        // Handled in PageEditor with modal flow.
+      },
     },
     {
       id: 'heading-1',
@@ -90,24 +135,42 @@ export function getSlashCommandItems(plugins: PluginCatalogItem[]): PageEditorSl
       label: 'Маркированный список',
       hint: 'Создать список с маркерами',
       keywords: ['list', 'bullet', 'ul', 'unordered', 'маркированный', 'список'],
-      icon: 'UL',
-      run: (editor: Editor) => { editor.chain().focus().toggleBulletList().run(); },
+      icon: React.createElement('img', {
+        src: List,
+        alt: 'Список',
+        className: 'h-4 w-4',
+      }),
+      run: (editor) => {
+        editor.chain().focus().toggleBulletList().run();
+      },
     },
     {
       id: 'ordered-list',
       label: 'Нумерованный список',
       hint: 'Создать список с номерами',
       keywords: ['list', 'numbered', 'ol', 'ordered', 'нумерованный', 'список'],
-      icon: 'OL',
-      run: (editor: Editor) => { editor.chain().focus().toggleOrderedList().run(); },
+      icon: React.createElement('img', {
+        src: ListOrdered,
+        alt: 'Список нумерованный',
+        className: 'h-4 w-4',
+      }),
+      run: (editor) => {
+        editor.chain().focus().toggleOrderedList().run();
+      },
     },
     {
       id: 'blockquote',
       label: 'Цитата',
       hint: 'Вставить блок цитаты',
       keywords: ['quote', 'blockquote', 'цитата', 'цитирование'],
-      icon: '"',
-      run: (editor: Editor) => { editor.chain().focus().toggleBlockquote().run(); },
+      icon: React.createElement('img', {
+        src: Quote,
+        alt: 'Цитата',
+        className: 'h-4 w-4',
+      }),
+      run: (editor) => {
+        editor.chain().focus().toggleBlockquote().run();
+      },
     },
     {
       id: 'divider',
