@@ -2,7 +2,7 @@ import { SendHorizontal } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { Editor } from '@tiptap/core';
 
-import { type MwsField, wikiliveApi } from '../../../../shared/api/wikilive';
+import { type MwsField, type MwsRecord, wikiliveApi } from '../../../../shared/api/wikilive';
 import { getEditorMarkdown } from '../model/editor-markdown';
 
 type CopilotTarget = 'table' | 'text';
@@ -24,27 +24,33 @@ type Anchor = {
   } | null;
 };
 
-type AiMutationCommand =
-  | {
-      type: 'ADD_ROW';
-      datasheetId: string;
-      rows: Array<{ fields: Record<string, unknown> }>;
-      summary?: string;
-    }
-  | {
-      type: 'ADD_COLUMN';
-      datasheetId: string;
-      column: {
-        name: string;
-        type: string;
-        property?: Record<string, unknown>;
-      };
-      summary?: string;
-    }
-  | {
-      type: 'NONE';
-      summary?: string;
-    };
+type TableContext = {
+  fields: MwsField[];
+  records: MwsRecord[];
+  total: number;
+};
+
+type WorkflowPlan = {
+  summary: string;
+  commands: Array<
+    | {
+        type: 'ADD_COLUMN';
+        column: {
+          name: string;
+          type: string;
+          property?: Record<string, unknown>;
+        };
+      }
+    | {
+        type: 'ADD_ROW';
+        rows: Array<{ fields: Record<string, unknown> }>;
+      }
+    | {
+        type: 'UPDATE_RECORDS';
+        records: Array<{ recordId: string; fields: Record<string, unknown> }>;
+      }
+  >;
+};
 
 function dispatchTableMutation(detail: {
   datasheetId: string;
@@ -52,22 +58,12 @@ function dispatchTableMutation(detail: {
   records?: Array<{ recordId: string; fields: Record<string, unknown> }>;
   field?: MwsField;
 }) {
-  window.dispatchEvent(
-    new CustomEvent('wikilive:ai-table-mutation', {
-      detail,
-    }),
-  );
+  window.dispatchEvent(new CustomEvent('wikilive:ai-table-mutation', { detail }));
 }
 
-function inferMutationIntent(prompt: string): 'create_records' | 'add_table_column' | null {
-  const value = prompt.toLowerCase();
-  const asksColumn = /(колонк|столб|column)/i.test(value);
-  if (asksColumn) {
-    return 'add_table_column';
-  }
-
-  const asksRow = /(строк|запис|row|record|добав)/i.test(value);
-  return asksRow ? 'create_records' : null;
+function isCopilotOpen(): boolean {
+  const globalFlags = window as unknown as { __wikiliveCopilotOpen?: boolean };
+  return Boolean(globalFlags.__wikiliveCopilotOpen);
 }
 
 function buildReportTitle(pageTitle?: string): string {
@@ -80,36 +76,40 @@ function buildReportTitle(pageTitle?: string): string {
   return `AI-отчет ${stamp}`;
 }
 
-function buildCommandFromPlan(
-  plan: { toolName: 'create_records' | 'add_table_column'; args: Record<string, unknown>; summary: string },
-  fallbackDatasheetId: string,
-): AiMutationCommand {
-  if (plan.toolName === 'create_records') {
-    return {
-      type: 'ADD_ROW',
-      datasheetId: String(plan.args.datasheetId ?? fallbackDatasheetId),
-      rows: Array.isArray(plan.args.records)
-        ? (plan.args.records as Array<{ fields?: Record<string, unknown> }>).map((item) => ({
-            fields: item.fields ?? {},
-          }))
-        : [],
-      summary: plan.summary,
-    };
+function isAnalysisPrompt(prompt: string): boolean {
+  const value = prompt.toLowerCase();
+  return /(анализ|обзор|что видно|покажи|сводк|summary|inspect|explain)/i.test(value);
+}
+
+function isTextLikeField(field: MwsField): boolean {
+  const type = field.type.toLowerCase();
+  return type.includes('text') || type.includes('string') || type.includes('single');
+}
+
+function parseColumnFromPrompt(prompt: string): { name: string; type: string } {
+  const quoted = prompt.match(/["'«](.+?)["'»]/);
+  const name = quoted?.[1]?.trim() || 'Новая колонка';
+  const lower = prompt.toLowerCase();
+  const type = lower.includes('числ') || lower.includes('population') || lower.includes('amount') || lower.includes('budget')
+    ? 'Number'
+    : 'SingleText';
+  return { name, type };
+}
+
+function normalizeText(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function buildFieldLookup(fields: MwsField[]) {
+  const byId = new Map<string, MwsField>();
+  const byName = new Map<string, MwsField>();
+
+  for (const field of fields) {
+    byId.set(field.id, field);
+    byName.set(normalizeText(field.name), field);
   }
 
-  return {
-    type: 'ADD_COLUMN',
-    datasheetId: String(plan.args.datasheetId ?? fallbackDatasheetId),
-    column: {
-      name: String(plan.args.name ?? 'Новая колонка'),
-      type: String(plan.args.type ?? 'SingleText'),
-      property:
-        plan.args.property && typeof plan.args.property === 'object'
-          ? (plan.args.property as Record<string, unknown>)
-          : undefined,
-    },
-    summary: plan.summary,
-  };
+  return { byId, byName };
 }
 
 export function AiInlineCopilot({
@@ -209,87 +209,216 @@ export function AiInlineCopilot({
   };
 
   const refreshTable = (datasheetId: string) => {
-    dispatchTableMutation({
-      datasheetId,
-      op: 'refresh',
+    dispatchTableMutation({ datasheetId, op: 'refresh' });
+  };
+
+  const getTableContext = async (datasheetId: string): Promise<TableContext> => {
+    const snapshotFields = Array.isArray(anchor.tableSnapshot?.fields)
+      ? (anchor.tableSnapshot.fields as MwsField[])
+      : [];
+    const snapshotRecords = Array.isArray(anchor.tableSnapshot?.records)
+      ? (anchor.tableSnapshot.records as MwsRecord[])
+      : [];
+
+    if (snapshotFields.length > 0) {
+      return {
+        fields: snapshotFields,
+        records: snapshotRecords,
+        total: Number(anchor.tableSnapshot?.total ?? snapshotRecords.length),
+      };
+    }
+
+    const [fieldsResponse, recordsResponse] = await Promise.all([
+      wikiliveApi.listMwsFields(datasheetId, anchor.viewId ?? undefined),
+      wikiliveApi.listMwsRecords(datasheetId, {
+        viewId: anchor.viewId ?? undefined,
+        pageSize: 50,
+        pageNum: 1,
+      }),
+    ]);
+
+    return {
+      fields: fieldsResponse.items,
+      records: recordsResponse.items,
+      total: recordsResponse.total,
+    };
+  };
+
+  const createRecords = async (datasheetId: string, records: Array<{ fields: Record<string, unknown> }>) => {
+    const optimistic = records.map((row, index) => ({
+      recordId: `temp-ai-${Date.now()}-${index}`,
+      fields: row.fields,
+    }));
+
+    if (optimistic.length > 0) {
+      dispatchTableMutation({
+        datasheetId,
+        op: 'create_records',
+        records: optimistic,
+      });
+    }
+
+    await wikiliveApi.createMwsRecords(datasheetId, {
+      fieldKey: 'id',
+      records,
     });
   };
 
-  const applyAiMutation = async (command: AiMutationCommand) => {
-    if (command.type === 'NONE') {
-      setOutput(command.summary ?? 'Команда мутации не сгенерирована.');
+  const updateRecords = async (
+    datasheetId: string,
+    records: Array<{ recordId: string; fields: Record<string, unknown> }>,
+  ) => {
+    if (records.length === 0) {
       return;
     }
 
-    if (command.type === 'ADD_ROW') {
-      const optimistic = command.rows.map((row, index) => ({
-        recordId: `temp-ai-${Date.now()}-${index}`,
-        fields: row.fields,
-      }));
+    await wikiliveApi.updateMwsRecords(datasheetId, {
+      fieldKey: 'id',
+      records,
+    });
+  };
 
-      if (optimistic.length > 0) {
-        dispatchTableMutation({
-          datasheetId: command.datasheetId,
-          op: 'create_records',
-          records: optimistic,
-        });
-      }
-
-      await wikiliveApi.aiExecuteTool({
-        toolName: 'create_records',
-        args: {
-          datasheetId: command.datasheetId,
-          fieldKey: 'id',
-          records: command.rows,
-        },
-        pageId: pageId ?? undefined,
-        workspaceId: spaceId,
-      });
-
-      refreshTable(command.datasheetId);
-      return;
-    }
-
+  const createColumn = async (
+    datasheetId: string,
+    column: { name: string; type: string; property?: Record<string, unknown> },
+  ) => {
     const tempField: MwsField = {
       id: `temp-ai-field-${Date.now()}`,
-      name: command.column.name,
-      type: command.column.type,
-      property: command.column.property,
+      name: column.name,
+      type: column.type,
+      property: column.property,
     };
 
     dispatchTableMutation({
-      datasheetId: command.datasheetId,
+      datasheetId,
       op: 'add_table_column',
       field: tempField,
     });
 
-    await wikiliveApi.aiExecuteTool({
-      toolName: 'add_table_column',
-      args: {
-        spaceId,
-        datasheetId: command.datasheetId,
-        name: command.column.name,
-        type: command.column.type,
-        property: command.column.property,
-      },
-      pageId: pageId ?? undefined,
-      workspaceId: spaceId,
+    const response = await wikiliveApi.createMwsField(datasheetId, {
+      spaceId,
+      name: column.name,
+      type: column.type,
+      property: column.property,
     });
 
-    refreshTable(command.datasheetId);
+    return response.field;
+  };
+
+  const mapRowFieldsToIds = (rowFields: Record<string, unknown>, lookup: ReturnType<typeof buildFieldLookup>) => {
+    const mapped: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(rowFields)) {
+      const directField = lookup.byId.get(key);
+      if (directField) {
+        mapped[directField.id] = value;
+        continue;
+      }
+
+      const byNameField = lookup.byName.get(normalizeText(key));
+      if (byNameField) {
+        mapped[byNameField.id] = value;
+        continue;
+      }
+
+      mapped[key] = value;
+    }
+
+    return mapped;
+  };
+
+  const applyWorkflow = async (plan: WorkflowPlan, datasheetId: string) => {
+    const context = await getTableContext(datasheetId);
+    const lookup = buildFieldLookup(context.fields);
+    const createdFields = new Map<string, MwsField>();
+
+    for (const command of plan.commands) {
+      if (command.type === 'ADD_COLUMN') {
+        const nameKey = normalizeText(command.column.name);
+        const existing = lookup.byName.get(nameKey);
+
+        if (existing) {
+          createdFields.set(nameKey, existing);
+          continue;
+        }
+
+        const createdField = await createColumn(datasheetId, command.column);
+        lookup.byId.set(createdField.id, createdField);
+        lookup.byName.set(normalizeText(createdField.name), createdField);
+        createdFields.set(nameKey, createdField);
+        continue;
+      }
+
+      if (command.type === 'ADD_ROW') {
+        const rows = command.rows.map((row) => ({
+          fields: mapRowFieldsToIds(row.fields, lookup),
+        }));
+
+        if (rows.length > 0) {
+          await createRecords(datasheetId, rows);
+        }
+
+        continue;
+      }
+
+      if (command.type === 'UPDATE_RECORDS') {
+        const records = command.records.map((record) => ({
+          recordId: record.recordId,
+          fields: mapRowFieldsToIds(record.fields, lookup),
+        }));
+
+        if (records.length > 0) {
+          await updateRecords(datasheetId, records);
+        }
+      }
+    }
+
+    refreshTable(datasheetId);
+    return { createdFields, context };
+  };
+
+  const runTableWorkflow = async () => {
+    const datasheetId = anchor.datasheetId;
+    if (!datasheetId) {
+      setStatus('Команда доступна только для таблицы');
+      return;
+    }
+
+    await withBusy(async () => {
+      const context = await getTableContext(datasheetId);
+      const planned = await wikiliveApi.aiPlanWorkflow({
+        prompt: prompt.trim(),
+        spaceId,
+        datasheetId,
+        viewId: anchor.viewId ?? undefined,
+        tableSnapshot: {
+          datasheetId,
+          viewId: anchor.viewId ?? undefined,
+          fields: context.fields,
+          records: context.records.map((record) => ({
+            recordId: record.recordId,
+            fields: record.fields,
+          })),
+          total: context.total,
+          updatedAt: Date.now(),
+        },
+      });
+
+      setOutput(`AI план: ${planned.summary}`);
+      await applyWorkflow(planned, datasheetId);
+      setOutput(`${planned.summary}\n\n${planned.commands.map((command) => JSON.stringify(command)).join('\n')}`);
+    });
   };
 
   const runAnalyze = async () => {
     await withBusy(async () => {
       if (anchor.target === 'table' && anchor.datasheetId) {
-        const records = Array.isArray(anchor.tableSnapshot?.records) ? anchor.tableSnapshot.records : [];
-
+        const context = await getTableContext(anchor.datasheetId);
         const response = await wikiliveApi.aiChat({
           question: [
             'Ты анализируешь конкретную таблицу MWS.',
-            `Вот ее данные JSON: ${JSON.stringify(anchor.tableSnapshot ?? { datasheetId: anchor.datasheetId })}`,
+            `Вот ее данные JSON: ${JSON.stringify({ fields: context.fields, records: context.records.map((record) => ({ recordId: record.recordId, fields: record.fields })), total: context.total })}`,
             'Если данных таблицы недостаточно, первым делом вызови инструмент get_records.',
-            'Используй инструменты get_records, create_records, add_table_column.',
             'Сделай короткий анализ: тренды, аномалии, выводы.',
           ].join('\n'),
           pageId: pageId ?? undefined,
@@ -301,7 +430,7 @@ export function AiInlineCopilot({
           },
         });
 
-        const intro = `Вижу вашу таблицу с ${records.length} записями, готов анализировать...`;
+        const intro = `Вижу вашу таблицу с ${context.records.length} записями, готов анализировать...`;
         setOutput(`${intro}\n\n${response.answer}`);
         return;
       }
@@ -324,10 +453,11 @@ export function AiInlineCopilot({
 
   const createReportText = async (): Promise<string> => {
     if (anchor.target === 'table' && anchor.datasheetId) {
+      const context = await getTableContext(anchor.datasheetId);
       const response = await wikiliveApi.aiChat({
         question: [
           'Ты анализируешь конкретную таблицу MWS.',
-          `Вот ее данные JSON: ${JSON.stringify(anchor.tableSnapshot ?? { datasheetId: anchor.datasheetId })}`,
+          `Вот ее данные JSON: ${JSON.stringify({ fields: context.fields, records: context.records.map((record) => ({ recordId: record.recordId, fields: record.fields })), total: context.total })}`,
           'Если данных таблицы недостаточно, первым делом вызови инструмент get_records.',
           'Сгенерируй отчет в markdown формате.',
         ].join('\n'),
@@ -397,29 +527,6 @@ export function AiInlineCopilot({
     });
   };
 
-  const runMutationFromPrompt = async (operation: 'create_records' | 'add_table_column') => {
-    const datasheetId = anchor.datasheetId;
-    if (!datasheetId) {
-      setStatus('Команда доступна только для таблицы');
-      return;
-    }
-
-    await withBusy(async () => {
-      const planned = await wikiliveApi.aiPlanMutation({
-        operation,
-        prompt: prompt.trim() || (operation === 'create_records' ? 'Добавь одну релевантную строку' : 'Добавь новую колонку'),
-        spaceId,
-        datasheetId,
-        viewId: anchor.viewId ?? undefined,
-        tableSnapshot: anchor.tableSnapshot ?? undefined,
-      });
-
-      const command = buildCommandFromPlan(planned, datasheetId);
-      setOutput(`SYNC COMMAND GENERATED: ${JSON.stringify(command, null, 2)}`);
-      await applyAiMutation(command);
-    });
-  };
-
   const handleSend = async () => {
     if (isBusy) {
       return;
@@ -431,34 +538,12 @@ export function AiInlineCopilot({
     }
 
     if (anchor.target === 'table' && anchor.datasheetId) {
-      const datasheetId = anchor.datasheetId;
-      const mutationIntent = inferMutationIntent(trimmed);
-      if (mutationIntent) {
-        await runMutationFromPrompt(mutationIntent);
+      if (isAnalysisPrompt(trimmed)) {
+        await runAnalyze();
         return;
       }
 
-      await withBusy(async () => {
-        const response = await wikiliveApi.aiChat({
-          question: [
-            'Ты анализируешь конкретную таблицу MWS.',
-            `Вот ее данные JSON: ${JSON.stringify(anchor.tableSnapshot ?? { datasheetId: anchor.datasheetId })}`,
-            'Если ты не видишь данных таблицы, первым делом вызови инструмент get_records.',
-            'Используй инструменты get_records, create_records, add_table_column.',
-            `Запрос пользователя: ${trimmed}`,
-          ].join('\n'),
-          pageId: pageId ?? undefined,
-          datasheetId,
-          viewId: anchor.viewId ?? undefined,
-          pageTitle,
-          pageSnapshot: {
-            markdown: getEditorMarkdown(editor),
-          },
-        });
-
-        setOutput(response.answer);
-      });
-
+      await runTableWorkflow();
       return;
     }
 
@@ -515,7 +600,7 @@ export function AiInlineCopilot({
               void handleSend();
             }
           }}
-          placeholder="Опишите задачу для AI"
+          placeholder="Опишите, что нужно сделать с таблицей или текстом"
           className="min-h-[72px] w-full resize-y rounded-md border border-editor-border-subtle bg-white px-3 py-2 text-sm outline-none focus:border-[#5586ff]"
           disabled={isBusy}
         />
@@ -575,24 +660,6 @@ export function AiInlineCopilot({
             </div>
           ) : null}
         </div>
-
-        <button
-          type="button"
-          className="rounded-md border border-editor-border-subtle bg-white px-2 py-1 text-xs hover:bg-editor-bg-control disabled:opacity-50"
-          onClick={() => void runMutationFromPrompt('create_records')}
-          disabled={isBusy || anchor.target !== 'table'}
-        >
-          + Данные
-        </button>
-
-        <button
-          type="button"
-          className="rounded-md border border-editor-border-subtle bg-white px-2 py-1 text-xs hover:bg-editor-bg-control disabled:opacity-50"
-          onClick={() => void runMutationFromPrompt('add_table_column')}
-          disabled={isBusy || anchor.target !== 'table'}
-        >
-          + Колонка
-        </button>
       </div>
 
       {status ? <p className="mb-2 text-xs text-editor-text-tertiary">{status}</p> : null}

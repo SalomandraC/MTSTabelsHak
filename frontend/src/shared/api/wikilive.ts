@@ -510,6 +510,43 @@ export type AiPlanMutationResponse = {
   summary: string;
 };
 
+export type AiPlanWorkflowPayload = {
+  prompt: string;
+  spaceId: string;
+  datasheetId: string;
+  viewId?: string;
+  tableSnapshot?: {
+    datasheetId?: string;
+    viewId?: string | null;
+    fields?: Array<Record<string, unknown>>;
+    records?: Array<Record<string, unknown>>;
+    total?: number;
+    updatedAt?: number;
+  };
+};
+
+export type AiPlanWorkflowResponse = {
+  summary: string;
+  commands: Array<
+    | {
+        type: 'ADD_COLUMN';
+        column: {
+          name: string;
+          type: string;
+          property?: Record<string, unknown>;
+        };
+      }
+    | {
+        type: 'ADD_ROW';
+        rows: Array<{ fields: Record<string, unknown> }>;
+      }
+    | {
+        type: 'UPDATE_RECORDS';
+        records: Array<{ recordId: string; fields: Record<string, unknown> }>;
+      }
+  >;
+};
+
 function toQueryString(query: RequestOptions['query']) {
   const params = new URLSearchParams();
 
@@ -1178,6 +1215,12 @@ export const wikiliveApi = {
   },
   aiPlanMutation(payload: AiPlanMutationPayload) {
     return requestWithAuth<AiPlanMutationResponse>('/api/v1/ai/plan-mutation', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiPlanWorkflow(payload: AiPlanWorkflowPayload) {
+    return requestWithAuth<AiPlanWorkflowResponse>('/api/v1/ai/plan-workflow', {
       method: 'POST',
       body: JSON.stringify(payload),
     });

@@ -160,6 +160,158 @@ export class AiAssistantService {
     return command;
   }
 
+  async planTableWorkflow(input: {
+    prompt: string;
+    spaceId: string;
+    datasheetId: string;
+    viewId?: string;
+    tableSnapshot?: {
+      datasheetId?: string;
+      viewId?: string | null;
+      fields?: Array<Record<string, unknown>>;
+      records?: Array<Record<string, unknown>>;
+      total?: number;
+      updatedAt?: number;
+    };
+  }): Promise<{
+    summary: string;
+    commands: Array<
+      | {
+          type: 'ADD_COLUMN';
+          column: {
+            name: string;
+            type: string;
+            property?: Record<string, unknown>;
+          };
+        }
+      | {
+          type: 'ADD_ROW';
+          rows: Array<{ fields: Record<string, unknown> }>;
+        }
+      | {
+          type: 'UPDATE_RECORDS';
+          records: Array<{ recordId: string; fields: Record<string, unknown> }>;
+        }
+    >;
+  }> {
+    const messages: AiChatMessage[] = [
+      {
+        role: 'system',
+        content: [
+          'You are a table workflow planner for WikiLive.',
+          'Analyze the current table context and the user prompt.',
+          'Return only JSON with keys: summary, commands.',
+          'commands must be an array of workflow commands.',
+          'Allowed command types: ADD_COLUMN, ADD_ROW, UPDATE_RECORDS.',
+          'For ADD_COLUMN output {"type":"ADD_COLUMN","column":{"name":"...","type":"...","property":{...}?}}.',
+          'For ADD_ROW output {"type":"ADD_ROW","rows":[{"fields":{...}}]}.',
+          'For UPDATE_RECORDS output {"type":"UPDATE_RECORDS","records":[{"recordId":"...","fields":{...}}]}.',
+          'When user asks to fill or enrich existing rows, prefer UPDATE_RECORDS and do not create duplicate rows.',
+          'Prefer creating columns first when existing columns do not match the task.',
+          'If the snapshot is empty or insufficient, infer the needed schema from the prompt and still propose valid commands.',
+          'Use fieldKey id compatible row values.',
+          'Never ask clarifying questions.',
+        ].join(' '),
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          prompt: input.prompt,
+          spaceId: input.spaceId,
+          datasheetId: input.datasheetId,
+          viewId: input.viewId,
+          tableSnapshot: input.tableSnapshot ?? null,
+        }),
+      },
+    ];
+
+    const response = await this.aiProviderClientService.complete({
+      messages,
+      temperature: 0.15,
+      maxTokens: 900,
+      responseFormat: 'json_object',
+    });
+
+    const raw = this.extractText(response);
+    let parsed: any;
+
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new BadRequestException({
+        code: 'AI_RESPONSE_INVALID_JSON',
+        message: 'AI workflow plan is not valid JSON',
+      });
+    }
+
+    const summary = String(parsed.summary ?? 'План готов');
+    const commands = Array.isArray(parsed.commands) ? parsed.commands : [];
+
+    const normalizedCommands = commands
+      .map((command: any) => {
+        if (command?.type === 'ADD_COLUMN') {
+          return {
+            type: 'ADD_COLUMN' as const,
+            column: {
+              name: String(command.column?.name ?? 'Новая колонка'),
+              type: String(command.column?.type ?? 'SingleText'),
+              property: command.column?.property && typeof command.column.property === 'object'
+                ? (command.column.property as Record<string, unknown>)
+                : undefined,
+            },
+          };
+        }
+
+        if (command?.type === 'ADD_ROW') {
+          return {
+            type: 'ADD_ROW' as const,
+            rows: Array.isArray(command.rows)
+              ? command.rows.map((row: any) => ({
+                  fields: row?.fields && typeof row.fields === 'object' ? (row.fields as Record<string, unknown>) : {},
+                }))
+              : [],
+          };
+        }
+
+        if (command?.type === 'UPDATE_RECORDS') {
+          return {
+            type: 'UPDATE_RECORDS' as const,
+            records: Array.isArray(command.records)
+              ? command.records
+                  .map((record: any) => ({
+                    recordId: String(record?.recordId ?? ''),
+                    fields:
+                      record?.fields && typeof record.fields === 'object'
+                        ? (record.fields as Record<string, unknown>)
+                        : {},
+                  }))
+                  .filter((record: { recordId: string }) => record.recordId.length > 0)
+              : [],
+          };
+        }
+
+        return null;
+      })
+      .filter(Boolean) as Array<
+        | {
+            type: 'ADD_COLUMN';
+            column: { name: string; type: string; property?: Record<string, unknown> };
+          }
+        | {
+            type: 'ADD_ROW';
+            rows: Array<{ fields: Record<string, unknown> }>;
+          }
+        | {
+            type: 'UPDATE_RECORDS';
+            records: Array<{ recordId: string; fields: Record<string, unknown> }>;
+          }
+      >;
+
+    const command = { summary, commands: normalizedCommands };
+    console.log('SYNC COMMAND GENERATED:', command);
+    return command;
+  }
+
   buildCompletionMessages(currentText: string, context: PageContextInput = {}): AiChatMessage[] {
     return [
       {

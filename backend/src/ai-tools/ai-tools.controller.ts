@@ -4,6 +4,7 @@ import { Public } from 'src/common/decorators/public.decorator';
 import { UserContext } from 'src/auth/user-context';
 import { ExecuteToolDto } from './dto/execute-tool.dto';
 import { PlanTableMutationDto } from './dto/plan-table-mutation.dto';
+import { PlanTableWorkflowDto } from './dto/plan-table-workflow.dto';
 import {
   ChatRequestDto,
   CompletionRequestDto,
@@ -87,6 +88,18 @@ export class AiToolsController {
   planTableMutation(@Body() dto: PlanTableMutationDto) {
     return this.aiAssistantService.planTableMutation({
       operation: dto.operation,
+      prompt: dto.prompt,
+      spaceId: dto.spaceId,
+      datasheetId: dto.datasheetId,
+      viewId: dto.viewId,
+      tableSnapshot: dto.tableSnapshot,
+    });
+  }
+
+  @Post('plan-workflow')
+  @Public()
+  planTableWorkflow(@Body() dto: PlanTableWorkflowDto) {
+    return this.aiAssistantService.planTableWorkflow({
       prompt: dto.prompt,
       spaceId: dto.spaceId,
       datasheetId: dto.datasheetId,
