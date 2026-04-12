@@ -18,6 +18,9 @@ export const runtimePluginRegistry: RuntimePluginDefinition[] = [
     id: 'comments',
   },
   {
+    id: 'time-machine',
+  },
+  {
     id: 'ai-assistant',
     workspaceSidebarSlots: ['sidebar'],
     editorSlots: ['toolbar_bubble', 'editor_extension', 'slash_menu'],

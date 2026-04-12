@@ -4,6 +4,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './auth/auth.module';
 import { AppController } from './app.controller';
 import { CollabModule } from './collab/collab.module';
+import { CommentsModule } from './comments/comments.module';
 import { PrismaModule } from './infra/prisma/prisma.module';
 import { QueueModule } from './infra/queue/queue.module';
 import { RedisModule } from './infra/redis/redis.module';
@@ -13,6 +14,7 @@ import { MwsModule } from './mws/mws.module';
 import { PagesModule } from './pages/pages.module';
 import { PluginsModule } from './plugins/plugins.module';
 import { SearchModule } from './search/search.module';
+import { TemplatesModule } from './templates/templates.module';
 import { WikiTreeModule } from './wiki-tree/wiki-tree.module';
 import { WorkspaceTreeModule } from './workspace/workspace-tree.module';
 
@@ -43,8 +45,10 @@ import { WorkspaceTreeModule } from './workspace/workspace-tree.module';
     PagesModule,
     LinksModule,
     CollabModule,
+    CommentsModule,
     MwsModule,
     PluginsModule,
+    TemplatesModule,
     WorkspaceTreeModule,
     AiToolsModule,
   ],

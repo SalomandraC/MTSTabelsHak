@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { WikiNodeType } from '@prisma/client';
+import { Prisma, WikiNodeType } from '@prisma/client';
 import * as Y from 'yjs';
 import { UserContext } from 'src/auth/user-context';
 import { decodeBase64ToBuffer } from 'src/common/utils';
@@ -39,15 +39,15 @@ export class PagesService {
     };
   }
 
-  async createPage(dto: CreatePageDto, user: UserContext) {
+  async createPage(dto: CreatePageDto, user: UserContext, db: Prisma.TransactionClient | PrismaService = this.prisma) {
     if (dto.parentNodeId) {
-      const parent = await this.prisma.wikiNode.findUnique({ where: { id: dto.parentNodeId } });
+      const parent = await db.wikiNode.findUnique({ where: { id: dto.parentNodeId } });
       if (!parent || parent.type !== WikiNodeType.folder) {
         throw new BadRequestException('Pages can only be created inside folders or at root');
       }
     }
 
-    const position = await this.nextPosition(dto.spaceId, dto.parentNodeId ?? null);
+    const position = await this.nextPosition(dto.spaceId, dto.parentNodeId ?? null, db);
 
     const snapshot = dto.initialContent
       ? decodeBase64ToBuffer(dto.initialContent.value)
@@ -56,37 +56,34 @@ export class PagesService {
       ? Buffer.from(Y.encodeStateVector(this.fromSnapshot(snapshot)))
       : Buffer.from(Y.encodeStateVector(new Y.Doc()));
 
-    const [node] = await this.prisma.$transaction([
-      this.prisma.wikiNode.create({
-        data: {
-          spaceId: dto.spaceId,
-          parentId: dto.parentNodeId ?? null,
-          type: WikiNodeType.page,
-          title: dto.title,
-          icon: dto.icon,
-          position,
-          createdBy: user.userId,
-          updatedBy: user.userId,
-        },
-      }),
-    ]);
+    const node = await db.wikiNode.create({
+      data: {
+        spaceId: dto.spaceId,
+        parentId: dto.parentNodeId ?? null,
+        type: WikiNodeType.page,
+        title: dto.title,
+        icon: dto.icon,
+        position,
+        createdBy: user.userId,
+        updatedBy: user.userId,
+      },
+    });
 
-    await this.prisma.$transaction([
-      this.prisma.wikiPage.create({
-        data: {
-          nodeId: node.id,
-          lastSnapshotVersion: 0,
-        },
-      }),
-      this.prisma.pageDocument.create({
-        data: {
-          pageId: node.id,
-          ydocSnapshot: new Uint8Array(snapshot),
-          stateVector: new Uint8Array(stateVector),
-          serverVersion: 0,
-        },
-      }),
-    ]);
+    await db.wikiPage.create({
+      data: {
+        nodeId: node.id,
+        lastSnapshotVersion: 0,
+      },
+    });
+
+    await db.pageDocument.create({
+      data: {
+        pageId: node.id,
+        ydocSnapshot: new Uint8Array(snapshot),
+        stateVector: new Uint8Array(stateVector),
+        serverVersion: 0,
+      },
+    });
 
     return {
       page: {
@@ -187,8 +184,8 @@ export class PagesService {
     });
   }
 
-  private async nextPosition(spaceId: string, parentId: string | null): Promise<number> {
-    const sibling = await this.prisma.wikiNode.findFirst({
+  private async nextPosition(spaceId: string, parentId: string | null, db: Prisma.TransactionClient | PrismaService = this.prisma): Promise<number> {
+    const sibling = await db.wikiNode.findFirst({
       where: { spaceId, parentId, isArchived: false },
       orderBy: { position: 'desc' },
       select: { position: true },

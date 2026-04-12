@@ -176,6 +176,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
   const cytoscapeRef = useRef<cytoscape.Core | null>(null);
   const onSelectPageRef = useRef(onSelectPage);
   const dragStateRef = useRef<{ startX: number; startY: number; anchorX: number; anchorY: number } | null>(null);
+  const initialLayoutDoneRef = useRef(false);
   const [isHovered, setIsHovered] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalOffset, setModalOffset] = useState({ x: 80, y: 60 });
@@ -232,14 +233,14 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
             'text-halign': 'center',
             'text-margin-y': -10,
             'text-wrap': 'wrap',
-            'text-max-width': 140,
+            'text-max-width': '140px',
             'text-opacity': 1,
             'text-background-color': '#ffffff',
             'text-background-opacity': 0.75,
-            'text-background-padding': 4,
+            'text-background-padding': '4px',
             'text-background-shape': 'roundrectangle',
             'transition-property': 'background-color width height border-color text-opacity',
-            'transition-duration': '250ms',
+            'transition-duration': 250,
             'transition-timing-function': 'ease-in-out',
           },
         },
@@ -261,12 +262,12 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
             'text-opacity': 1,
             color: '#111827',
             'font-size': 12,
-            'font-weight': '700',
+            'font-weight': 'bold',
             'text-valign': 'top',
             'text-margin-y': -12,
             'text-background-color': '#ffffff',
             'text-background-opacity': 0.95,
-            'text-background-padding': 6,
+            'text-background-padding': '6px',
           },
         },
         {
@@ -276,12 +277,12 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
             'border-color': '#fb7185',
             'text-opacity': 1,
             color: '#111827',
-            'font-weight': '600',
+            'font-weight': 'bold',
             'text-valign': 'top',
             'text-margin-y': -12,
             'text-background-color': '#ffffff',
             'text-background-opacity': 0.9,
-            'text-background-padding': 6,
+            'text-background-padding': '6px',
           },
         },
         {
@@ -313,7 +314,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
       } as ColaLayoutOptions,
       minZoom: 0.35,
       maxZoom: 2.4,
-      wheelSensitivity: 0.9,
+      wheelSensitivity: 1.4,
       userZoomingEnabled: true,
       userPanningEnabled: true,
       boxSelectionEnabled: false,
@@ -332,8 +333,9 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
         cy.resize();
         const layout = cy.layout(layoutOptions);
         layout.on('layoutstop', () => {
-          if (cy.elements().nonempty()) {
+          if (cy.elements().nonempty() && !initialLayoutDoneRef.current) {
             cy.fit(cy.elements(), 25);
+            initialLayoutDoneRef.current = true;
           }
         });
         layout.run();
@@ -366,7 +368,6 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
 
     window.requestAnimationFrame(() => {
       cy.resize();
-      cy.fit(cy.elements(), 25);
     });
   }, [isModalOpen]);
 
@@ -412,11 +413,6 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
     window.requestAnimationFrame(() => {
       cy.resize();
       const layout = cy.layout(layoutOptions);
-      layout.on('layoutstop', () => {
-        if (cy.elements().nonempty()) {
-          cy.fit(cy.elements(), 25);
-        }
-      });
       layout.run();
     });
   }, [elements, pages.length]);
@@ -518,38 +514,9 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-editor-text-tertiary">Graph View</p>
             <h3 className="mt-1 truncate font-wide text-sm font-semibold text-editor-text-primary">{activeTitle ?? 'Все документы'}</h3>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleRefreshGraph}
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
-              aria-label="Обновить граф"
-              title="Обновить граф"
-            >
-              <RefreshCcw size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={handleExpandGraph}
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
-              aria-label="Приблизить граф"
-              title="Приблизить граф"
-            >
-              <ZoomIn size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={handleOpenModal}
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
-              aria-label="Открыть большой граф"
-              title="Открыть большой граф"
-            >
-              <Maximize2 size={14} />
-            </button>
-            <span className="shrink-0 rounded-full border border-editor-border-subtle bg-editor-bg-control px-2.5 py-1 text-xs font-semibold text-editor-text-secondary">
-              {pages.length}/{edges.length}
-            </span>
-          </div>
+          <span className="shrink-0 rounded-full border border-editor-border-subtle bg-editor-bg-control px-2.5 py-1 text-xs font-semibold text-editor-text-secondary">
+            {pages.length}/{edges.length}
+          </span>
         </div>
       </div>
 
@@ -560,16 +527,52 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
               <div className="fixed inset-0 z-40">
                 <div className="absolute inset-0 bg-black/30" onClick={() => setIsModalOpen(false)} />
                 <div
-                  className="absolute z-50 flex h-10 cursor-grab items-center justify-between gap-3 rounded-t-3xl bg-slate-200 px-3 text-sm font-semibold text-slate-900"
-                  style={{ left: modalOffset.x, top: modalOffset.y, width: 'min(84vw,820px)' }}
-                  onPointerDown={handleModalPointerDown}
-                  onPointerMove={handleModalPointerMove}
-                  onPointerUp={handleModalPointerUp}
+                  className="absolute z-50 flex h-[min(76vh,640px)] w-[min(84vw,820px)] flex-col overflow-hidden rounded-3xl bg-white shadow-[0_30px_80px_rgba(17,25,40,0.25)]"
+                  style={{ left: modalOffset.x, top: modalOffset.y }}
                 >
+                  <div
+                    className="flex h-10 cursor-grab items-center gap-3 rounded-t-3xl bg-red-600 px-3 text-sm font-semibold text-white"
+                    onPointerDown={handleModalPointerDown}
+                    onPointerMove={handleModalPointerMove}
+                    onPointerUp={handleModalPointerUp}
+                  >
+                    <span className="truncate">{activeTitle ?? 'Текущий файл'}</span>
+                  </div>
                 </div>
               </div>
             )}
 
+            {!isModalOpen && (
+              <div className="absolute right-3 top-3 z-20 flex items-center gap-2 rounded-full bg-white/10 border border-white/20 px-1.5 py-1 backdrop-blur-sm shadow-sm pointer-events-auto">
+                <button
+                  type="button"
+                  onClick={handleRefreshGraph}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-white/10 text-slate-900 transition-colors hover:bg-white/20"
+                  aria-label="Обновить граф"
+                  title="Обновить граф"
+                >
+                  <RefreshCcw size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExpandGraph}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-white/10 text-slate-900 transition-colors hover:bg-white/20"
+                  aria-label="Приблизить граф"
+                  title="Приблизить граф"
+                >
+                  <ZoomIn size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenModal}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-white/10 text-slate-900 transition-colors hover:bg-white/20"
+                  aria-label="Открыть большой граф"
+                  title="Открыть большой граф"
+                >
+                  <Maximize2 size={14} />
+                </button>
+              </div>
+            )}
             <div
               ref={containerRef}
               className={isModalOpen ? 'absolute rounded-b-3xl bg-white shadow-[0_30px_80px_rgba(17,25,40,0.25)]' : 'h-full w-full'}
@@ -582,7 +585,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
                       left: modalOffset.x,
                       width: 'min(84vw,820px)',
                       height: 'calc(min(76vh,640px) - 40px)',
-                      zIndex: 1000,
+                      zIndex: 49,
                       borderRadius: '0 0 24px 24px',
                       backgroundColor: '#ffffff',
                     }

@@ -76,12 +76,112 @@ export type PageSummary = {
   backlinksCount: number;
 };
 
+export type TemplateField = {
+  key: string;
+  label: string;
+  description: string;
+  kind: 'text' | 'multiline';
+  required: boolean;
+  defaultValue?: string;
+};
+
+export type TemplateAccessLevel = 'private' | 'space' | 'public';
+export type TemplateSource = 'builtIn' | 'custom';
+
+export type PageTemplateSummary = {
+  id: string;
+  title: string;
+  summary: string;
+  category: string;
+  categoryId: string;
+  audience: string;
+  icon: string;
+  fields: TemplateField[];
+  accessLevel: TemplateAccessLevel;
+  source: TemplateSource;
+  usageCount: number;
+  createdAt: string;
+  updatedAt: string;
+  canManage: boolean;
+};
+
+export type TemplateCategorySummary = {
+  id: string;
+  title: string;
+};
+
+export type TemplateListScope = 'all' | 'mine' | 'space';
+export type TemplateListSort = 'relevance' | 'newest' | 'popular';
+
+export type TemplateListQuery = {
+  spaceId?: string | null;
+  scope?: TemplateListScope;
+  sort?: TemplateListSort;
+  search?: string;
+  categoryId?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+export type TemplateListResponse = {
+  items: PageTemplateSummary[];
+  pageInfo: {
+    page: number;
+    pageSize: number;
+    total: number;
+    hasNextPage: boolean;
+  };
+};
+
+export type CreateTemplatePayload = {
+  spaceId: string;
+  title: string;
+  summary?: string;
+  categoryId: string;
+  icon?: string;
+  accessLevel: TemplateAccessLevel;
+  pageTitleTemplate?: string;
+  document: Record<string, unknown>;
+};
+
+export type UpdateTemplatePayload = {
+  title?: string;
+  summary?: string;
+  categoryId?: string;
+  icon?: string;
+  accessLevel?: TemplateAccessLevel;
+  pageTitleTemplate?: string;
+  document?: Record<string, unknown> | null;
+};
+
 export type PageDocumentState = {
   encoding: 'base64-yjs-update-v2';
   value: string;
   serverVersion: number;
   checkpointId: string | null;
   persistedAt: string | null;
+};
+
+export type PageHistoryTrigger = 'editor_idle' | 'before_unload' | 'manual' | 'reconnect' | 'collab_store' | 'restore';
+
+export type PageHistoryItem = {
+  id: string;
+  serverVersion: number;
+  trigger: PageHistoryTrigger;
+  createdBy: string | null;
+  createdByName: string | null;
+  createdAt: string;
+  excerpt: string | null;
+  restoredFromCheckpointId: string | null;
+};
+
+export type PageHistoryCheckpoint = {
+  checkpoint: PageHistoryItem;
+  documentState: PageDocumentState;
+  document: {
+    type: string;
+    content?: unknown[];
+  };
 };
 
 export type PageEmbed = {
@@ -144,6 +244,32 @@ export type PresenceUser = {
   displayName: string;
   color: string;
   avatarUrl?: string | null;
+};
+
+export type CommentThreadStatus = 'open' | 'resolved';
+
+export type PageCommentMessage = {
+  id: string;
+  threadId: string;
+  body: string;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PageCommentThread = {
+  id: string;
+  pageId: string;
+  anchorText: string;
+  status: CommentThreadStatus;
+  createdBy: string;
+  createdByName: string;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  messages: PageCommentMessage[];
 };
 
 export type CollabSession = {
@@ -468,7 +594,17 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     return undefined as T;
   }
 
-  return response.json() as Promise<T>;
+  const contentLength = response.headers.get('content-length');
+  if (contentLength === '0') {
+    return undefined as T;
+  }
+
+  const payloadText = await response.text();
+  if (!payloadText.trim()) {
+    return undefined as T;
+  }
+
+  return JSON.parse(payloadText) as T;
 }
 
 async function requestWithAuth<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -565,6 +701,64 @@ export const wikiliveApi = {
       }),
     });
   },
+  listTemplates(query?: TemplateListQuery) {
+    return request<TemplateListResponse>('/api/v1/templates', {
+      query: {
+        spaceId: query?.spaceId ?? undefined,
+        scope: query?.scope ?? undefined,
+        sort: query?.sort ?? undefined,
+        search: query?.search ?? undefined,
+        categoryId: query?.categoryId ?? undefined,
+        page: query?.page ?? undefined,
+        pageSize: query?.pageSize ?? undefined,
+      },
+    });
+  },
+  listTemplateCategories() {
+    return request<{ items: TemplateCategorySummary[] }>('/api/v1/templates/categories');
+  },
+  createTemplate(payload: CreateTemplatePayload) {
+    return request<{ template: PageTemplateSummary }>('/api/v1/templates', {
+      method: 'POST',
+      body: JSON.stringify({
+        spaceId: payload.spaceId,
+        title: payload.title,
+        summary: payload.summary,
+        categoryId: payload.categoryId,
+        icon: payload.icon,
+        accessLevel: payload.accessLevel,
+        pageTitleTemplate: payload.pageTitleTemplate,
+        document: payload.document,
+      }),
+    });
+  },
+  updateTemplate(templateId: string, payload: UpdateTemplatePayload) {
+    return request<{ template: PageTemplateSummary }>(`/api/v1/templates/${templateId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+  deleteTemplate(templateId: string) {
+    return request<void>(`/api/v1/templates/${templateId}`, {
+      method: 'DELETE',
+    });
+  },
+  instantiateTemplate(templateId: string, payload: {
+    spaceId: string;
+    parentNodeId?: string | null;
+    title?: string;
+    values: Record<string, string>;
+  }) {
+    return request<{ page: PageSummary }>(`/api/v1/templates/${templateId}/instantiate`, {
+      method: 'POST',
+      body: JSON.stringify({
+        spaceId: payload.spaceId,
+        parentNodeId: payload.parentNodeId ?? null,
+        title: payload.title?.trim() || undefined,
+        values: payload.values,
+      }),
+    });
+  },
   createFolder(payload: CreateFolderPayload) {
     return request<{ folder: WikiTreeNode }>('/api/v1/folders', {
       method: 'POST',
@@ -618,6 +812,40 @@ export const wikiliveApi = {
   getOutgoingLinks(pageId: string) {
     return request<{ items: OutgoingLink[] }>(`/api/v1/pages/${pageId}/outgoing-links`);
   },
+  getComments(pageId: string, includeResolved = true) {
+    return request<{ items: PageCommentThread[] }>(`/api/v1/pages/${pageId}/comments`, {
+      query: { includeResolved },
+    });
+  },
+  createCommentThread(pageId: string, payload: { threadId: string; anchorText: string; body: string }) {
+    return request<{ thread: PageCommentThread }>(`/api/v1/pages/${pageId}/comments/threads`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  addCommentMessage(pageId: string, threadId: string, payload: { body: string }) {
+    return request<{ thread: PageCommentThread }>(`/api/v1/pages/${pageId}/comments/threads/${threadId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  updateCommentMessage(pageId: string, threadId: string, messageId: string, payload: { body: string }) {
+    return request<{ thread: PageCommentThread }>(`/api/v1/pages/${pageId}/comments/threads/${threadId}/messages/${messageId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+  deleteCommentMessage(pageId: string, threadId: string, messageId: string) {
+    return request<{ thread: PageCommentThread }>(`/api/v1/pages/${pageId}/comments/threads/${threadId}/messages/${messageId}`, {
+      method: 'DELETE',
+    });
+  },
+  updateCommentThread(pageId: string, threadId: string, payload: { status: CommentThreadStatus }) {
+    return request<{ thread: PageCommentThread }>(`/api/v1/pages/${pageId}/comments/threads/${threadId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
   openCollabSession(pageId: string, payload: {
     clientId: string;
     deviceId: string;
@@ -641,13 +869,19 @@ export const wikiliveApi = {
       }),
     });
   },
-  createCheckpoint(pageId: string, value: string, trigger: 'editor-idle' | 'manual' | 'before-unload' | 'reconnect' = 'editor-idle') {
+  createCheckpoint(
+    pageId: string,
+    value: string,
+    trigger: 'editor-idle' | 'manual' | 'before-unload' | 'reconnect' | 'restore' = 'editor-idle',
+    restoredFromCheckpointId?: string | null,
+  ) {
     return request<{ checkpointId: string; persistedAt: string; serverVersion: number }>(
       `/api/v1/pages/${pageId}/checkpoints`,
       {
         method: 'POST',
         body: JSON.stringify({
           trigger,
+          restoredFromCheckpointId: restoredFromCheckpointId ?? undefined,
           documentState: {
             encoding: 'base64-yjs-update-v2',
             value,
@@ -655,6 +889,14 @@ export const wikiliveApi = {
         }),
       },
     );
+  },
+  listPageHistory(pageId: string, limit = 50) {
+    return request<{ items: PageHistoryItem[] }>(`/api/v1/pages/${pageId}/history`, {
+      query: { limit },
+    });
+  },
+  getPageHistoryCheckpoint(pageId: string, checkpointId: string) {
+    return request<PageHistoryCheckpoint>(`/api/v1/pages/${pageId}/history/${checkpointId}`);
   },
   listMwsSpaces() {
     return request<{ items: MwsSpace[] }>('/api/v1/mws/spaces');

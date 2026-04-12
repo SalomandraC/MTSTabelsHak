@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { HocuspocusProvider } from '@hocuspocus/provider';
+import type { Content } from '@tiptap/core';
 import { useEditor } from '@tiptap/react';
 import * as Y from 'yjs';
 
@@ -47,6 +48,7 @@ type UsePageEditorControllerOptions = {
   page: WikiPage | null;
   onRenamePage: (title: string) => Promise<void>;
   onCheckpoint: () => Promise<void>;
+  onOpenCommentThread?: (threadId: string) => void;
   isAiSlashEnabled: boolean;
   isAiEditorExtensionEnabled: boolean;
 };
@@ -130,11 +132,21 @@ function getEditorMarkdown(editor: NonNullable<ReturnType<typeof useEditor>>): s
   return editor.getText();
 }
 
+function normalizeTemplateKey(label: string): string {
+  return label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-zа-я0-9]+/gi, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40) || `template_${Math.random().toString(16).slice(2, 8)}`;
+}
+
 export function usePageEditorController({
   spaceId,
   page,
   onRenamePage,
   onCheckpoint,
+  onOpenCommentThread,
   isAiSlashEnabled,
   isAiEditorExtensionEnabled,
 }: UsePageEditorControllerOptions) {
@@ -160,6 +172,9 @@ export function usePageEditorController({
 
   const [isPagePickerOpen, setIsPagePickerOpen] = useState(false);
   const [isTablePickerOpen, setIsTablePickerOpen] = useState(false);
+  const [isTemplateVariableModalOpen, setIsTemplateVariableModalOpen] = useState(false);
+  const [templateVariableLabel, setTemplateVariableLabel] = useState('');
+  const [templateVariableDescription, setTemplateVariableDescription] = useState('');
   const [collabState, setCollabState] = useState<CollabState | null>(null);
 
   const slashStateRef = useRef(baseSlashState);
@@ -304,8 +319,18 @@ export function usePageEditorController({
           name: userDisplayName,
           color: userColor,
         },
+        onOpenCommentThread,
       }),
-    [collabState?.provider, collabState?.ydoc, isAiEditorExtensionEnabled, page?.title, userColor, userDisplayName, userId],
+    [
+      collabState?.provider,
+      collabState?.ydoc,
+      isAiEditorExtensionEnabled,
+      onOpenCommentThread,
+      page?.title,
+      userColor,
+      userDisplayName,
+      userId,
+    ],
   );
 
   const resetImageModalState = () => {
@@ -328,6 +353,14 @@ export function usePageEditorController({
     setImageFileSizeLabel('');
     setImagePreviewSrc('');
   }, []);
+
+  const getCurrentDocumentStateValue = useCallback(() => {
+    if (!collabState) {
+      return null;
+    }
+
+    return bytesToBase64(Y.encodeStateAsUpdate(collabState.ydoc));
+  }, [collabState]);
 
   const editor = useEditor(
     {
@@ -656,6 +689,35 @@ export function usePageEditorController({
     closeImageModal();
   };
 
+  const openTemplateVariableModal = (defaultLabel = '', defaultDescription = '') => {
+    setTemplateVariableLabel(defaultLabel);
+    setTemplateVariableDescription(defaultDescription);
+    setIsTemplateVariableModalOpen(true);
+  };
+
+  const closeTemplateVariableModal = () => {
+    setIsTemplateVariableModalOpen(false);
+  };
+
+  const handleInsertTemplateVariable = () => {
+    if (!editor) {
+      return;
+    }
+
+    const label = templateVariableLabel.trim();
+    if (!label) {
+      return;
+    }
+
+    editor.chain().focus().insertTemplateVariable({
+      key: normalizeTemplateKey(label),
+      label,
+      description: templateVariableDescription.trim(),
+    }).run();
+
+    closeTemplateVariableModal();
+  };
+
   const deleteSlashRange = () => {
     if (!editor || !slashStateRef.current.isOpen) {
       return;
@@ -717,15 +779,21 @@ export function usePageEditorController({
         const generatedContent = response.document?.content;
 
         if (Array.isArray(generatedContent) && generatedContent.length > 0) {
-          editor.chain().focus().insertContent(generatedContent as any).run();
+          editor.chain().focus().insertContent(generatedContent as Content).run();
           return;
         }
 
-        editor.chain().focus().insertContent(response.document as any).run();
+        editor.chain().focus().insertContent(response.document as Content).run();
       }).catch((error) => {
         setSaveStatus(error instanceof Error ? `AI generate error: ${error.message}` : 'AI generate error');
       });
 
+      return;
+    }
+
+    if (item.id === 'template-variable') {
+      setSlashState(baseSlashState);
+      openTemplateVariableModal('', '');
       return;
     }
 
@@ -768,13 +836,42 @@ export function usePageEditorController({
     });
     const attrs = embed.toJson();
 
-    const inserted = editor.commands.insertMwsTableEmbed(attrs);
+    const inserted = editor.chain().focus().insertMwsTableEmbed(attrs).run();
 
     if (!inserted) {
-      editor.commands.insertContent({
+      editor.chain().focus().insertContent({
         type: 'rootblock',
         content: [createWikiTableEmbedNode(attrs)],
-      });
+      }).run();
+    }
+
+    const { selection } = editor.state;
+    const { $from } = selection;
+    let rootBlockDepth = -1;
+
+    for (let depth = $from.depth; depth > 0; depth -= 1) {
+      if ($from.node(depth).type.name === 'rootblock') {
+        rootBlockDepth = depth;
+        break;
+      }
+    }
+
+    if (rootBlockDepth >= 0) {
+      const rootBlockStart = $from.start(rootBlockDepth);
+      const rootBlockEnd = $from.after(rootBlockDepth);
+      const docSize = editor.state.doc.content.size;
+      const shouldInsertAbove = rootBlockStart === 1;
+      const shouldInsertBelow = rootBlockEnd === docSize;
+
+      if (shouldInsertBelow) {
+        editor.chain().focus().setTextSelection(rootBlockEnd).insertRootBlock().run();
+      }
+
+      if (shouldInsertAbove) {
+        editor.chain().focus().setTextSelection(rootBlockStart).insertRootBlock().run();
+      }
+    } else {
+      editor.commands.insertRootBlock();
     }
 
     setIsTablePickerOpen(false);
@@ -797,6 +894,12 @@ export function usePageEditorController({
       if (isImageModalOpen && event.key === 'Escape') {
         event.preventDefault();
         closeImageModal();
+        return;
+      }
+
+      if (isTemplateVariableModalOpen && event.key === 'Escape') {
+        event.preventDefault();
+        closeTemplateVariableModal();
         return;
       }
 
@@ -861,7 +964,7 @@ export function usePageEditorController({
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [closeImageModal, editor, isImageModalOpen, isLinkModalOpen]);
+  }, [closeImageModal, editor, isImageModalOpen, isLinkModalOpen, isTemplateVariableModalOpen]);
 
   return {
     editor,
@@ -917,5 +1020,16 @@ export function usePageEditorController({
       onFileSelect: handleSelectImageFile,
       onConfirm: handleConfirmImageInsert,
     },
+    templateVariableModal: {
+      isOpen: isTemplateVariableModalOpen,
+      label: templateVariableLabel,
+      description: templateVariableDescription,
+      isSubmitDisabled: templateVariableLabel.trim().length === 0,
+      onLabelChange: setTemplateVariableLabel,
+      onDescriptionChange: setTemplateVariableDescription,
+      onSubmit: handleInsertTemplateVariable,
+      onClose: closeTemplateVariableModal,
+    },
+    getCurrentDocumentStateValue,
   };
 }
