@@ -752,6 +752,14 @@ export function WorkspacePage() {
     [refreshGraphLinks],
   );
 
+  const refreshDocumentGraph = useCallback(async () => {
+    if (tree.length === 0) {
+      return;
+    }
+
+    await refreshGraphLinks(tree);
+  }, [refreshGraphLinks, tree]);
+
   const refreshLinks = async (pageId: string) => {
     const [backlinksResponse, outgoingResponse] = await Promise.all([
       wikiliveApi.getBacklinks(pageId),
@@ -1951,6 +1959,7 @@ export function WorkspacePage() {
                     activePageId={activePageId}
                     edges={graphEdges}
                     onSelectPage={handleSelectPage}
+                    onRefreshGraph={refreshDocumentGraph}
                   />
                 ) : (
                   <div className="rounded-2xl border border-dashed border-editor-border-subtle bg-[#fafbfc] px-4 py-5 text-sm text-editor-text-tertiary">
