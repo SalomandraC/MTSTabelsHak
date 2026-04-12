@@ -62,7 +62,6 @@ describe('CollabService', () => {
           client: {
             clientId: 'client-1',
             deviceId: 'device-1',
-            userDisplayName: 'Ivan Browser',
             editorVersion: '3.0.0',
           },
         },

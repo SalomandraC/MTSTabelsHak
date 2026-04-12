@@ -9,7 +9,7 @@ type AuthGateProps = {
 
 export function AuthGate({ children }: AuthGateProps) {
   const authSession = useAuthSession();
-  const { authState, apiKey, setApiKey, isSubmitting, errorMessage, handleLogin } = authSession;
+  const { authState, apiKey, setApiKey, pendingDisplayName, setPendingDisplayName, requiresDisplayName, isSubmitting, errorMessage, handleLogin } = authSession;
 
   if (authState === 'bootstrapping') {
     return (
@@ -23,9 +23,12 @@ export function AuthGate({ children }: AuthGateProps) {
     return (
       <AuthLoginCard
         apiKey={apiKey}
+        displayName={pendingDisplayName}
+        shouldAskDisplayName={requiresDisplayName}
         isSubmitting={isSubmitting}
         errorMessage={errorMessage}
         onApiKeyChange={setApiKey}
+        onDisplayNameChange={setPendingDisplayName}
         onSubmit={handleLogin}
       />
     );

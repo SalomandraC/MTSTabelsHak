@@ -17,7 +17,10 @@ function getRefreshIntervalMs(expiresInSec: number | null | undefined): number {
 export function useAuthSession() {
   const [authState, setAuthState] = useState<AuthState>('bootstrapping');
   const [apiKey, setApiKey] = useState('');
+  const [pendingDisplayName, setPendingDisplayName] = useState('');
+  const [requiresDisplayName, setRequiresDisplayName] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUpdatingDisplayName, setIsUpdatingDisplayName] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [refreshIntervalMs, setRefreshIntervalMs] = useState<number | null>(null);
@@ -90,7 +93,14 @@ export function useAuthSession() {
     setErrorMessage('');
 
     try {
-      await wikiliveApi.login(trimmed);
+      const loginResult = await wikiliveApi.login(trimmed, requiresDisplayName ? pendingDisplayName.trim() : undefined);
+      if (loginResult.status === 'display_name_required') {
+        setRequiresDisplayName(true);
+        setPendingDisplayName((current) => current || loginResult.profile.suggestedDisplayName || '');
+        setErrorMessage('Для первого входа задайте отображаемое имя.');
+        return;
+      }
+
       const session = await wikiliveApi.refreshSession();
       if (!session) {
         throw new Error('Не удалось получить access token');
@@ -100,6 +110,8 @@ export function useAuthSession() {
       setDisplayName(me.user.displayName);
       setRefreshIntervalMs(getRefreshIntervalMs(session.expiresInSec));
       setApiKey('');
+      setPendingDisplayName('');
+      setRequiresDisplayName(false);
       setAuthState('authorized');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Ошибка авторизации');
@@ -115,8 +127,31 @@ export function useAuthSession() {
       await clearBrowserPersistence();
       resetWorkspaceRoute();
       setDisplayName('');
+      setPendingDisplayName('');
+      setRequiresDisplayName(false);
       setRefreshIntervalMs(null);
       setAuthState('unauthorized');
+    }
+  };
+
+  const handleUpdateDisplayName = async (nextDisplayName: string) => {
+    const normalized = nextDisplayName.trim();
+    if (!normalized) {
+      setErrorMessage('Введите отображаемое имя');
+      return;
+    }
+
+    setIsUpdatingDisplayName(true);
+    setErrorMessage('');
+
+    try {
+      const response = await wikiliveApi.updateMeDisplayName(normalized);
+      setDisplayName(response.user.displayName);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Не удалось обновить отображаемое имя');
+      throw error;
+    } finally {
+      setIsUpdatingDisplayName(false);
     }
   };
 
@@ -124,10 +159,15 @@ export function useAuthSession() {
     authState,
     apiKey,
     setApiKey,
+    pendingDisplayName,
+    setPendingDisplayName,
+    requiresDisplayName,
     isSubmitting,
+    isUpdatingDisplayName,
     errorMessage,
     displayName,
     handleLogin,
+    handleUpdateDisplayName,
     handleLogout,
   };
 }

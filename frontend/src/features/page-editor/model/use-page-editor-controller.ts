@@ -211,7 +211,6 @@ export function usePageEditorController({
       const session = await wikiliveApi.openCollabSession(page.id, {
         clientId: getPersistentId('wikilive:client-id', 'client'),
         deviceId: getPersistentId('wikilive:device-id', 'device'),
-        userDisplayName,
         localDraftAvailable: Boolean(draft),
         lastCheckpointId: page.documentState?.checkpointId ?? null,
         knownServerVersion: page.documentState?.serverVersion ?? null,

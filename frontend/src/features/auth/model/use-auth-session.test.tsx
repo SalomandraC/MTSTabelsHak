@@ -19,6 +19,7 @@ vi.mock('../../../shared/api/wikilive', async () => {
       login: vi.fn(),
       getMe: vi.fn(),
       logout: vi.fn(),
+      updateMeDisplayName: vi.fn(),
     },
   };
 });
@@ -33,12 +34,20 @@ describe('useAuthSession', () => {
       accessToken: 'access-token',
       expiresInSec: 900,
     });
-    vi.mocked(wikiliveApi.login).mockResolvedValue(undefined);
+    vi.mocked(wikiliveApi.login).mockResolvedValue({ status: 'authorized' });
     vi.mocked(wikiliveApi.logout).mockResolvedValue(undefined);
     vi.mocked(wikiliveApi.getMe).mockResolvedValue({
       user: {
         userId: 'user-1',
+        clientId: 'client-1',
         displayName: 'MWS Space A',
+      },
+    });
+    vi.mocked(wikiliveApi.updateMeDisplayName).mockResolvedValue({
+      user: {
+        userId: 'user-1',
+        clientId: 'client-1',
+        displayName: 'Updated Name',
       },
     });
     vi.spyOn(browserPersistence, 'clearBrowserPersistence').mockResolvedValue(undefined);
@@ -54,6 +63,7 @@ describe('useAuthSession', () => {
     vi.mocked(wikiliveApi.restoreSession).mockResolvedValueOnce({
       user: {
         userId: 'user-1',
+        clientId: 'client-1',
         displayName: 'MWS Space A',
       },
       expiresInSec: 900,
@@ -95,7 +105,7 @@ describe('useAuthSession', () => {
       } as never);
     });
 
-    expect(wikiliveApi.login).toHaveBeenCalledWith('sk-test');
+    expect(wikiliveApi.login).toHaveBeenCalledWith('sk-test', undefined);
     expect(wikiliveApi.refreshSession).toHaveBeenCalledTimes(1);
     expect(wikiliveApi.getMe).toHaveBeenCalledTimes(1);
     expect(result.current.authState).toBe('authorized');
@@ -122,6 +132,7 @@ describe('useAuthSession', () => {
     vi.mocked(wikiliveApi.restoreSession).mockResolvedValueOnce({
       user: {
         userId: 'user-1',
+        clientId: 'client-1',
         displayName: 'MWS Space A',
       },
       expiresInSec: 120,
@@ -163,6 +174,7 @@ describe('useAuthSession', () => {
     vi.mocked(wikiliveApi.restoreSession).mockResolvedValueOnce({
       user: {
         userId: 'user-1',
+        clientId: 'client-1',
         displayName: 'MWS Space A',
       },
       expiresInSec: 120,
@@ -191,6 +203,7 @@ describe('useAuthSession', () => {
     vi.mocked(wikiliveApi.restoreSession).mockResolvedValueOnce({
       user: {
         userId: 'user-1',
+        clientId: 'client-1',
         displayName: 'MWS Space A',
       },
       expiresInSec: 900,
@@ -213,5 +226,79 @@ describe('useAuthSession', () => {
     expect(workspaceRoute.resetWorkspaceRoute).toHaveBeenCalledTimes(1);
     expect(result.current.authState).toBe('unauthorized');
     expect(result.current.displayName).toBe('');
+  });
+
+  it('requests display name on first login and completes onboarding on retry', async () => {
+    vi.mocked(wikiliveApi.login)
+      .mockResolvedValueOnce({
+        status: 'display_name_required',
+        profile: {
+          userId: 'user-1',
+          clientId: 'client-1',
+          suggestedDisplayName: 'Nikita',
+        },
+      })
+      .mockResolvedValueOnce({ status: 'authorized' });
+
+    const { result } = renderHook(() => useAuthSession());
+
+    await waitFor(() => {
+      expect(result.current.authState).toBe('unauthorized');
+    });
+
+    await act(async () => {
+      result.current.setApiKey('sk-test');
+    });
+
+    await act(async () => {
+      await result.current.handleLogin({
+        preventDefault: vi.fn(),
+      } as never);
+    });
+
+    expect(result.current.requiresDisplayName).toBe(true);
+    expect(result.current.pendingDisplayName).toBe('Nikita');
+    expect(result.current.errorMessage).toBe('Для первого входа задайте отображаемое имя.');
+    expect(wikiliveApi.refreshSession).toHaveBeenCalledTimes(0);
+
+    await act(async () => {
+      result.current.setPendingDisplayName('Nikita Live');
+    });
+
+    await act(async () => {
+      await result.current.handleLogin({
+        preventDefault: vi.fn(),
+      } as never);
+    });
+
+    expect(wikiliveApi.login).toHaveBeenNthCalledWith(1, 'sk-test', undefined);
+    expect(wikiliveApi.login).toHaveBeenNthCalledWith(2, 'sk-test', 'Nikita Live');
+    expect(result.current.authState).toBe('authorized');
+    expect(result.current.requiresDisplayName).toBe(false);
+    expect(result.current.pendingDisplayName).toBe('');
+  });
+
+  it('updates display name for an authorized user', async () => {
+    vi.mocked(wikiliveApi.restoreSession).mockResolvedValueOnce({
+      user: {
+        userId: 'user-1',
+        clientId: 'client-1',
+        displayName: 'MWS Space A',
+      },
+      expiresInSec: 900,
+    });
+
+    const { result } = renderHook(() => useAuthSession());
+
+    await waitFor(() => {
+      expect(result.current.authState).toBe('authorized');
+    });
+
+    await act(async () => {
+      await result.current.handleUpdateDisplayName('Updated Name');
+    });
+
+    expect(wikiliveApi.updateMeDisplayName).toHaveBeenCalledWith('Updated Name');
+    expect(result.current.displayName).toBe('Updated Name');
   });
 });

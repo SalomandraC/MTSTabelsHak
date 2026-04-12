@@ -33,7 +33,6 @@ export class CollabService {
         userId: user.userId,
         clientId: dto.client.clientId,
         deviceId: dto.client.deviceId,
-        displayName: dto.client.userDisplayName ?? user.displayName,
       },
     });
 

@@ -522,7 +522,7 @@ function LogoutConfirmModal({
 }
 
 export function WorkspacePage() {
-  const { displayName, handleLogout } = useAuthSessionContext();
+  const { displayName, handleLogout, handleUpdateDisplayName, isUpdatingDisplayName } = useAuthSessionContext();
   const {
     items: plugins,
     plan,
@@ -562,6 +562,8 @@ export function WorkspacePage() {
   const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>('links');
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isEditingDisplayName, setIsEditingDisplayName] = useState(false);
+  const [displayNameDraft, setDisplayNameDraft] = useState(displayName);
   const [templates, setTemplates] = useState<PageTemplateSummary[]>([]);
   const [templateCategories, setTemplateCategories] = useState<TemplateCategorySummary[]>([]);
   const areTemplateCategoriesLoadedRef = useRef(false);
@@ -734,6 +736,10 @@ export function WorkspacePage() {
       }
     },
   });
+
+  useEffect(() => {
+    setDisplayNameDraft(displayName);
+  }, [displayName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1350,6 +1356,15 @@ export function WorkspacePage() {
     }
   };
 
+  const handleSaveDisplayName = async () => {
+    try {
+      await handleUpdateDisplayName(displayNameDraft);
+      setIsEditingDisplayName(false);
+    } catch {
+      // Error is already surfaced by auth session state.
+    }
+  };
+
   return (
     <main className="flex h-screen overflow-hidden bg-[#f2f5fb] text-editor-text-primary">
       {!leftSidebar.isCollapsed ? (
@@ -1361,7 +1376,40 @@ export function WorkspacePage() {
             <div className="flex min-w-0 items-center gap-3">
               <WorkspaceLogo />
               <div className="min-w-0">
-                <p className="truncate text-[15px] font-semibold text-[#1f1f1f]">WikiLive</p>
+                <div className="flex items-center gap-2">
+                  {isEditingDisplayName ? (
+                    <input
+                      value={displayNameDraft}
+                      onChange={(event) => setDisplayNameDraft(event.target.value)}
+                      onBlur={() => void handleSaveDisplayName()}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          void handleSaveDisplayName();
+                        }
+
+                        if (event.key === 'Escape') {
+                          setDisplayNameDraft(displayName);
+                          setIsEditingDisplayName(false);
+                        }
+                      }}
+                      disabled={isUpdatingDisplayName}
+                      className="w-full rounded-md border border-editor-border-subtle px-2 py-1 text-[15px] font-semibold text-[#1f1f1f] outline-none focus:border-[#d70032]"
+                      autoFocus
+                    />
+                  ) : (
+                    <p className="truncate text-[15px] font-semibold text-[#1f1f1f]">{displayName}</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingDisplayName(true)}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#8d8d8d] transition-colors hover:bg-[#f2f3f5] hover:text-[#1f1f1f]"
+                    aria-label="Изменить отображаемое имя"
+                    title="Изменить отображаемое имя"
+                  >
+                    <Pencil size={14} strokeWidth={2.2} />
+                  </button>
+                </div>
                 <label className="sr-only" htmlFor="workspace-space-select">
                   Пространство
                 </label>

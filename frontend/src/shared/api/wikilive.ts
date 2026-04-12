@@ -17,9 +17,21 @@ export type AuthSessionRefresh = RefreshResponse;
 export type MeResponse = {
   user: {
     userId: string;
+    clientId: string | null;
     displayName: string;
   };
 };
+
+export type LoginResponse =
+  | { status: 'authorized' }
+  | {
+      status: 'display_name_required';
+      profile: {
+        userId: string;
+        clientId: string | null;
+        suggestedDisplayName: string | null;
+      };
+    };
 
 export type PluginPlan = {
   id: 'free' | 'pro' | 'enterprise';
@@ -62,6 +74,7 @@ function getDemoUserFromUrl(): MeResponse['user'] | null {
 
   return {
     userId,
+    clientId: null,
     displayName: displayName ?? `User ${userId.slice(0, 8)}`,
   };
 }
@@ -667,11 +680,11 @@ async function requestWithAuth<T>(path: string, options: RequestOptions = {}): P
 }
 
 export const wikiliveApi = {
-  async login(apiKey: string) {
-    await request<void>('/api/v1/auth/login', {
+  async login(apiKey: string, displayName?: string) {
+    return request<LoginResponse>('/api/v1/auth/login', {
       method: 'POST',
       authMode: 'none',
-      body: JSON.stringify({ apiKey }),
+      body: JSON.stringify({ apiKey, displayName }),
     });
   },
   async refreshSession() {
@@ -687,6 +700,14 @@ export const wikiliveApi = {
   },
   async getMe() {
     const response = await request<MeResponse>('/api/v1/me');
+    setActiveUser(response.user);
+    return response;
+  },
+  async updateMeDisplayName(displayName: string) {
+    const response = await request<MeResponse>('/api/v1/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ displayName }),
+    });
     setActiveUser(response.user);
     return response;
   },
@@ -906,7 +927,6 @@ export const wikiliveApi = {
   openCollabSession(pageId: string, payload: {
     clientId: string;
     deviceId: string;
-    userDisplayName: string;
     localDraftAvailable: boolean;
     lastCheckpointId?: string | null;
     knownServerVersion?: number | null;
@@ -918,7 +938,6 @@ export const wikiliveApi = {
           clientId: payload.clientId,
           deviceId: payload.deviceId,
           editorVersion: 'wikilive-tiptap-mvp',
-          userDisplayName: payload.userDisplayName,
         },
         localDraftAvailable: payload.localDraftAvailable,
         lastCheckpointId: payload.lastCheckpointId,
