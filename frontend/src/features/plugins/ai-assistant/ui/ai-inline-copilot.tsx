@@ -4,6 +4,7 @@ import type { Editor } from '@tiptap/core';
 
 import { type MwsField, type MwsRecord, wikiliveApi } from '../../../../shared/api/wikilive';
 import { getEditorMarkdown } from '../model/editor-markdown';
+import { useAiTableContext } from '../model/use-ai-table-context';
 
 type CopilotTarget = 'table' | 'text';
 
@@ -100,6 +101,90 @@ function normalizeText(value: string): string {
   return value.trim().toLowerCase();
 }
 
+function parseRowRangeFromPrompt(prompt: string): { start: number; end: number } | null {
+  const dashRange = prompt.match(/(?:строк[аи]?|rows?)\s*(\d{1,4})\s*[-–—]\s*(\d{1,4})/i);
+  if (dashRange) {
+    const start = Number(dashRange[1]);
+    const end = Number(dashRange[2]);
+    if (Number.isFinite(start) && Number.isFinite(end) && start > 0 && end >= start) {
+      return { start, end };
+    }
+  }
+
+  const fromToRange = prompt.match(/(?:строк[аи]?|rows?)\s*с\s*(\d{1,4})\s*по\s*(\d{1,4})/i);
+  if (fromToRange) {
+    const start = Number(fromToRange[1]);
+    const end = Number(fromToRange[2]);
+    if (Number.isFinite(start) && Number.isFinite(end) && start > 0 && end >= start) {
+      return { start, end };
+    }
+  }
+
+  return null;
+}
+
+function forceExistingRowsUpdate(
+  prompt: string,
+  plan: WorkflowPlan,
+  existingRecords: MwsRecord[],
+): WorkflowPlan {
+  const range = parseRowRangeFromPrompt(prompt);
+  if (!range) {
+    return plan;
+  }
+
+  const hasExplicitUpdate = plan.commands.some((command) => command.type === 'UPDATE_RECORDS');
+  if (hasExplicitUpdate) {
+    return plan;
+  }
+
+  const addRows = plan.commands
+    .filter((command): command is Extract<WorkflowPlan['commands'][number], { type: 'ADD_ROW' }> => command.type === 'ADD_ROW')
+    .flatMap((command) => command.rows);
+
+  if (addRows.length === 0) {
+    return plan;
+  }
+
+  const startIndex = Math.max(0, range.start - 1);
+  const endIndex = Math.min(existingRecords.length - 1, range.end - 1);
+  const targetRecords = existingRecords.slice(startIndex, endIndex + 1);
+
+  if (targetRecords.length === 0) {
+    return plan;
+  }
+
+  const updateCount = Math.min(targetRecords.length, addRows.length);
+  if (updateCount === 0) {
+    return plan;
+  }
+
+  const updateRecords = Array.from({ length: updateCount }, (_, index) => ({
+    recordId: targetRecords[index].recordId,
+    fields: addRows[index].fields,
+  }));
+
+  const remainingRows = addRows.slice(updateCount);
+  const passthroughCommands = plan.commands.filter((command) => command.type !== 'ADD_ROW');
+
+  const nextCommands: WorkflowPlan['commands'] = [
+    ...passthroughCommands,
+    {
+      type: 'UPDATE_RECORDS',
+      records: updateRecords,
+    },
+  ];
+
+  if (remainingRows.length > 0) {
+    nextCommands.push({ type: 'ADD_ROW', rows: remainingRows });
+  }
+
+  return {
+    summary: `${plan.summary} [auto-fix: existing rows ${range.start}-${range.end}]`,
+    commands: nextCommands,
+  };
+}
+
 function buildFieldLookup(fields: MwsField[]) {
   const byId = new Map<string, MwsField>();
   const byName = new Map<string, MwsField>();
@@ -137,6 +222,7 @@ export function AiInlineCopilot({
   const [isBusy, setIsBusy] = useState(false);
   const [showReportMenu, setShowReportMenu] = useState(false);
   const [createdPage, setCreatedPage] = useState<{ id: string; title: string } | null>(null);
+  const { handleAiChatResponse, refreshTable: requestRefresh } = useAiTableContext();
 
   useEffect(() => {
     if (!isOpen) {
@@ -404,9 +490,15 @@ export function AiInlineCopilot({
         },
       });
 
-      setOutput(`AI план: ${planned.summary}`);
-      await applyWorkflow(planned, datasheetId);
-      setOutput(`${planned.summary}\n\n${planned.commands.map((command) => JSON.stringify(command)).join('\n')}`);
+      const normalizedPlan = forceExistingRowsUpdate(prompt.trim(), planned, context.records);
+
+      setOutput(`AI план: ${normalizedPlan.summary}`);
+      await applyWorkflow(normalizedPlan, datasheetId);
+      requestRefresh({
+        datasheetId,
+        viewId: anchor.viewId ?? undefined,
+      });
+      setOutput(`${normalizedPlan.summary}\n\n${normalizedPlan.commands.map((command) => JSON.stringify(command)).join('\n')}`);
     });
   };
 
@@ -430,6 +522,11 @@ export function AiInlineCopilot({
           },
         });
 
+        handleAiChatResponse(response, {
+          datasheetId: anchor.datasheetId,
+          viewId: anchor.viewId ?? undefined,
+        });
+
         const intro = `Вижу вашу таблицу с ${context.records.length} записями, готов анализировать...`;
         setOutput(`${intro}\n\n${response.answer}`);
         return;
@@ -445,6 +542,11 @@ export function AiInlineCopilot({
         pageId: pageId ?? undefined,
         pageTitle,
         pageSnapshot: { markdown },
+      });
+
+      handleAiChatResponse(response, {
+        datasheetId: anchor.datasheetId,
+        viewId: anchor.viewId ?? undefined,
       });
 
       setOutput(response.answer);
@@ -470,6 +572,11 @@ export function AiInlineCopilot({
         },
       });
 
+      handleAiChatResponse(response, {
+        datasheetId: anchor.datasheetId,
+        viewId: anchor.viewId ?? undefined,
+      });
+
       return response.answer;
     }
 
@@ -483,6 +590,11 @@ export function AiInlineCopilot({
       pageId: pageId ?? undefined,
       pageTitle,
       pageSnapshot: { markdown },
+    });
+
+    handleAiChatResponse(response, {
+      datasheetId: anchor.datasheetId,
+      viewId: anchor.viewId ?? undefined,
     });
 
     return response.answer;
@@ -564,6 +676,11 @@ export function AiInlineCopilot({
       if (editor) {
         editor.commands.insertContent(response.answer);
       }
+
+      handleAiChatResponse(response, {
+        datasheetId: anchor.datasheetId,
+        viewId: anchor.viewId ?? undefined,
+      });
 
       setOutput(response.answer);
     });

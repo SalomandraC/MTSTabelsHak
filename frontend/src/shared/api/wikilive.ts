@@ -458,6 +458,7 @@ export type AiGenerateResponse = {
 
 export type AiChatResponse = {
   answer: string;
+  needsRefresh?: boolean;
   usedTools?: Array<{ toolName: string; args: Record<string, unknown> }>;
   contextMarkdown?: string;
   references?: Array<Record<string, unknown>>;

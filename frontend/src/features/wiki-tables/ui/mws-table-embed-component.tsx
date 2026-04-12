@@ -33,6 +33,12 @@ type AiTableMutationDetail = {
   field?: MwsField;
 };
 
+type AiTableRefreshDetail = {
+  datasheetId?: string | null;
+  viewId?: string | null;
+  reason?: string;
+};
+
 function isDirectEditKey(event: React.KeyboardEvent<HTMLElement>) {
   return (
     event.key.length === 1 && !event.altKey && !event.ctrlKey && !event.metaKey
@@ -78,6 +84,18 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
   ]);
 
   useEffect(() => {
+    const handleRefreshRequest = (event: Event) => {
+      const customEvent = event as CustomEvent<AiTableRefreshDetail>;
+      const detail = customEvent.detail;
+      const targetDatasheetId = detail?.datasheetId ?? undefined;
+
+      if (targetDatasheetId && targetDatasheetId !== controller.attrs.datasheetId) {
+        return;
+      }
+
+      void controller.refreshTable();
+    };
+
     const handleMutation = (event: Event) => {
       const customEvent = event as CustomEvent<AiTableMutationDetail>;
       const detail = customEvent.detail;
@@ -98,8 +116,10 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       void controller.refreshTable();
     };
 
+    window.addEventListener('wikilive:ai-table-refresh-request', handleRefreshRequest);
     window.addEventListener('wikilive:ai-table-mutation', handleMutation);
     return () => {
+      window.removeEventListener('wikilive:ai-table-refresh-request', handleRefreshRequest);
       window.removeEventListener('wikilive:ai-table-mutation', handleMutation);
     };
   }, [controller]);

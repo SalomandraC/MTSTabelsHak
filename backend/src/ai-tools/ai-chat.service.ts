@@ -7,6 +7,8 @@ import { ToolExecutionResult } from './ai-tool-registry.types';
 
 @Injectable()
 export class AiChatService {
+  private readonly mutationToolNames = new Set(['create_records', 'patch_records', 'add_table_column']);
+
   constructor(
     private readonly aiProviderClientService: AiProviderClientService,
     private readonly aiToolRegistryService: AiToolRegistryService,
@@ -22,6 +24,7 @@ export class AiChatService {
     const conversation: AiChatMessage[] = [...messages];
     const usedTools: Array<{ toolName: string; args: Record<string, unknown> }> = [];
     const references: Array<Record<string, unknown>> = [];
+    let needsRefresh = false;
 
     let response = await this.aiProviderClientService.complete({
       messages,
@@ -57,6 +60,10 @@ export class AiChatService {
         const toolResult = await this.executeTool(toolName, args, user, {
           pageId: input.pageId,
         });
+
+        if (toolResult.ok && this.mutationToolNames.has(toolName)) {
+          needsRefresh = true;
+        }
 
         if (toolResult.ok && toolResult.canonicalRecords?.length) {
           references.push(
@@ -95,6 +102,7 @@ export class AiChatService {
 
     return {
       answer,
+      needsRefresh,
       usedTools,
       contextMarkdown,
       references,
@@ -125,11 +133,17 @@ export class AiChatService {
       {
         role: 'system',
         content: [
-          'You are a wiki assistant that answers user questions using the page context and available tools.',
-          'If the user asks about records, rows, or table content, use get_records.',
-          'If the user asks to add a new table column, use add_table_column.',
+            'You are a powerful data administrator for WikiLive tables.',
+            'Your goal is to change the real MWS table data through tools, not by describing JSON to the user.',
+            'If the user asks to fill fields, add data, update rows, or change table structure, use tools silently on the backend.',
+            'For any table mutation task, call get_records first if you need current table data.',
+            'After reading records, use patch_records, create_records, or add_table_column as needed.',
+            'If the question is about records, rows, or table content, use get_records.',
+            'If the user asks to add a new table column, use add_table_column.',
+            'If the user asks to fill empty fields, patch existing records instead of answering with code or JSON.',
           'When tool arguments require a datasheetId, use the exact Target MWS datasheetId from the context.',
-          'Keep the answer concise, factual, and grounded in the provided context or tool output.',
+            'Only answer the user after the table has already been changed by tools.',
+            'Keep the answer concise, factual, and grounded in the provided context or tool output.',
         ].join(' '),
       },
       {
