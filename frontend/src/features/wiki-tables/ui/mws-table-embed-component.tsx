@@ -24,6 +24,14 @@ import {
   ROW_HEIGHT,
   useWikiTableEmbed
 } from '../model/use-wiki-table-embed';
+import type { MwsField, MwsRecord } from '../../../shared/api/wikilive';
+
+type AiTableMutationDetail = {
+  datasheetId?: string;
+  op?: 'create_records' | 'add_table_column' | 'refresh';
+  records?: MwsRecord[];
+  field?: MwsField;
+};
 
 function isDirectEditKey(event: React.KeyboardEvent<HTMLElement>) {
   return (
@@ -37,6 +45,33 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
 
   useEffect(() => {
     controllerRef.current = controller;
+  }, [controller]);
+
+  useEffect(() => {
+    const handleMutation = (event: Event) => {
+      const customEvent = event as CustomEvent<AiTableMutationDetail>;
+      const detail = customEvent.detail;
+      const targetDatasheetId = detail?.datasheetId;
+
+      if (!targetDatasheetId || targetDatasheetId !== controller.attrs.datasheetId) {
+        return;
+      }
+
+      if (detail.op === 'create_records' && Array.isArray(detail.records) && detail.records.length > 0) {
+        controller.applyAiRecords(detail.records);
+      }
+
+      if (detail.op === 'add_table_column' && detail.field) {
+        controller.applyAiField(detail.field);
+      }
+
+      void controller.refreshTable();
+    };
+
+    window.addEventListener('wikilive:ai-table-mutation', handleMutation);
+    return () => {
+      window.removeEventListener('wikilive:ai-table-mutation', handleMutation);
+    };
   }, [controller]);
   const [isCreateFieldModalOpen, setIsCreateFieldModalOpen] = useState(false);
   const [isHideFieldsModalOpen, setIsHideFieldsModalOpen] = useState(false);

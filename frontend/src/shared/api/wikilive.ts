@@ -463,6 +463,31 @@ export type AiChatResponse = {
   references?: Array<Record<string, unknown>>;
 };
 
+export type AiExecuteToolPayload = {
+  toolName: string;
+  args: Record<string, unknown>;
+  pageId?: string;
+  workspaceId?: string;
+};
+
+export type AiExecuteToolResponse = {
+  ok: boolean;
+  toolName: string;
+  data?: Record<string, unknown>;
+  canonicalRecords?: Array<{
+    recordId: string;
+    fields: Record<string, unknown>;
+    createdAt?: string | null;
+    updatedAt?: string | null;
+  }>;
+  error?: {
+    code: string;
+    message: string;
+    status?: number;
+    details?: unknown;
+  };
+};
+
 function toQueryString(query: RequestOptions['query']) {
   const params = new URLSearchParams();
 
@@ -1119,6 +1144,12 @@ export const wikiliveApi = {
   },
   aiChat(payload: AiChatPayload) {
     return requestWithAuth<AiChatResponse>('/api/v1/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiExecuteTool(payload: AiExecuteToolPayload) {
+    return requestWithAuth<AiExecuteToolResponse>('/api/v1/ai/execute', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
