@@ -144,4 +144,20 @@ export const pluginDefinitions: PluginDefinition[] = [
       'slash-menu': true,
     },
   },
+  {
+    id: 'iframe-embed',
+    title: 'Встраивание контента (iframe)',
+    description: 'Встраивание внешнего контента — YouTube, карты, презентации и другие iframe-элементы прямо в текст страницы.',
+    category: 'core',
+    kind: 'optional',
+    defaultEnabled: false,
+    implemented: true,
+    requiredPlans: ['pro', 'enterprise'],
+    placement: ['Редактор', 'Тулбар редактора'],
+    defaultSettings: {
+      'toolbar': true,
+      'floating-toolbar': true,
+      'slash-menu': true,
+    },
+  },
 ];

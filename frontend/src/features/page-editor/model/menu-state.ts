@@ -39,6 +39,7 @@ const emptyMenuBarState = {
   canUndo: false,
   canRedo: false,
   isCanvasBlock: false,
+  isIframeBlock: false,
 };
 
 export function menuBarStateSelector(ctx: EditorStateSnapshot<Editor | null>) {
@@ -104,6 +105,7 @@ export function menuBarStateSelector(ctx: EditorStateSnapshot<Editor | null>) {
     canUndo: ctx.editor.can().chain().undo().run() ?? false,
     canRedo: ctx.editor.can().chain().redo().run() ?? false,
     isCanvasBlock: ctx.editor.isActive('canvasBlock') ?? false,
+    isIframeBlock: ctx.editor.isActive('iframeBlock') ?? false,
   };
 }
 

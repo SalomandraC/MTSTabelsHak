@@ -4,7 +4,7 @@ import type { MouseEvent } from 'react';
 
 import { handleListAction } from '../model/list-actions';
 import { menuBarStateSelector } from '../model/menu-state';
-import { getCanvasDrawSettings } from '../../plugins/model/plugin-registry';
+import { getCanvasDrawSettings, getIframeEmbedSettings } from '../../plugins/model/plugin-registry';
 import { usePlugins } from '../../plugins';
 
 import VectorLeft from '../../../app/images/VectorLeft.svg';
@@ -26,7 +26,7 @@ import BrushCleaning from '../../../app/images/brush-cleaning.svg';
 import AtSign from '../../../app/images/at-sign.svg';
 import Picture from '../../../app/images/Picture.svg';
 
-import { History, MessageSquare, Pencil, TextAlignCenter, TextAlignEnd, TextAlignStart } from 'lucide-react';
+import { History, MessageSquare, MonitorPlay, Pencil, TextAlignCenter, TextAlignEnd, TextAlignStart } from 'lucide-react';
 
 const redFilter = 'brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(2665%) hue-rotate(346deg) brightness(101%) contrast(97%)';
 
@@ -34,6 +34,7 @@ type PageEditorToolbarProps = {
   editor: Editor | null;
   onOpenLinkModal: (position?: { top: number; left: number }) => void;
   onOpenImageModal: () => void;
+  onOpenIframeModal: () => void;
   onCreateComment?: (editor: Editor) => void;
   onOpenTimeMachine?: () => void;
   commentCount?: number;
@@ -104,7 +105,8 @@ function areMenuStatesEqual(
     previous.canUndo === next.canUndo &&
     previous.canRedo === next.canRedo &&
     previous.canClearFormatting === next.canClearFormatting &&
-    previous.isCanvasBlock === next.isCanvasBlock
+    previous.isCanvasBlock === next.isCanvasBlock &&
+    previous.isIframeBlock === next.isIframeBlock
   );
 }
 
@@ -175,13 +177,16 @@ export function PageEditorToolbar({
   editor,
   onOpenLinkModal,
   onOpenImageModal,
+  onOpenIframeModal,
   onCreateComment,
   onOpenTimeMachine,
   commentCount = 0,
 }: PageEditorToolbarProps) {
   const { items: plugins } = usePlugins();
   const canvasSettings = getCanvasDrawSettings(plugins);
+  const iframeSettings = getIframeEmbedSettings(plugins);
   const showCanvasButton = plugins.some(p => p.id === 'canvas-draw' && p.enabled) && canvasSettings['toolbar'];
+  const showIframeButton = plugins.some(p => p.id === 'iframe-embed' && p.enabled) && iframeSettings['toolbar'];
   const state =
     useEditorState({
       editor,
@@ -225,6 +230,7 @@ export function PageEditorToolbar({
       canRedo: false,
       canClearFormatting: false,
       isCanvasBlock: false,
+      isIframeBlock: false,
     };
 
   if (!editor) {
@@ -628,6 +634,26 @@ export function PageEditorToolbar({
               isLast={true}
               isInGroup={true}
               aria-label="Вставить блок для рисования"
+            />
+          </>
+        )}
+
+        {showIframeButton && (
+          <>
+            <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
+            <ToolbarButton
+              icon={
+                <MonitorPlay className="h-4 w-4"
+                  style={{ color: 'rgba(80, 87, 98, 1)' }}
+                />
+              }
+              label="Iframe"
+              onClick={onOpenIframeModal}
+              isFirst={true}
+              isLast={true}
+              isInGroup={true}
+              aria-label="Встроить iframe"
             />
           </>
         )}

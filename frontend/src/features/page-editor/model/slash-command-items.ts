@@ -193,5 +193,19 @@ export function getSlashCommandItems(plugins: PluginCatalogItem[]): PageEditorSl
     });
   }
 
+  const iframeEnabled = plugins.some(p => p.id === 'iframe-embed' && p.enabled)
+    && (plugins.find(p => p.id === 'iframe-embed')?.settings?.['slash-menu'] ?? true);
+
+  if (iframeEnabled) {
+    items.push({
+      id: 'iframe',
+      label: 'Встраивание (iframe)',
+      hint: 'Встроить YouTube, карту или другой внешний контент',
+      keywords: ['iframe', 'embed', 'video', 'youtube', 'встраивание', 'видео', 'карта'],
+      icon: '▶',
+      run: (editor: Editor) => { editor.chain().focus().setIframe({ src: '' }).run(); },
+    });
+  }
+
   return items;
 }

@@ -16,6 +16,7 @@ import { PageLinkModal } from './page-link-modal';
 import { PageEditorToolbar } from './page-editor-toolbar';
 import { PagePickerModal } from './page-picker-modal';
 import { TemplateVariableModal } from './template-variable-modal';
+import { IframeModal } from './iframe-modal';
 
 type PageEditorProps = {
   spaceId: string;
@@ -133,6 +134,7 @@ export function PageEditor({
           editor={controller.editor}
           onOpenLinkModal={controller.openLinkModal}
           onOpenImageModal={controller.openImageModal}
+          onOpenIframeModal={controller.openIframeModal}
           onCreateComment={onCreateComment}
           onOpenTimeMachine={onOpenTimeMachine}
           commentCount={commentCount}
@@ -153,6 +155,7 @@ export function PageEditor({
             <FloatingToolbar
               editor={controller.editor}
               onOpenLinkModal={() => controller.openLinkModal()}
+              onOpenIframeModal={controller.openIframeModal}
               onCreateComment={onCreateComment}
               pageTitle={controller.title}
               isAiTransformEnabled={isAiToolbarEnabled}
@@ -168,6 +171,7 @@ export function PageEditor({
           />
           <PageLinkModal {...controller.linkModal} />
           <PageImageModal {...controller.imageModal} />
+          <IframeModal {...controller.iframeModal} />
           <PagePickerModal {...controller.pagePicker} />
           <TemplateVariableModal {...controller.templateVariableModal} />
           <WikiTablePickerModal {...controller.tablePicker} />

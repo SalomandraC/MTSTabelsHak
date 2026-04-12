@@ -271,6 +271,19 @@ export function PluginsModal({
                             }}
                           />
                         ) : null}
+
+                        {/* iframe-embed sub-feature checkboxes */}
+                        {item.id === 'iframe-embed' && item.enabled && item.settings ? (
+                          <CanvasSettingsCheckboxes
+                            pluginId={item.id}
+                            settings={item.settings}
+                            isPending={isPending}
+                            onToggle={(key) => {
+                              const next = { ...item.settings, [key]: !item.settings?.[key] };
+                              onToggleSettings(item.id, next);
+                            }}
+                          />
+                        ) : null}
                         <div className="mt-4 flex flex-wrap gap-2 text-xs">
                           <span className="rounded-full border border-editor-border-subtle bg-white px-2.5 py-1 font-semibold text-editor-text-secondary">
                             {getCategoryLabel(item.category)}

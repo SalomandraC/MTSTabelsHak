@@ -167,6 +167,9 @@ export function usePageEditorController({
   const [linkModalPosition, setLinkModalPosition] = useState<ModalPosition>({ top: 80, left: 80 });
 
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+
+  const [isIframeModalOpen, setIsIframeModalOpen] = useState(false);
+  const [iframeUrl, setIframeUrl] = useState('');
   const [imageErrorMessage, setImageErrorMessage] = useState('');
   const [imageFileName, setImageFileName] = useState('');
   const [imageFileSizeLabel, setImageFileSizeLabel] = useState('');
@@ -354,6 +357,16 @@ export function usePageEditorController({
     setImageFileName('');
     setImageFileSizeLabel('');
     setImagePreviewSrc('');
+  }, []);
+
+  const openIframeModal = () => {
+    setIframeUrl('');
+    setIsIframeModalOpen(true);
+  };
+
+  const closeIframeModal = useCallback(() => {
+    setIsIframeModalOpen(false);
+    setIframeUrl('');
   }, []);
 
   const getCurrentDocumentStateValue = useCallback(() => {
@@ -693,6 +706,17 @@ export function usePageEditorController({
     closeImageModal();
   };
 
+  const handleConfirmIframe = () => {
+    if (!editor || !iframeUrl.trim()) return;
+
+    const normalizedUrl = iframeUrl.trim().startsWith('http')
+      ? iframeUrl.trim()
+      : `https://${iframeUrl.trim()}`;
+
+    editor.chain().focus().setIframe({ src: normalizedUrl }).run();
+    closeIframeModal();
+  };
+
   const openTemplateVariableModal = (defaultLabel = '', defaultDescription = '') => {
     setTemplateVariableLabel(defaultLabel);
     setTemplateVariableDescription(defaultDescription);
@@ -957,6 +981,7 @@ export function usePageEditorController({
     applySlashItem,
     openLinkModal,
     openImageModal,
+    openIframeModal,
     pagePicker: {
       isOpen: isPagePickerOpen,
       spaceId,
@@ -994,6 +1019,13 @@ export function usePageEditorController({
       onClose: closeImageModal,
       onFileSelect: handleSelectImageFile,
       onConfirm: handleConfirmImageInsert,
+    },
+    iframeModal: {
+      isOpen: isIframeModalOpen,
+      url: iframeUrl,
+      onUrlChange: setIframeUrl,
+      onSubmit: handleConfirmIframe,
+      onClose: closeIframeModal,
     },
     templateVariableModal: {
       isOpen: isTemplateVariableModalOpen,
