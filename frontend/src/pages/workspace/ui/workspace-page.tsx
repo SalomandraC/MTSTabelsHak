@@ -1429,7 +1429,7 @@ export function WorkspacePage() {
           <button
             type="button"
             onClick={leftSidebar.collapse}
-            className="absolute -right-4 top-24 z-400 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
+            className="absolute -right-4 top-24 z-30 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
             aria-label="Скрыть левое меню"
             title="Скрыть левое меню"
           >
@@ -1451,7 +1451,7 @@ export function WorkspacePage() {
           <button
             type="button"
             onClick={leftSidebar.expand}
-            className="absolute left-3 top-24 z-40 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
+            className="absolute left-3 top-[136px] z-40 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
             aria-label="Показать левое меню"
             title="Показать левое меню"
           >
@@ -1462,7 +1462,7 @@ export function WorkspacePage() {
           <button
             type="button"
             onClick={rightSidebar.expand}
-            className="absolute right-3 top-24 z-40 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
+            className="absolute right-3 top-[136px] z-40 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
             aria-label="Показать правое меню"
             title="Показать правое меню"
           >
@@ -1513,7 +1513,7 @@ export function WorkspacePage() {
           <button
             type="button"
             onClick={rightSidebar.collapse}
-            className="absolute -left-4 top-24 z-40 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
+            className="absolute -left-4 top-24 z-30 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
             aria-label="Скрыть правое меню"
             title="Скрыть правое меню"
           >
