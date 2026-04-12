@@ -554,7 +554,7 @@ export function usePageEditorController({
         item.keywords.some((keyword) => keyword.toLowerCase().includes(normalized))
       );
     });
-  }, [isAiSlashEnabled, slashState.query]);
+  }, [isAiSlashEnabled, slashState.query, slashItems]);
 
   const filteredItemsRef = useRef(filteredItems);
 
