@@ -19,6 +19,7 @@ import { PageEditorToolbar } from './page-editor-toolbar';
 import { PagePickerModal } from './page-picker-modal';
 import { TemplateVariableModal } from './template-variable-modal';
 import { IframeModal } from './iframe-modal';
+import { getPageNavigationSettings } from '../../plugins/model/plugin-registry';
 
 type PageEditorProps = {
   spaceId: string;
@@ -260,7 +261,7 @@ function LivePageEditor({
   commentCount = 0,
   historyPreview = null,
 }: Omit<PageEditorProps, 'isLoading'> & { page: WikiPage }) {
-  const { isEditorSlotEnabled, isAiAssistantFeatureEnabled, isPluginEnabled } = usePlugins();
+  const { items: plugins, isEditorSlotEnabled, isAiAssistantFeatureEnabled, isPluginEnabled } = usePlugins();
   const canEdit = page.access?.capabilities.canEdit ?? true;
   const canComment = page.access?.capabilities.canComment ?? true;
   const canUseAi = page.access?.capabilities.canUseAi ?? true;
@@ -272,6 +273,8 @@ function LivePageEditor({
   const isAiGhostEnabled = isAiAssistantFeatureEnabled('ghost_text') && canUseAi;
   const isAiInlineChatEnabled = isAiAssistantFeatureEnabled('inline_chat') && canUseAi;
   const isPageNavigationEnabled = isPluginEnabled('page-navigation');
+  const pageNavigationSettings = getPageNavigationSettings(plugins);
+  const isPageNavigationAutoMarkupEnabled = isPageNavigationEnabled && pageNavigationSettings['auto-markup'] !== false;
   const [copilotAnchor, setCopilotAnchor] = useState<CopilotAnchor | null>(null);
   const isCopilotOpen = Boolean(copilotAnchor);
   const editorSurfaceRef = useRef<HTMLDivElement | null>(null);
@@ -458,6 +461,7 @@ function LivePageEditor({
               pageId={page.id}
               pageTitle={controller.title}
               isPageNavigationEnabled={isPageNavigationEnabled}
+              isPageNavigationAutoMarkupEnabled={isPageNavigationAutoMarkupEnabled}
               onClose={() => setCopilotAnchor(null)}
             />
           )}

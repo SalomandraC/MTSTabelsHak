@@ -1961,7 +1961,10 @@ export function WorkspacePage() {
           <>
             <button
               type="button"
-              onClick={rightSidebar.expand}
+              onClick={() => {
+                setRightPanelMode('links');
+                rightSidebar.expand();
+              }}
               className="absolute right-3 top-[136px] z-40 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
               aria-label="Показать правое меню"
               title="Показать правое меню"
@@ -2030,12 +2033,28 @@ export function WorkspacePage() {
           <button
             type="button"
             onClick={rightSidebar.collapse}
-            className="absolute -left-4 top-24 z-30 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
+            className="absolute -left-4 top-[136px] z-30 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
             aria-label="Скрыть правое меню"
             title="Скрыть правое меню"
           >
             <ChevronRight size={16} strokeWidth={2.2} />
           </button>
+          {isNavigationEnabled ? (
+            <button
+              type="button"
+              onClick={() => setRightPanelMode('navigation')}
+              className={[
+                'absolute -left-4 top-[176px] z-30 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40',
+                rightPanelMode === 'navigation'
+                  ? 'border-[#d8e2ff] bg-[#eef4ff] text-[#3058b7]'
+                  : 'border-editor-border-subtle bg-white text-editor-text-primary hover:bg-editor-bg-control',
+              ].join(' ')}
+              aria-label="Показать навигацию по заголовкам"
+              title="Навигация по заголовкам"
+            >
+              <List size={16} strokeWidth={2.2} />
+            </button>
+          ) : null}
 
           {isCommentsEnabled && rightPanelMode === 'comments' ? (
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -2108,16 +2127,6 @@ export function WorkspacePage() {
                       >
                         <History size={14} />
                         Машина времени
-                      </button>
-                    ) : null}
-                    {isNavigationEnabled ? (
-                      <button
-                        type="button"
-                        onClick={() => setRightPanelMode('navigation')}
-                        className="flex h-8 flex-1 items-center justify-center gap-1 rounded-[5px] text-xs font-semibold text-[#505762] hover:bg-white"
-                      >
-                        <List size={14} />
-                        Навигация
                       </button>
                     ) : null}
                   </div>

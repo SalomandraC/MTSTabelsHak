@@ -56,7 +56,8 @@ export function isWorkspaceSidebarSlotEnabled(items: PluginCatalogItem[], slot: 
  * Keys: 'toolbar', 'floating-toolbar', 'slash-menu'
  */
 export function getCanvasDrawSettings(items: PluginCatalogItem[]): Record<string, boolean> {
-  const plugin = items.find((item) => item.id === 'canvas-draw');
+  const safeItems = items ?? [];
+  const plugin = safeItems.find((item) => item.id === 'canvas-draw');
   if (!plugin?.enabled) return {};
   return plugin.settings ?? {
     toolbar: true,
@@ -70,12 +71,26 @@ export function getCanvasDrawSettings(items: PluginCatalogItem[]): Record<string
  * Keys: 'toolbar', 'floating-toolbar', 'slash-menu'
  */
 export function getIframeEmbedSettings(items: PluginCatalogItem[]): Record<string, boolean> {
-  const plugin = items.find((item) => item.id === 'iframe-embed');
+  const safeItems = items ?? [];
+  const plugin = safeItems.find((item) => item.id === 'iframe-embed');
   if (!plugin?.enabled) return {};
   return plugin.settings ?? {
     toolbar: true,
     'floating-toolbar': true,
     'slash-menu': true,
+  };
+}
+
+/**
+ * Return settings map for the page-navigation plugin, or defaults if not found.
+ * Keys: 'auto-markup'
+ */
+export function getPageNavigationSettings(items: PluginCatalogItem[]): Record<string, boolean> {
+  const safeItems = items ?? [];
+  const plugin = safeItems.find((item) => item.id === 'page-navigation');
+  if (!plugin?.enabled) return {};
+  return plugin.settings ?? {
+    'auto-markup': true,
   };
 }
 

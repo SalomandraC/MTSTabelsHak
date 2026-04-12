@@ -1,8 +1,11 @@
 import type { Editor } from '@tiptap/core';
-import { ChevronRight, List, X } from 'lucide-react';
+import { ChevronRight, List, Sparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
+import { usePlugins } from '../../model/plugins-context';
 import { collectNavigationOutline, type NavigationOutlineNode } from '../model/navigation-outline';
+import { getPageNavigationSettings } from '../../model/plugin-registry';
+import { runAutomaticMarkup } from '../model/auto-markup';
 
 type NavigationSidebarProps = {
   editor: Editor | null;
@@ -74,6 +77,9 @@ function NavigationItem({
 
 export function NavigationSidebar({ editor, enabled, onClose }: NavigationSidebarProps) {
   const [version, setVersion] = useState(0);
+  const [isAutoMarkupRunning, setIsAutoMarkupRunning] = useState(false);
+  const [autoMarkupStatus, setAutoMarkupStatus] = useState('');
+  const { items: plugins } = usePlugins();
 
   useEffect(() => {
     if (!editor) {
@@ -91,6 +97,8 @@ export function NavigationSidebar({ editor, enabled, onClose }: NavigationSideba
   }, [editor]);
 
   const outline = useMemo(() => collectNavigationOutline(editor), [editor, version]);
+  const pageNavigationSettings = getPageNavigationSettings(plugins);
+  const isAutoMarkupEnabled = pageNavigationSettings['auto-markup'] !== false;
   const activePos = useMemo(() => {
     if (!editor) {
       return null;
@@ -124,6 +132,24 @@ export function NavigationSidebar({ editor, enabled, onClose }: NavigationSideba
     return null;
   }
 
+  const handleAutomaticMarkup = async () => {
+    if (!editor || isAutoMarkupRunning) {
+      return;
+    }
+
+    setIsAutoMarkupRunning(true);
+    setAutoMarkupStatus('Строю структуру...');
+
+    try {
+      const insertedCount = await runAutomaticMarkup(editor);
+      setAutoMarkupStatus(insertedCount > 0 ? `Вставлено заголовков: ${insertedCount}` : 'Не нашел подходящих мест для разметки');
+    } catch (error) {
+      setAutoMarkupStatus(error instanceof Error ? error.message : 'Не удалось выполнить автоматическую разметку');
+    } finally {
+      setIsAutoMarkupRunning(false);
+    }
+  };
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white text-editor-text-primary">
       <header className="border-b border-editor-border-subtle px-6 py-5">
@@ -145,6 +171,18 @@ export function NavigationSidebar({ editor, enabled, onClose }: NavigationSideba
             <X size={16} />
           </button>
         </div>
+        {isAutoMarkupEnabled ? (
+          <button
+            type="button"
+            onClick={() => void handleAutomaticMarkup()}
+            disabled={!editor || isAutoMarkupRunning}
+            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#d8e2ff] bg-[#eef4ff] px-3 py-2.5 text-sm font-semibold text-[#25468d] transition-colors hover:bg-[#e2ebff] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Sparkles size={15} strokeWidth={2.2} />
+            {isAutoMarkupRunning ? 'Автоматическая разметка...' : 'Автоматическая разметка'}
+          </button>
+        ) : null}
+        {autoMarkupStatus ? <p className="mt-3 text-xs leading-5 text-[#5f3647]">{autoMarkupStatus}</p> : null}
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">

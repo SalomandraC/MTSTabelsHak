@@ -410,6 +410,7 @@ export function AiInlineCopilot({
   pageId,
   pageTitle,
   isPageNavigationEnabled,
+  isPageNavigationAutoMarkupEnabled,
   onClose,
 }: {
   enabled: boolean;
@@ -420,6 +421,7 @@ export function AiInlineCopilot({
   pageId: string | null;
   pageTitle?: string;
   isPageNavigationEnabled: boolean;
+  isPageNavigationAutoMarkupEnabled: boolean;
   onClose: () => void;
 }) {
   const [prompt, setPrompt] = useState('');
@@ -1203,7 +1205,7 @@ export function AiInlineCopilot({
           Анализ
         </button>
 
-        {isPageNavigationEnabled ? (
+        {isPageNavigationEnabled && isPageNavigationAutoMarkupEnabled ? (
           <button
             type="button"
             className="rounded-md border border-editor-border-subtle bg-white px-2 py-1 text-xs hover:bg-editor-bg-control disabled:opacity-50"
