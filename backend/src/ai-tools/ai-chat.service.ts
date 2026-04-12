@@ -39,6 +39,8 @@ export class AiChatService {
         break;
       }
 
+      console.log('AI TOOL_CALLS ROUND:', round, toolCalls.map((call) => call.function.name));
+
       conversation.push({
         role: 'assistant',
         content: assistantMessage?.content ?? '',
@@ -49,6 +51,8 @@ export class AiChatService {
         const toolName = toolCall.function.name;
         const args = this.parseToolArguments(toolCall.function.arguments);
         usedTools.push({ toolName, args });
+
+        console.log('EXECUTE TOOL FROM CHAT:', toolName, args);
 
         const toolResult = await this.executeTool(toolName, args, user, {
           pageId: input.pageId,

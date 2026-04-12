@@ -89,6 +89,7 @@ export class AiAssistantService {
           'Allowed toolName values: create_records, add_table_column.',
           'For create_records args must include datasheetId, fieldKey:"id", records:[{fields:{...}}].',
           'For add_table_column args must include spaceId, datasheetId, name, type, optional property.',
+          'If tableSnapshot has missing or empty records, assume caller will fetch data with get_records before execution and still produce a valid command.',
           'Never ask clarifying questions. Use table snapshot and user prompt directly.',
         ].join(' '),
       },
@@ -129,7 +130,7 @@ export class AiAssistantService {
     const summary = String(parsed.summary ?? 'Команда подготовлена');
 
     if (toolName === 'create_records') {
-      return {
+      const command = {
         toolName,
         args: {
           datasheetId: String(args.datasheetId ?? input.datasheetId),
@@ -138,9 +139,12 @@ export class AiAssistantService {
         },
         summary,
       };
+
+      console.log('SYNC COMMAND GENERATED:', command);
+      return command;
     }
 
-    return {
+    const command: { toolName: 'add_table_column'; args: Record<string, unknown>; summary: string } = {
       toolName: 'add_table_column',
       args: {
         spaceId: String(args.spaceId ?? input.spaceId),
@@ -151,6 +155,9 @@ export class AiAssistantService {
       },
       summary,
     };
+
+    console.log('SYNC COMMAND GENERATED:', command);
+    return command;
   }
 
   buildCompletionMessages(currentText: string, context: PageContextInput = {}): AiChatMessage[] {

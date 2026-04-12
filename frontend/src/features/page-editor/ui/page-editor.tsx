@@ -1,6 +1,6 @@
 import type { Editor } from '@tiptap/core';
 import { EditorContent } from '@tiptap/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { SlashMenu } from '../../slash-menu';
 import { AiInlineCopilot } from '../../plugins/ai-assistant';
@@ -69,28 +69,20 @@ function getTableSnapshot(datasheetId?: string | null) {
   } | null;
 }
 
-function getTableContextByCoords(editor: Editor | null, x: number, y: number): { datasheetId?: string | null; viewId?: string | null } | null {
-  if (!editor) {
+function getTableContextByDomTarget(target: EventTarget | null): { datasheetId?: string | null; viewId?: string | null } | null {
+  if (!(target instanceof HTMLElement)) {
     return null;
   }
 
-  const posAtCoords = editor.view.posAtCoords({ left: x, top: y });
-  if (!posAtCoords?.pos) {
+  const tableElement = target.closest('[data-type="mws-table-embed"]') as HTMLElement | null;
+  if (!tableElement) {
     return null;
   }
 
-  const resolved = editor.state.doc.resolve(posAtCoords.pos);
-  for (let depth = resolved.depth; depth >= 0; depth -= 1) {
-    const node = resolved.node(depth);
-    if (node.type.name === 'mwsTableEmbed') {
-      return {
-        datasheetId: (node.attrs?.datasheetId as string | null | undefined) ?? null,
-        viewId: (node.attrs?.viewId as string | null | undefined) ?? null,
-      };
-    }
-  }
-
-  return null;
+  return {
+    datasheetId: tableElement.dataset.datasheetId ?? null,
+    viewId: tableElement.dataset.viewId ?? null,
+  };
 }
 
 function getTableContextBySelection(editor: Editor | null): { datasheetId?: string | null; viewId?: string | null } | null {
@@ -181,6 +173,7 @@ export function PageEditor({
   const isAiToolbarEnabled = isEditorSlotEnabled('toolbar_bubble');
   const isAiExtensionEnabled = isEditorSlotEnabled('editor_extension');
   const [copilotAnchor, setCopilotAnchor] = useState<CopilotAnchor | null>(null);
+  const editorSurfaceRef = useRef<HTMLDivElement | null>(null);
 
   const controller = usePageEditorController({
     spaceId,
@@ -229,10 +222,11 @@ export function PageEditor({
 
       const coords = controller.editor.view.coordsAtPos(controller.editor.state.selection.from);
       const tableContext = getTableContextBySelection(controller.editor);
+      const surfaceRect = editorSurfaceRef.current?.getBoundingClientRect();
 
       setCopilotAnchor({
-        x: coords.left,
-        y: coords.bottom,
+        x: coords.left - (surfaceRect?.left ?? 0),
+        y: coords.bottom - (surfaceRect?.top ?? 0),
         target: tableContext?.datasheetId ? 'table' : 'text',
         datasheetId: tableContext?.datasheetId,
         viewId: tableContext?.viewId,
@@ -285,6 +279,7 @@ export function PageEditor({
         />
 
         <div
+          ref={editorSurfaceRef}
           className="relative mx-auto w-full max-w-4xl flex-1 px-2 pb-4 pt-1 sm:px-6 sm:pb-10 sm:pt-5"
           data-page-editor-surface
           onContextMenu={(event) => {
@@ -293,11 +288,12 @@ export function PageEditor({
             }
 
             event.preventDefault();
-            const tableContext = getTableContextByCoords(controller.editor, event.clientX, event.clientY);
+            const tableContext = getTableContextByDomTarget(event.target) ?? getTableContextBySelection(controller.editor);
+            const surfaceRect = editorSurfaceRef.current?.getBoundingClientRect();
 
             setCopilotAnchor({
-              x: event.clientX,
-              y: event.clientY,
+              x: event.clientX - (surfaceRect?.left ?? 0),
+              y: event.clientY - (surfaceRect?.top ?? 0),
               target: tableContext?.datasheetId ? 'table' : 'text',
               datasheetId: tableContext?.datasheetId,
               viewId: tableContext?.viewId,

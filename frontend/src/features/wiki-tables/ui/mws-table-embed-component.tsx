@@ -480,6 +480,8 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
           : 'border-editor-border-subtle'
       ].join(' ')}
       data-type="mws-table-embed"
+      data-datasheet-id={controller.attrs.datasheetId ?? undefined}
+      data-view-id={controller.attrs.viewId ?? undefined}
       contentEditable={false}
       onKeyDownCapture={(event: React.KeyboardEvent<HTMLDivElement>) => {
         if (
