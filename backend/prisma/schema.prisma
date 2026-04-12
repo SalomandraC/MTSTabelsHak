@@ -56,6 +56,11 @@ enum CommentThreadStatus {
   resolved
 }
 
+enum CommentResolveReason {
+  manual
+  anchor_removed_by_restore
+}
+
 model WikiNode {
   id          String       @id @default(uuid())
   spaceId     String       @map("space_id")
@@ -222,6 +227,7 @@ model PageCommentThread {
   createdByName String              @map("created_by_name")
   resolvedBy    String?             @map("resolved_by")
   resolvedAt    DateTime?           @map("resolved_at")
+  resolvedReason CommentResolveReason? @map("resolved_reason")
   createdAt     DateTime            @default(now()) @map("created_at")
   updatedAt     DateTime            @updatedAt @map("updated_at")
   page          WikiNode            @relation(fields: [pageId], references: [id], onDelete: Cascade)

@@ -12,6 +12,7 @@ import {
 } from 'src/common/utils';
 import { DOCUMENT_MAINTENANCE_QUEUE, REINDEX_PAGE_JOB } from 'src/infra/queue/queue.constants';
 import { PrismaService } from 'src/infra/prisma/prisma.service';
+import { CommentsService } from 'src/comments/comments.service';
 import { DocumentIndexingService } from 'src/links/document-indexing.service';
 
 @Injectable()
@@ -19,6 +20,7 @@ export class CollabPersistenceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly indexingService: DocumentIndexingService,
+    private readonly commentsService: CommentsService,
     @InjectQueue(DOCUMENT_MAINTENANCE_QUEUE) private readonly queue: Queue,
   ) {}
 
@@ -189,7 +191,7 @@ export class CollabPersistenceService {
     });
 
     await this.storeDocument(pageId, ydoc, { queueReindex: false });
-    await this.reindexPage(pageId, value);
+    await this.reindexPage(pageId, value, trigger === 'restore' ? { restoreUser: user } : undefined);
 
     return {
       checkpointId: checkpoint.id,
@@ -198,7 +200,7 @@ export class CollabPersistenceService {
     };
   }
 
-  async reindexPage(pageId: string, snapshotBase64?: string): Promise<void> {
+  async reindexPage(pageId: string, snapshotBase64?: string, options?: { restoreUser?: UserContext }): Promise<void> {
     const ydoc = new Y.Doc();
     const snapshot = snapshotBase64
       ? Buffer.from(snapshotBase64, 'base64')
@@ -211,6 +213,7 @@ export class CollabPersistenceService {
     Y.applyUpdate(ydoc, new Uint8Array(snapshot));
     const pmDoc = yDocToProsemirrorJSON(ydoc, 'default') as Record<string, any>;
     const indexed = this.indexingService.extractFromProsemirrorJson(pmDoc);
+    const plainText = this.indexingService.extractPlainTextFromProsemirrorJson(pmDoc);
     const existingTargetIds = new Set(
       (
         await this.prisma.wikiNode.findMany({
@@ -266,6 +269,10 @@ export class CollabPersistenceService {
         }),
       ),
     ]);
+
+    if (options?.restoreUser) {
+      await this.commentsService.autoResolveMissingAnchorsAfterRestore(pageId, plainText, options.restoreUser);
+    }
   }
 
   private mapTrigger(trigger: string): CheckpointTrigger {

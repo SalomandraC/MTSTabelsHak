@@ -28,6 +28,7 @@ type PageEditorProps = {
   onCheckpoint: () => Promise<void>;
   onEditorChange?: (editor: Editor | null) => void;
   onDocumentStateEncoderChange?: (encoder: (() => string | null) | null) => void;
+  onDocumentStateRestorerChange?: (restorer: ((value: string) => boolean) | null) => void;
   onCreateComment?: (editor: Editor) => void;
   onOpenCommentThread?: (threadId: string) => void;
   onOpenTimeMachine?: () => void;
@@ -119,11 +120,9 @@ function formatHistoryPreviewDate(value: string) {
   }).format(new Date(value));
 }
 
-function ReadOnlyPreviewEditor({
-  page,
+function ReadOnlyPreviewOverlay({
   checkpoint,
 }: {
-  page: WikiPage;
   checkpoint: PageHistoryCheckpoint;
 }) {
   const editor = useEditor({
@@ -156,27 +155,17 @@ function ReadOnlyPreviewEditor({
   }, [checkpoint, editor]);
 
   return (
-    <main className="flex h-full min-h-0 flex-col bg-editor-bg-page px-0 py-0">
-      <section className="flex min-h-0 w-full flex-1 flex-col bg-editor-bg-page">
-        <PageEditorHeader
-          title={page.title}
-          description={`Версия от ${formatHistoryPreviewDate(checkpoint.checkpoint.createdAt)}`}
-          editable={false}
-          saveStatus="Read-only preview"
-          recoveryMessage="Редактирование и синхронизация отключены для сохраненной версии"
-          activeUsers={[]}
-        />
-        <div className="border-b border-editor-border-subtle bg-[#fff7e8] px-4 py-3 text-sm text-[#8a5a00]">
-          Открыт предпросмотр сохраненной версии. Вернитесь к текущей версии, чтобы продолжить редактирование.
-        </div>
-        <div
-          className="relative mx-auto w-full max-w-4xl flex-1 px-2 pb-4 pt-4 sm:px-6 sm:pb-10 sm:pt-5"
-          data-page-editor-surface
-        >
-          <EditorContent editor={editor} />
-        </div>
-      </section>
-    </main>
+    <div className="absolute inset-0 z-20 flex min-h-0 flex-col bg-editor-bg-page">
+      <div className="border-b border-editor-border-subtle bg-[#fff7e8] px-4 py-3 text-sm text-[#8a5a00]">
+        Открыт предпросмотр версии от {formatHistoryPreviewDate(checkpoint.checkpoint.createdAt)}. Живой документ остается подключенным, поэтому восстановление сразу синхронизируется для всех участников.
+      </div>
+      <div
+        className="relative mx-auto w-full max-w-4xl flex-1 px-2 pb-4 pt-4 sm:px-6 sm:pb-10 sm:pt-5"
+        data-page-editor-history-preview
+      >
+        <EditorContent editor={editor} />
+      </div>
+    </div>
   );
 }
 
@@ -211,6 +200,7 @@ export function PageEditor({
   onCheckpoint,
   onEditorChange,
   onDocumentStateEncoderChange,
+  onDocumentStateRestorerChange,
   onCreateComment,
   onOpenCommentThread,
   onOpenTimeMachine,
@@ -234,10 +224,6 @@ export function PageEditor({
     );
   }
 
-  if (historyPreview) {
-    return <ReadOnlyPreviewEditor page={page} checkpoint={historyPreview} />;
-  }
-
   return (
     <LivePageEditor
       spaceId={spaceId}
@@ -246,12 +232,14 @@ export function PageEditor({
       onCheckpoint={onCheckpoint}
       onEditorChange={onEditorChange}
       onDocumentStateEncoderChange={onDocumentStateEncoderChange}
+      onDocumentStateRestorerChange={onDocumentStateRestorerChange}
       onCreateComment={onCreateComment}
       onOpenCommentThread={onOpenCommentThread}
       onOpenTimeMachine={onOpenTimeMachine}
       commentThreads={commentThreads}
       activeCommentThreadId={activeCommentThreadId}
       commentCount={commentCount}
+      historyPreview={historyPreview}
     />
   );
 }
@@ -263,17 +251,22 @@ function LivePageEditor({
   onCheckpoint,
   onEditorChange,
   onDocumentStateEncoderChange,
+  onDocumentStateRestorerChange,
   onCreateComment,
   onOpenCommentThread,
   onOpenTimeMachine,
   commentThreads = [],
   activeCommentThreadId = null,
   commentCount = 0,
-}: Omit<PageEditorProps, 'isLoading' | 'historyPreview'> & { page: WikiPage }) {
+  historyPreview = null,
+}: Omit<PageEditorProps, 'isLoading'> & { page: WikiPage }) {
   const { isEditorSlotEnabled, isAiAssistantFeatureEnabled } = usePlugins();
   const canEdit = page.access?.capabilities.canEdit ?? true;
   const canComment = page.access?.capabilities.canComment ?? true;
   const canUseAi = page.access?.capabilities.canUseAi ?? true;
+  const isHistoryPreviewActive = Boolean(historyPreview);
+  const effectiveCanEdit = canEdit && !isHistoryPreviewActive;
+  const effectiveCanComment = canComment && !isHistoryPreviewActive;
   const isAiSlashEnabled = isEditorSlotEnabled('slash_menu') && canUseAi;
   const isAiToolbarEnabled = isEditorSlotEnabled('toolbar_bubble') && canUseAi;
   const isAiGhostEnabled = isAiAssistantFeatureEnabled('ghost_text') && canUseAi;
@@ -321,6 +314,18 @@ function LivePageEditor({
   }, [controller.getCurrentDocumentStateValue, onDocumentStateEncoderChange]);
 
   useEffect(() => {
+    onDocumentStateRestorerChange?.(controller.applyDocumentStateValue);
+
+    return () => {
+      onDocumentStateRestorerChange?.(null);
+    };
+  }, [controller.applyDocumentStateValue, onDocumentStateRestorerChange]);
+
+  useEffect(() => {
+    controller.editor?.setEditable(effectiveCanEdit);
+  }, [controller.editor, effectiveCanEdit]);
+
+  useEffect(() => {
     if (!isAiInlineChatEnabled) {
       return;
     }
@@ -364,7 +369,7 @@ function LivePageEditor({
         <PageEditorHeader
           title={controller.title}
           description={controller.description}
-          editable={canEdit}
+          editable={effectiveCanEdit}
           onSave={controller.handleSaveMeta}
           connectionStatus={controller.connectionStatus}
           saveStatus={controller.saveStatus}
@@ -373,11 +378,11 @@ function LivePageEditor({
         />
         <PageEditorToolbar
           editor={controller.editor}
-          canEdit={canEdit}
+          canEdit={effectiveCanEdit}
           onOpenLinkModal={controller.openLinkModal}
           onOpenImageModal={controller.openImageModal}
           onOpenIframeModal={controller.openIframeModal}
-          onCreateComment={canComment ? onCreateComment : undefined}
+          onCreateComment={effectiveCanComment ? onCreateComment : undefined}
           onOpenTimeMachine={canEdit ? onOpenTimeMachine : undefined}
           commentCount={commentCount}
         />
@@ -416,15 +421,15 @@ function LivePageEditor({
           {controller.editor && (
             <FloatingToolbar
               editor={controller.editor}
-              canEdit={canEdit}
+              canEdit={effectiveCanEdit}
               onOpenLinkModal={() => controller.openLinkModal()}
               onOpenIframeModal={controller.openIframeModal}
-              onCreateComment={canComment ? onCreateComment : undefined}
+              onCreateComment={effectiveCanComment ? onCreateComment : undefined}
               pageTitle={controller.title}
               isAiTransformEnabled={isAiToolbarEnabled}
             />
           )}
-          {canEdit ? (
+          {effectiveCanEdit ? (
             <SlashMenu
               isOpen={controller.slashState.isOpen}
               items={controller.filteredItems}
@@ -440,16 +445,20 @@ function LivePageEditor({
           <PagePickerModal {...controller.pagePicker} />
           <TemplateVariableModal {...controller.templateVariableModal} />
           <WikiTablePickerModal {...controller.tablePicker} />
-          <AiInlineCopilot
-            enabled={isAiInlineChatEnabled}
-            isOpen={isCopilotOpen}
-            anchor={copilotAnchor}
-            editor={controller.editor}
-            spaceId={spaceId}
-            pageId={page.id}
-            pageTitle={controller.title}
-            onClose={() => setCopilotAnchor(null)}
-          />
+          {historyPreview ? (
+            <ReadOnlyPreviewOverlay checkpoint={historyPreview} />
+          ) : (
+            <AiInlineCopilot
+              enabled={isAiInlineChatEnabled}
+              isOpen={isCopilotOpen}
+              anchor={copilotAnchor}
+              editor={controller.editor}
+              spaceId={spaceId}
+              pageId={page.id}
+              pageTitle={controller.title}
+              onClose={() => setCopilotAnchor(null)}
+            />
+          )}
         </div>
       </section>
     </main>

@@ -76,6 +76,7 @@ describe('PageEditorToolbar', () => {
         editor={createEditorMock()}
         canEdit={false}
         onOpenLinkModal={vi.fn()}
+        onOpenIframeModal={vi.fn()}
         onOpenImageModal={vi.fn()}
         onCreateComment={onCreateComment}
       />,

@@ -79,6 +79,7 @@ describe('FloatingToolbar', () => {
         editor={editor}
         canEdit={false}
         onOpenLinkModal={vi.fn()}
+        onOpenIframeModal={vi.fn()}
         onCreateComment={onCreateComment}
         isAiTransformEnabled
       />,

@@ -294,6 +294,7 @@ export type PresenceUser = {
 };
 
 export type CommentThreadStatus = 'open' | 'resolved';
+export type CommentResolveReason = 'manual' | 'anchor_removed_by_restore';
 
 export type PageCommentMessage = {
   id: string;
@@ -314,6 +315,7 @@ export type PageCommentThread = {
   createdByName: string;
   resolvedBy: string | null;
   resolvedAt: string | null;
+  resolvedReason: CommentResolveReason | null;
   createdAt: string;
   updatedAt: string;
   messages: PageCommentMessage[];
