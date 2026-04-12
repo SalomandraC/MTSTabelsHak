@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Pencil,
   Plus,
+  List,
   Search,
   Sparkles,
   Trash2,
@@ -26,7 +27,7 @@ import { usePageHistory } from '../../../features/page-editor/model/use-page-his
 import { CommentsPanel } from '../../../features/page-editor/ui/comments-panel';
 import { TimeMachinePanel } from '../../../features/page-editor/ui/time-machine-panel';
 import { AiChatSidebar } from '../../../features/plugins/ai-assistant';
-import { PluginsModal, usePlugins } from '../../../features/plugins';
+import { NavigationSidebar, PluginsModal, usePlugins } from '../../../features/plugins';
 import { ScrollArea } from '../../../shared/ui';
 import {
   DEFAULT_WIKILIVE_SPACE_ID,
@@ -154,7 +155,7 @@ function WorkspaceTreeSkeleton() {
   );
 }
 
-type RightPanelMode = 'links' | 'comments' | 'timeMachine';
+type RightPanelMode = 'links' | 'comments' | 'timeMachine' | 'navigation';
 
 function BlankAreaMenuItem({
   icon,
@@ -736,6 +737,7 @@ export function WorkspacePage() {
   const isDocumentGraphEnabled = isWorkspaceSidebarEnabled('document-graph');
   const isCommentsEnabled = isPluginEnabled('comments');
   const isTimeMachineEnabled = isPluginEnabled('time-machine');
+  const isNavigationEnabled = isWorkspaceSidebarEnabled('navigation');
   const isAiSidebarEnabled = isWorkspaceSidebarEnabled('sidebar');
   const comments = usePageComments({
     pageId: activePageId,
@@ -865,6 +867,12 @@ export function WorkspacePage() {
       setHistoryPreviewCheckpoint(null);
     }
   }, [rightPanelMode]);
+
+  useEffect(() => {
+    if (!isNavigationEnabled && rightPanelMode === 'navigation') {
+      setRightPanelMode('links');
+    }
+  }, [isNavigationEnabled, rightPanelMode]);
 
   useEffect(() => {
     setHistoryPreviewCheckpoint(null);
@@ -1950,15 +1958,31 @@ export function WorkspacePage() {
           </button>
         ) : null}
         {rightSidebar.isCollapsed ? (
-          <button
-            type="button"
-            onClick={rightSidebar.expand}
-            className="absolute right-3 top-[136px] z-40 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
-            aria-label="Показать правое меню"
-            title="Показать правое меню"
-          >
-            <ChevronLeft size={16} strokeWidth={2.2} />
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={rightSidebar.expand}
+              className="absolute right-3 top-[136px] z-40 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
+              aria-label="Показать правое меню"
+              title="Показать правое меню"
+            >
+              <ChevronLeft size={16} strokeWidth={2.2} />
+            </button>
+            {isNavigationEnabled ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setRightPanelMode('navigation');
+                  rightSidebar.expand();
+                }}
+                className="absolute right-3 top-[176px] z-40 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
+                aria-label="Показать навигацию по заголовкам"
+                title="Навигация по заголовкам"
+              >
+                <List size={16} strokeWidth={2.2} />
+              </button>
+            ) : null}
+          </>
         ) : null}
         {errorMessage ? (
           <div className="border-b border-[#ffd2d9] bg-[#fff1f3] px-4 py-2 text-sm text-[#b00025]">{errorMessage}</div>
@@ -2050,6 +2074,14 @@ export function WorkspacePage() {
                 onClose={() => setRightPanelMode('links')}
               />
             </div>
+          ) : isNavigationEnabled && rightPanelMode === 'navigation' ? (
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+              <NavigationSidebar
+                editor={activeEditor}
+                enabled={isNavigationEnabled}
+                onClose={() => setRightPanelMode('links')}
+              />
+            </div>
           ) : (
             <>
               <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -2076,6 +2108,16 @@ export function WorkspacePage() {
                       >
                         <History size={14} />
                         Машина времени
+                      </button>
+                    ) : null}
+                    {isNavigationEnabled ? (
+                      <button
+                        type="button"
+                        onClick={() => setRightPanelMode('navigation')}
+                        className="flex h-8 flex-1 items-center justify-center gap-1 rounded-[5px] text-xs font-semibold text-[#505762] hover:bg-white"
+                      >
+                        <List size={14} />
+                        Навигация
                       </button>
                     ) : null}
                   </div>

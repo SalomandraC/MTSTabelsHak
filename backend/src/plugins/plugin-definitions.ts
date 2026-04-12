@@ -118,6 +118,16 @@ export const pluginDefinitions: PluginDefinition[] = [
     placement: ['Правая панель'],
   },
   {
+    id: 'page-navigation',
+    title: 'Навигация и структура',
+    description: 'Автоматическое оглавление документа и умная нумерация заголовков',
+    category: 'insights',
+    kind: 'optional',
+    defaultEnabled: true,
+    implemented: true,
+    placement: ['Правая панель', 'Редактор'],
+  },
+  {
     id: 'ai-assistant',
     title: 'ИИ-ассистент',
     description: 'Контекстные ИИ-действия в sidebar и редакторе: чат, генерация, трансформации и автодополнение.',

@@ -77,9 +77,14 @@ describe('PageEditor', () => {
     vi.clearAllMocks();
     usePluginsSpy.mockReturnValue({
       isEditorSlotEnabled: () => true,
+      isAiAssistantFeatureEnabled: () => false,
+      isPluginEnabled: () => false,
     });
     usePageEditorControllerSpy.mockReturnValue({
-      editor: { isMockEditor: true },
+      editor: {
+        isMockEditor: true,
+        setEditable: vi.fn(),
+      },
       title: 'Документ',
       description: 'Описание',
       saveStatus: 'Документ подключен',
@@ -151,7 +156,7 @@ describe('PageEditor', () => {
       expect.objectContaining({
         canEdit: false,
         isAiSlashEnabled: false,
-        isAiEditorExtensionEnabled: false,
+        isAiGhostEnabled: false,
       }),
     );
     expect(toolbarSpy).toHaveBeenCalledWith(
@@ -234,9 +239,15 @@ describe('PageEditor', () => {
       />,
     );
 
-    expect(usePageEditorControllerSpy).not.toHaveBeenCalled();
-    expect(screen.getByText(/предпросмотр сохраненной версии/i)).toBeInTheDocument();
-    expect(screen.queryByTestId('page-editor-toolbar')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('floating-toolbar')).not.toBeInTheDocument();
+    expect(usePageEditorControllerSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        canEdit: true,
+        isAiSlashEnabled: true,
+        isAiGhostEnabled: false,
+      }),
+    );
+    expect(screen.getByText(/Открыт предпросмотр версии/i)).toBeInTheDocument();
+    expect(screen.getByTestId('page-editor-toolbar')).toBeInTheDocument();
+    expect(screen.getByTestId('floating-toolbar')).toBeInTheDocument();
   });
 });

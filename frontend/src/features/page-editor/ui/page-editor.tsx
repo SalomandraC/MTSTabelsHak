@@ -260,7 +260,7 @@ function LivePageEditor({
   commentCount = 0,
   historyPreview = null,
 }: Omit<PageEditorProps, 'isLoading'> & { page: WikiPage }) {
-  const { isEditorSlotEnabled, isAiAssistantFeatureEnabled } = usePlugins();
+  const { isEditorSlotEnabled, isAiAssistantFeatureEnabled, isPluginEnabled } = usePlugins();
   const canEdit = page.access?.capabilities.canEdit ?? true;
   const canComment = page.access?.capabilities.canComment ?? true;
   const canUseAi = page.access?.capabilities.canUseAi ?? true;
@@ -271,6 +271,7 @@ function LivePageEditor({
   const isAiToolbarEnabled = isEditorSlotEnabled('toolbar_bubble') && canUseAi;
   const isAiGhostEnabled = isAiAssistantFeatureEnabled('ghost_text') && canUseAi;
   const isAiInlineChatEnabled = isAiAssistantFeatureEnabled('inline_chat') && canUseAi;
+  const isPageNavigationEnabled = isPluginEnabled('page-navigation');
   const [copilotAnchor, setCopilotAnchor] = useState<CopilotAnchor | null>(null);
   const isCopilotOpen = Boolean(copilotAnchor);
   const editorSurfaceRef = useRef<HTMLDivElement | null>(null);
@@ -456,6 +457,7 @@ function LivePageEditor({
               spaceId={spaceId}
               pageId={page.id}
               pageTitle={controller.title}
+              isPageNavigationEnabled={isPageNavigationEnabled}
               onClose={() => setCopilotAnchor(null)}
             />
           )}

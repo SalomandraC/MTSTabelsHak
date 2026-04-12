@@ -139,7 +139,7 @@ function getStoredTableSnapshot(datasheetId?: string | null): TableSnapshot | nu
 }
 
 function collectTableOptions(editor: Editor | null): ContextOption[] {
-  if (!editor) {
+  if (!editor?.state?.doc?.descendants) {
     return [];
   }
 
@@ -269,6 +269,42 @@ function buildFieldLookup(fields: MwsField[]) {
   return { byId, byName };
 }
 
+function parseStructuredResponse(answer: string): string | Record<string, unknown> {
+  const trimmed = answer.trim();
+
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+    return answer;
+  }
+
+  try {
+    return JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    return answer;
+  }
+}
+
+function extractContentPayload(value: string | Record<string, unknown>): string | Record<string, unknown> {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  const candidateKeys = ['markdown', 'content', 'document', 'json'];
+
+  for (const key of candidateKeys) {
+    const candidate = value[key as keyof typeof value];
+
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate;
+    }
+
+    if (candidate && typeof candidate === 'object') {
+      return candidate as Record<string, unknown>;
+    }
+  }
+
+  return value;
+}
+
 export function AiInlineCopilot({
   enabled,
   isOpen,
@@ -277,6 +313,7 @@ export function AiInlineCopilot({
   spaceId,
   pageId,
   pageTitle,
+  isPageNavigationEnabled,
   onClose,
 }: {
   enabled: boolean;
@@ -286,6 +323,7 @@ export function AiInlineCopilot({
   spaceId: string;
   pageId: string | null;
   pageTitle?: string;
+  isPageNavigationEnabled: boolean;
   onClose: () => void;
 }) {
   const [prompt, setPrompt] = useState('');
@@ -900,6 +938,31 @@ export function AiInlineCopilot({
     });
   };
 
+  const handleStructureDocument = async () => {
+    await withBusy(async () => {
+      const markdown = getEditorMarkdown(editor);
+      const response = await wikiliveApi.aiChat({
+        question: [
+          'Проанализируй текущий текст документа и расставь логические заголовки (H1, H2, H3), чтобы сделать текст структурированным и читаемым.',
+          'Верни обновленный Markdown или JSON структуру.',
+          `Текущий документ: ${markdown}`,
+        ].join('\n'),
+        pageId: pageId ?? undefined,
+        pageTitle,
+        pageSnapshot: { markdown },
+      });
+
+      handleAiChatResponse(response);
+
+      if (editor) {
+        const structured = extractContentPayload(parseStructuredResponse(response.answer));
+        editor.commands.setContent(structured as never);
+      }
+
+      setOutput(response.answer);
+    });
+  };
+
   return (
     <section
       className="absolute z-[80] w-[560px] max-w-[calc(100%-16px)] rounded-xl border border-editor-border-subtle bg-white p-3 shadow-2xl"
@@ -993,6 +1056,17 @@ export function AiInlineCopilot({
         >
           Анализ
         </button>
+
+        {isPageNavigationEnabled ? (
+          <button
+            type="button"
+            className="rounded-md border border-editor-border-subtle bg-white px-2 py-1 text-xs hover:bg-editor-bg-control disabled:opacity-50"
+            onClick={() => void handleStructureDocument()}
+            disabled={isBusy}
+          >
+            Структурировать
+          </button>
+        ) : null}
 
         <div className="relative">
           <button

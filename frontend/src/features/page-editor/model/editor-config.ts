@@ -172,6 +172,11 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
       link: false,
       underline: false,
       horizontalRule: false,
+      heading: {
+        HTMLAttributes: {
+          class: 'page-editor-heading',
+        },
+      },
     }),
     Placeholder.configure({
       emptyEditorClass: 'is-editor-empty',

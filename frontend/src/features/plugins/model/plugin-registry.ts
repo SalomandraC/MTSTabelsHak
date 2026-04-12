@@ -2,7 +2,7 @@ export type { PluginCatalogItem } from '../../../shared/api/wikilive';
 
 import type { PluginCatalogItem } from '../../../shared/api/wikilive';
 
-export type WorkspaceSidebarSlot = 'document-graph' | 'sidebar';
+export type WorkspaceSidebarSlot = 'document-graph' | 'sidebar' | 'navigation';
 export type EditorSlot = 'toolbar_bubble' | 'editor_extension' | 'slash_menu';
 
 type RuntimePluginDefinition = {
@@ -26,6 +26,10 @@ export const runtimePluginRegistry: RuntimePluginDefinition[] = [
     id: 'ai-assistant',
     workspaceSidebarSlots: ['sidebar'],
     editorSlots: ['toolbar_bubble', 'editor_extension', 'slash_menu'],
+  },
+  {
+    id: 'page-navigation',
+    workspaceSidebarSlots: ['navigation'],
   },
   {
     id: 'canvas-draw',
