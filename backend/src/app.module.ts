@@ -17,6 +17,7 @@ import { SearchModule } from './search/search.module';
 import { TemplatesModule } from './templates/templates.module';
 import { WikiTreeModule } from './wiki-tree/wiki-tree.module';
 import { WorkspaceTreeModule } from './workspace/workspace-tree.module';
+import { RealtimeModule } from './realtime/realtime.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { WorkspaceTreeModule } from './workspace/workspace-tree.module';
     RedisModule,
     QueueModule,
     SearchModule,
+    RealtimeModule,
     WikiTreeModule,
     PagesModule,
     LinksModule,

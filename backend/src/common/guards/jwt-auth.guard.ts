@@ -22,19 +22,29 @@ export class JwtAuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<RequestWithUser>();
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_ROUTE, [
       context.getHandler(),
       context.getClass(),
     ]);
-
-    if (isPublic) {
-      return true;
-    }
-
-    const request = context.switchToHttp().getRequest<RequestWithUser>();
     const authRequired = this.configService.get<string>('AUTH_REQUIRED', 'true') === 'true';
     const authorization = request.header('authorization');
     const bearerToken = authorization?.replace(/^Bearer\s+/i, '').trim();
+    const hasDemoHeaders = Boolean(request.header('x-user-id') || request.header('x-user-name'));
+
+    if (isPublic) {
+      if (bearerToken) {
+        try {
+          request.user = await this.authService.resolveUserFromAccessToken(bearerToken);
+        } catch {
+          // Public routes may continue as anonymous when an auth token is absent or invalid.
+        }
+      } else if (!authRequired && hasDemoHeaders) {
+        this.attachDemoUser(request);
+      }
+
+      return true;
+    }
 
     if (!bearerToken) {
       if (!authRequired) {

@@ -1,14 +1,11 @@
-import {
-  BadGatewayException,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { BadGatewayException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Response } from 'express';
 import { randomUUID, createHash } from 'crypto';
 import { firstValueFrom } from 'rxjs';
+import { PrismaService } from 'src/infra/prisma/prisma.service';
 import { RedisService } from 'src/infra/redis/redis.service';
 import { UserContext } from './user-context';
 
@@ -17,6 +14,8 @@ export interface CollabTokenPayload {
   pageId: string;
   sessionId: string;
   clientId: string;
+  role: string;
+  readOnly: boolean;
 }
 
 interface AccessTokenPayload {
@@ -35,6 +34,7 @@ interface RefreshTokenPayload {
 
 interface AuthSession {
   userId: string;
+  clientId?: string | null;
   displayName: string;
   apiKey: string;
   refreshTokenId: string;
@@ -42,6 +42,13 @@ interface AuthSession {
 
 interface ApiKeyValidationCacheEntry {
   userId: string;
+  clientId?: string | null;
+  suggestedDisplayName: string | null;
+}
+
+interface AuthUserRecord {
+  userId: string;
+  clientId: string | null;
   displayName: string;
 }
 
@@ -65,6 +72,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly httpService: HttpService,
     private readonly redisService: RedisService,
+    private readonly prisma: PrismaService,
   ) {
     this.jwtSecret = this.configService.get<string>('JWT_SECRET', 'wikilive-dev-secret');
     this.mwsBaseUrl = this.configService.get<string>(
@@ -73,13 +81,61 @@ export class AuthService {
     );
   }
 
-  async login(apiKey: string, response: Response): Promise<void> {
+  private get userRepository(): {
+    findUnique: (args: unknown) => Promise<AuthUserRecord | null>;
+    create: (args: unknown) => Promise<AuthUserRecord>;
+    update: (args: unknown) => Promise<AuthUserRecord>;
+  } {
+    return (this.prisma as PrismaService & { user: AuthService['userRepository'] }).user;
+  }
+
+  async login(
+    apiKey: string,
+    response: Response,
+    displayName?: string,
+  ): Promise<
+    | { status: 'authorized' }
+    | {
+        status: 'display_name_required';
+        profile: { userId: string; clientId: string | null; suggestedDisplayName: string | null };
+      }
+  > {
     const profile = await this.validateApiKey(apiKey.trim());
+    const existingUser = await this.getUserByIdCached(profile.userId);
+    const normalizedDisplayName = displayName?.trim();
+
+    if (!existingUser && !normalizedDisplayName) {
+      return {
+        status: 'display_name_required',
+        profile: {
+          userId: profile.userId,
+          clientId: profile.clientId ?? null,
+          suggestedDisplayName: profile.suggestedDisplayName,
+        },
+      };
+    }
+
+    let user =
+      existingUser ??
+      (await this.createUser({
+        userId: profile.userId,
+        clientId: profile.clientId ?? null,
+        displayName: normalizedDisplayName!,
+      }));
+
+    if (user.clientId !== profile.clientId && profile.clientId) {
+      user = await this.updateCachedUser({
+        ...user,
+        clientId: profile.clientId,
+      });
+    }
+
     const sessionId = randomUUID();
     const refreshTokenId = randomUUID();
     const session: AuthSession = {
-      userId: profile.userId,
-      displayName: profile.displayName,
+      userId: user.userId,
+      clientId: user.clientId,
+      displayName: user.displayName,
       apiKey: apiKey.trim(),
       refreshTokenId,
     };
@@ -94,6 +150,7 @@ export class AuthService {
     });
 
     this.setRefreshCookie(response, refreshToken);
+    return { status: 'authorized' };
   }
 
   async refresh(refreshToken: string, response: Response): Promise<RefreshResult> {
@@ -149,6 +206,7 @@ export class AuthService {
 
     return {
       userId: session.userId,
+      clientId: session.clientId ?? null,
       displayName: session.displayName,
       sessionId: payload.sid,
       authToken: token,
@@ -172,13 +230,21 @@ export class AuthService {
     return undefined;
   }
 
-  issueCollabToken(user: UserContext, pageId: string, sessionId: string, clientId: string): string {
+  issueCollabToken(
+    user: UserContext,
+    pageId: string,
+    sessionId: string,
+    clientId: string,
+    access: { role: string | null; capabilities: { canEdit: boolean } },
+  ): string {
     return this.jwtService.sign({
       sub: user.userId,
       pageId,
       sessionId,
       clientId,
       displayName: user.displayName,
+      role: access.role ?? 'guest',
+      readOnly: !access.capabilities.canEdit,
     });
   }
 
@@ -188,6 +254,31 @@ export class AuthService {
     } catch {
       throw new UnauthorizedException('Invalid collaboration token');
     }
+  }
+
+  async updateDisplayName(user: UserContext, displayName: string) {
+    const normalizedDisplayName = displayName.trim();
+    const updated = await this.userRepository.update({
+      where: { userId: user.userId },
+      data: { displayName: normalizedDisplayName },
+    });
+    await this.cacheUser(updated);
+
+    if (user.sessionId) {
+      const session = await this.redisService.getJson<AuthSession>(this.sessionKey(user.sessionId));
+      if (session) {
+        await this.redisService.setJson(
+          this.sessionKey(user.sessionId),
+          {
+            ...session,
+            displayName: normalizedDisplayName,
+          },
+          REFRESH_TTL_SEC,
+        );
+      }
+    }
+
+    return updated;
   }
 
   private issueAccessToken(payload: AccessTokenPayload): string {
@@ -259,11 +350,28 @@ export class AuthService {
         }),
       );
 
-      const spaces = response.data?.data?.spaces ?? [];
+      const payload = response.data?.data ?? {};
+      const spaces = payload?.spaces ?? [];
       const hash = createHash('sha256').update(apiKey).digest('hex').slice(0, 16);
+      const user = payload?.user ?? payload?.profile ?? payload?.me ?? {};
+      const clientIdValue = user?.clientId ?? user?.client_id ?? payload?.clientId ?? payload?.client_id ?? null;
+      const userIdValue =
+        user?.userId ??
+        user?.user_id ??
+        user?.id ??
+        payload?.userId ??
+        payload?.user_id ??
+        clientIdValue ??
+        `mws_${hash}`;
       const profile: ApiKeyValidationCacheEntry = {
-        userId: `mws_${hash}`,
-        displayName: spaces[0]?.name ? `MWS ${spaces[0].name}` : `MWS User ${hash.slice(0, 6)}`,
+        userId: String(userIdValue),
+        clientId: clientIdValue ? String(clientIdValue) : null,
+        suggestedDisplayName:
+          typeof user?.displayName === 'string'
+            ? user.displayName
+            : typeof user?.name === 'string'
+              ? user.name
+              : null,
       };
 
       await this.redisService.setJson(cacheKey, profile, API_KEY_VALIDATION_CACHE_TTL_SEC);
@@ -280,6 +388,72 @@ export class AuthService {
 
   private sessionKey(sessionId: string): string {
     return `auth:session:${sessionId}`;
+  }
+
+  private userCacheKey(userId: string): string {
+    return `auth:user:${userId}`;
+  }
+
+  private async getUserByIdCached(userId: string): Promise<AuthUserRecord | null> {
+    const cached = await this.redisService.getJson<AuthUserRecord>(this.userCacheKey(userId));
+    if (cached) {
+      return cached;
+    }
+
+    const user = await this.userRepository.findUnique({
+      where: { userId },
+      select: {
+        userId: true,
+        clientId: true,
+        displayName: true,
+      },
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    await this.cacheUser(user);
+    return user;
+  }
+
+  private async createUser(user: AuthUserRecord): Promise<AuthUserRecord> {
+    const created = await this.userRepository.create({
+      data: {
+        userId: user.userId,
+        clientId: user.clientId,
+        displayName: user.displayName,
+      },
+      select: {
+        userId: true,
+        clientId: true,
+        displayName: true,
+      },
+    });
+
+    await this.cacheUser(created);
+    return created;
+  }
+
+  private async updateCachedUser(user: AuthUserRecord): Promise<AuthUserRecord> {
+    const updated = await this.userRepository.update({
+      where: { userId: user.userId },
+      data: {
+        clientId: user.clientId,
+        displayName: user.displayName,
+      },
+      select: {
+        userId: true,
+        clientId: true,
+        displayName: true,
+      },
+    });
+    await this.cacheUser(updated);
+    return updated;
+  }
+
+  private async cacheUser(user: AuthUserRecord): Promise<void> {
+    await this.redisService.setJson(this.userCacheKey(user.userId), user, REFRESH_TTL_SEC);
   }
 
   private apiKeyValidationCacheKey(apiKey: string): string {

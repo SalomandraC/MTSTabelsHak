@@ -37,6 +37,13 @@ describe('AuthService', () => {
   const httpService = {
     request: jest.fn(),
   };
+  const prisma = {
+    user: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
+  };
 
   const response = {
     cookie: jest.fn(),
@@ -78,21 +85,58 @@ describe('AuthService', () => {
       configService as any,
       httpService as any,
       redisService as any,
+      prisma as any,
     );
   });
 
-  it('issues refresh cookie on login and resolves mws token from server session on access token validation', async () => {
+  it('returns onboarding requirement when user is missing and display name is not provided', async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
     httpService.request.mockReturnValue(
       of({
         data: {
           data: {
+            user: {
+              id: 'mws-user-1',
+              clientId: 'client-1',
+            },
             spaces: [{ name: 'Space A' }],
           },
         },
       }),
     );
 
-    await service.login('test-api-key', response);
+    const result = await service.login('test-api-key', response);
+
+    expect(result).toEqual({
+      status: 'display_name_required',
+      profile: {
+        userId: 'mws-user-1',
+        clientId: 'client-1',
+        suggestedDisplayName: null,
+      },
+    });
+    expect(response.cookie).not.toHaveBeenCalled();
+  });
+
+  it('issues refresh cookie on login and resolves mws token from server session on access token validation', async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
+    prisma.user.create.mockImplementation(async ({ data }: any) => data);
+    httpService.request.mockReturnValue(
+      of({
+        data: {
+          data: {
+            user: {
+              id: 'mws-user-1',
+              clientId: 'client-1',
+            },
+            spaces: [{ name: 'Space A' }],
+          },
+        },
+      }),
+    );
+
+    const loginResult = await service.login('test-api-key', response, 'Nikita');
+    expect(loginResult).toEqual({ status: 'authorized' });
 
     expect(response.cookie).toHaveBeenCalledTimes(1);
     const [cookieName, refreshToken, cookieOptions] = response.cookie.mock.calls[0];
@@ -111,8 +155,78 @@ describe('AuthService', () => {
     expect(refreshResult.accessToken).toContain('access::');
 
     const user = await service.resolveUserFromAccessToken(refreshResult.accessToken);
-    expect(user.userId).toContain('mws_');
+    expect(user.userId).toBe('mws-user-1');
+    expect(user.clientId).toBe('client-1');
+    expect(user.displayName).toBe('Nikita');
     expect(user.mwsToken).toBe('test-api-key');
+  });
+
+  it('reuses cached user on repeated login without hitting prisma again', async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
+    prisma.user.create.mockImplementation(async ({ data }: any) => data);
+    httpService.request.mockReturnValue(
+      of({
+        data: {
+          data: {
+            user: {
+              id: 'mws-user-1',
+              clientId: 'client-1',
+            },
+          },
+        },
+      }),
+    );
+
+    await service.login('test-api-key', response, 'Nikita');
+    expect(prisma.user.findUnique).toHaveBeenCalledTimes(1);
+    expect(prisma.user.create).toHaveBeenCalledTimes(1);
+
+    prisma.user.findUnique.mockClear();
+    prisma.user.create.mockClear();
+
+    await service.login('test-api-key', response, 'Ignored Name');
+
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(prisma.user.create).not.toHaveBeenCalled();
+  });
+
+  it('updates display name in database, cache, and active session', async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
+    prisma.user.create.mockImplementation(async ({ data }: any) => data);
+    prisma.user.update.mockImplementation(async ({ where, data }: any) => ({
+      userId: where.userId,
+      clientId: 'client-1',
+      displayName: data.displayName,
+    }));
+    httpService.request.mockReturnValue(
+      of({
+        data: {
+          data: {
+            user: {
+              id: 'mws-user-1',
+              clientId: 'client-1',
+            },
+          },
+        },
+      }),
+    );
+
+    await service.login('test-api-key', response, 'Nikita');
+    const [, refreshToken] = response.cookie.mock.calls[0];
+    const refreshResult = await service.refresh(refreshToken, response);
+    const resolved = await service.resolveUserFromAccessToken(refreshResult.accessToken);
+
+    const updated = await service.updateDisplayName(resolved, 'Renamed User');
+
+    expect(updated.displayName).toBe('Renamed User');
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { userId: 'mws-user-1' },
+      data: { displayName: 'Renamed User' },
+    });
+
+    const updatedUser = await service.resolveUserFromAccessToken(refreshResult.accessToken);
+    expect(updatedUser.displayName).toBe('Renamed User');
+    expect(redisService.getJson).toHaveBeenCalledWith('auth:user:mws-user-1');
   });
 
   it('maps MWS 401/403 to Invalid API key', async () => {

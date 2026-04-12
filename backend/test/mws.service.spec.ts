@@ -163,6 +163,18 @@ describe('MwsService', () => {
     );
   });
 
+  it('scopes spaces cache by user so one account does not see another account cache', async () => {
+    const { service, redisService } = createService(() => ({ data: { spaces: [] } }));
+
+    await service.listSpaces({ ...user, userId: 'user-a' });
+    await service.listSpaces({ ...user, userId: 'user-b' });
+
+    expect(redisService.getJson).toHaveBeenCalledWith('mws:user:user-a:spaces');
+    expect(redisService.getJson).toHaveBeenCalledWith('mws:user:user-b:spaces');
+    expect(redisService.setJson).toHaveBeenCalledWith('mws:user:user-a:spaces', { items: [] }, 60);
+    expect(redisService.setJson).toHaveBeenCalledWith('mws:user:user-b:spaces', { items: [] }, 60);
+  });
+
   it('fails when no MWS token exists in user context or environment', async () => {
     const previousToken = process.env.MWS_TABLES_API_TOKEN;
     delete process.env.MWS_TABLES_API_TOKEN;
@@ -324,10 +336,10 @@ describe('MwsService', () => {
       user,
     );
 
-    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:records:dst-1:*');
-    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:embed:*');
-    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:fields:dst-1:*');
-    expect(redisService.del).toHaveBeenCalledWith('mws:views:dst-1');
+    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:user:*:records:dst-1:*');
+    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:user:*:embed:*');
+    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:user:*:fields:dst-1:*');
+    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:user:*:views:dst-1');
   });
 
   it('deletes MWS datasheets through the space-scoped upstream endpoint', async () => {
@@ -346,8 +358,8 @@ describe('MwsService', () => {
         url: 'https://tables.example/fusion/v1/spaces/space-1/datasheet/dst-1',
       }),
     );
-    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:nodes:space-1:*');
-    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:records:dst-1:*');
+    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:user:*:nodes:space-1:*');
+    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:user:*:records:dst-1:*');
   });
 
   it('deletes MWS fields through the space-scoped upstream endpoint', async () => {
@@ -366,8 +378,8 @@ describe('MwsService', () => {
         url: 'https://tables.example/fusion/v1/spaces/space-1/datasheets/dst-1/fields/fld-1',
       }),
     );
-    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:records:dst-1:*');
-    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:fields:dst-1:*');
+    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:user:*:records:dst-1:*');
+    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:user:*:fields:dst-1:*');
   });
 
   it('moves fields in a view through the upstream field index endpoint', async () => {
@@ -387,7 +399,7 @@ describe('MwsService', () => {
         data: { index: 2 },
       }),
     );
-    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:records:dst-1:*');
-    expect(redisService.del).toHaveBeenCalledWith('mws:views:dst-1');
+    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:user:*:records:dst-1:*');
+    expect(redisService.delByPattern).toHaveBeenCalledWith('mws:user:*:views:dst-1');
   });
 });

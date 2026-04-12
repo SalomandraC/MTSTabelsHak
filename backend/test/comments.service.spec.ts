@@ -32,6 +32,7 @@ describe('CommentsService', () => {
   });
 
   let prisma: any;
+  let pageAccessService: any;
   let service: CommentsService;
 
   beforeEach(() => {
@@ -71,7 +72,12 @@ describe('CommentsService', () => {
       },
     };
 
-    service = new CommentsService(prisma);
+    pageAccessService = {
+      assertCanView: jest.fn(async () => ({ capabilities: { canView: true } })),
+      assertCanComment: jest.fn(async () => ({ capabilities: { canComment: true } })),
+    };
+
+    service = new CommentsService(prisma, pageAccessService);
   });
 
   it('creates a thread with a first message from the current user', async () => {

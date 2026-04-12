@@ -9,6 +9,7 @@ type CommentsPanelProps = {
   activeThreadId: string | null;
   isLoading: boolean;
   errorMessage: string;
+  canComment?: boolean;
   onRetry: () => void;
   onClose: () => void;
   onSubmitMessage: (body: string) => Promise<void>;
@@ -128,6 +129,7 @@ export function CommentsPanel({
   activeThreadId,
   isLoading,
   errorMessage,
+  canComment = true,
   onRetry,
   onClose,
   onSubmitMessage,
@@ -138,7 +140,7 @@ export function CommentsPanel({
   const [body, setBody] = useState('');
   const currentUserId = getCurrentUser()?.userId;
   const title = activeThread?.isDraft ? 'Новый комментарий' : 'Комментарии';
-  const canResolve = Boolean(activeThread && !activeThread.isDraft && activeThread.status === 'open');
+  const canResolve = Boolean(canComment && activeThread && !activeThread.isDraft && activeThread.status === 'open');
 
   useEffect(() => {
     setBody('');
@@ -238,7 +240,7 @@ export function CommentsPanel({
 
       {content}
 
-      {activeThread && activeThread.status === 'open' ? (
+      {canComment && activeThread && activeThread.status === 'open' ? (
         <form
           className="border-t border-editor-border-subtle p-2"
           onSubmit={(event) => {

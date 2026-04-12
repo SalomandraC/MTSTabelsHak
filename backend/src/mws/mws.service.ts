@@ -66,7 +66,7 @@ export class MwsService {
   }
 
   async listSpaces(user: UserContext) {
-    return this.withCache('mws:spaces', 60, () =>
+    return this.withCache(this.userScopedCacheKey(user, 'spaces'), 60, () =>
       this.request(user, 'GET', '/spaces').then((data) => {
         const payload = this.unwrapPayload(data);
         return {
@@ -81,7 +81,7 @@ export class MwsService {
   }
 
   async listNodes(spaceId: string, type: string | undefined, includeChildren: boolean, user: UserContext) {
-    const cacheKey = `mws:nodes:${spaceId}:${type ?? 'all'}:${includeChildren ? 'tree' : 'flat'}`;
+    const cacheKey = this.userScopedCacheKey(user, `nodes:${spaceId}:${type ?? 'all'}:${includeChildren ? 'tree' : 'flat'}`);
     return this.withCache(cacheKey, 30, async () => {
       const data = await this.request(
         user,
@@ -130,7 +130,7 @@ export class MwsService {
   }
 
   async listFields(datasheetId: string, viewId: string | undefined, user: UserContext) {
-    const cacheKey = `mws:fields:${datasheetId}:${viewId ?? 'default'}`;
+    const cacheKey = this.userScopedCacheKey(user, `fields:${datasheetId}:${viewId ?? 'default'}`);
     return this.withCache(cacheKey, 300, async () => {
       const data = await this.request(user, 'GET', `/datasheets/${datasheetId}/fields`, undefined, {
         viewId,
@@ -179,7 +179,7 @@ export class MwsService {
   }
 
   async listViews(datasheetId: string, user: UserContext) {
-    const cacheKey = `mws:views:${datasheetId}`;
+    const cacheKey = this.userScopedCacheKey(user, `views:${datasheetId}`);
     return this.withCache(cacheKey, 300, async () => {
       const data = await this.request(user, 'GET', `/datasheets/${datasheetId}/views`);
       const payload = this.unwrapPayload(data);
@@ -205,7 +205,10 @@ export class MwsService {
     query: Record<string, unknown>,
     user: UserContext,
   ) {
-    const cacheKey = `mws:records:${datasheetId}:${Buffer.from(JSON.stringify(query)).toString('base64')}`;
+    const cacheKey = this.userScopedCacheKey(
+      user,
+      `records:${datasheetId}:${Buffer.from(JSON.stringify(query)).toString('base64')}`,
+    );
     return this.withCache(cacheKey, 10, async () => {
       const data = await this.request(user, 'GET', `/datasheets/${datasheetId}/records`, undefined, this.normalizeRecordsQuery(query));
       const payload = this.unwrapPayload(data);
@@ -224,6 +227,7 @@ export class MwsService {
       ...dto,
       fieldKey: 'id',
     });
+    await this.invalidateDatasheetCache(datasheetId);
     return { items: data.data?.records ?? [] };
   }
 
@@ -232,6 +236,7 @@ export class MwsService {
       ...dto,
       fieldKey: 'id',
     });
+    await this.invalidateDatasheetCache(datasheetId);
     return { items: data.data?.records ?? [] };
   }
 
@@ -258,7 +263,7 @@ export class MwsService {
   }
 
   async resolveTableEmbed(dto: ResolveTableEmbedDto, user: UserContext) {
-    const cacheKey = `mws:embed:${Buffer.from(JSON.stringify(dto)).toString('base64')}`;
+    const cacheKey = this.userScopedCacheKey(user, `embed:${Buffer.from(JSON.stringify(dto)).toString('base64')}`);
     return this.withCache(cacheKey, 10, async () => {
       const [node, fields, views, preview] = await Promise.all([
         this.getNode(dto.nodeId, user),
@@ -646,16 +651,20 @@ export class MwsService {
   }
 
   private async invalidateNodeCache(spaceId: string) {
-    await this.redisService.delByPattern(`mws:nodes:${spaceId}:*`);
+    await this.redisService.delByPattern(`mws:user:*:nodes:${spaceId}:*`);
   }
 
   private async invalidateDatasheetCache(datasheetId: string) {
     await Promise.all([
-      this.redisService.delByPattern(`mws:records:${datasheetId}:*`),
-      this.redisService.delByPattern('mws:embed:*'),
-      this.redisService.delByPattern(`mws:fields:${datasheetId}:*`),
-      this.redisService.del(`mws:views:${datasheetId}`),
+      this.redisService.delByPattern(`mws:user:*:records:${datasheetId}:*`),
+      this.redisService.delByPattern('mws:user:*:embed:*'),
+      this.redisService.delByPattern(`mws:user:*:fields:${datasheetId}:*`),
+      this.redisService.delByPattern(`mws:user:*:views:${datasheetId}`),
     ]);
+  }
+
+  private userScopedCacheKey(user: UserContext, key: string) {
+    return `mws:user:${user.userId}:${key}`;
   }
 
 
