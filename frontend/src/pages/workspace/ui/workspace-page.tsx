@@ -62,6 +62,9 @@ import {
 
 const SELECTED_SPACE_STORAGE_KEY = 'wikilive:selected-space-id';
 const DEFAULT_TEMPLATE_PAGE_SIZE = 20;
+const WHATS_NEW_BANNER_DURATION_SEC = 30;
+const WHATS_NEW_BANNER_STORAGE_KEY = 'wikilive:disable-whats-new-banner';
+const WHATS_NEW_BANNER_ENABLED = (import.meta.env.VITE_ENABLE_WHATS_NEW_BANNER ?? 'true') !== 'false';
 
 function getShareUrl(spaceId: string, pageId: string | null) {
   const url = new URL(window.location.href);
@@ -740,6 +743,22 @@ export function WorkspacePage() {
   const isNavigationEnabled = isWorkspaceSidebarEnabled('navigation');
   const isAiSidebarEnabled = isWorkspaceSidebarEnabled('sidebar');
   const [isScreenNarrow, setIsScreenNarrow] = useState(false);
+  const [isWhatsNewBannerVisible, setIsWhatsNewBannerVisible] = useState(false);
+  const [whatsNewBannerSecondsLeft, setWhatsNewBannerSecondsLeft] = useState(WHATS_NEW_BANNER_DURATION_SEC);
+
+  const closeWhatsNewBanner = useCallback(() => {
+    setIsWhatsNewBannerVisible(false);
+  }, []);
+
+  const disableWhatsNewBanner = useCallback(() => {
+    try {
+      window.localStorage.setItem(WHATS_NEW_BANNER_STORAGE_KEY, '1');
+    } catch {
+      // Ignore localStorage errors and just hide the banner for this runtime session.
+    }
+
+    setIsWhatsNewBannerVisible(false);
+  }, []);
 
   useEffect(() => {
     const updateRightSidebarVisibility = () => {
@@ -758,6 +777,43 @@ export function WorkspacePage() {
       window.removeEventListener('resize', updateRightSidebarVisibility);
     };
   }, [rightSidebar]);
+
+  useEffect(() => {
+    if (!WHATS_NEW_BANNER_ENABLED) {
+      return;
+    }
+
+    try {
+      if (window.localStorage.getItem(WHATS_NEW_BANNER_STORAGE_KEY) === '1') {
+        return;
+      }
+    } catch {
+      // Ignore localStorage read errors and show banner by default.
+    }
+
+    setWhatsNewBannerSecondsLeft(WHATS_NEW_BANNER_DURATION_SEC);
+    setIsWhatsNewBannerVisible(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isWhatsNewBannerVisible) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setWhatsNewBannerSecondsLeft((previous) => {
+        if (previous <= 1) {
+          window.clearInterval(timer);
+          setIsWhatsNewBannerVisible(false);
+          return 0;
+        }
+
+        return previous - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [isWhatsNewBannerVisible]);
 
   const comments = usePageComments({
     pageId: activePageId,
@@ -1658,6 +1714,51 @@ export function WorkspacePage() {
 
   return (
     <main className="flex h-screen overflow-hidden bg-[#f2f5fb] text-editor-text-primary">
+      {isWhatsNewBannerVisible ? (
+        <div className="pointer-events-none fixed left-1/2 top-4 z-[150] w-full max-w-3xl -translate-x-1/2 px-4">
+          <div className="pointer-events-auto overflow-hidden rounded-2xl border border-[#f8d7df] bg-gradient-to-r from-[#fff6f8] via-white to-[#f4f8ff] shadow-[0_16px_40px_rgba(15,23,42,0.14)]">
+            <div
+              className="h-1 bg-[#d70032] transition-all duration-1000"
+              style={{ width: `${Math.max(0, (whatsNewBannerSecondsLeft / WHATS_NEW_BANNER_DURATION_SEC) * 100)}%` }}
+            />
+            <div className="flex items-start gap-3 px-4 py-3 sm:px-5">
+              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#ffe1e7] text-[#d70032]">
+                <Sparkles size={16} strokeWidth={2.3} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-[#1f1f1f]">Обновление редактора</p>
+                <p className="mt-0.5 text-xs text-[#4b5563]">
+                  Добавили стили для AI-улучшения текста: Обычный, Деловой, Военный, Средневековый, Церковнославянский,
+                  Исправить ошибки и Дополнить. Также улучшили ghost-подсказки: стабильнее у курсора, аккуратные пробелы
+                  при принятии, скрытие при открытии inline-копилота. Протестите ребят.
+                </p>
+                <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7b8390]">
+                  Окно закроется через {whatsNewBannerSecondsLeft} сек
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={disableWhatsNewBanner}
+                  className="rounded-lg border border-editor-border-subtle bg-white px-2.5 py-1 text-[11px] font-semibold text-[#556070] transition-colors hover:bg-[#f7f8fa]"
+                  title="Больше не показывать"
+                >
+                  Не показывать
+                </button>
+                <button
+                  type="button"
+                  onClick={closeWhatsNewBanner}
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-[#7b8390] transition-colors hover:bg-[#f2f4f8] hover:text-[#1f2937]"
+                  aria-label="Закрыть уведомление"
+                  title="Закрыть"
+                >
+                  <X size={15} strokeWidth={2.2} />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {!leftSidebar.isCollapsed ? (
         <aside
           className="relative flex h-full shrink-0 flex-col border-r border-[#e5e6eb] bg-white"
