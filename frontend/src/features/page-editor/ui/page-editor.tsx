@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { SlashMenu } from '../../slash-menu';
 import { WikiTablePickerModal } from '../../wiki-tables';
 import { usePlugins } from '../../plugins';
-import type { PresenceUser, WikiPage } from '../../../shared/api/wikilive';
+import type { WikiPage } from '../../../shared/api/wikilive';
 import type { CommentThreadView } from '../model/use-page-comments';
 import { usePageEditorController } from '../model/use-page-editor-controller';
 import { CommentAnchorOverlay } from './comment-anchor-overlay';
@@ -32,31 +32,6 @@ type PageEditorProps = {
   activeCommentThreadId?: string | null;
   commentCount?: number;
 };
-
-function PresenceStrip({ users }: { users: PresenceUser[] }) {
-  if (users.length === 0) {
-    return <span className="rounded-full bg-[#f7f7f8] px-2 py-1 text-[#767676]">В документе никого нет</span>;
-  }
-
-  return (
-    <div className="flex items-center gap-2 rounded-full border border-editor-border-subtle bg-white px-2 py-1 shadow-sm">
-      <span className="font-semibold text-[#1d2023]">{users.length} в документе</span>
-      <div className="flex -space-x-1">
-        {users.slice(0, 5).map((user) => (
-          <span
-            key={user.userId}
-            title={user.displayName}
-            className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white text-[10px] font-bold text-white shadow-sm"
-            style={{ backgroundColor: user.color ?? '#111827' }}
-          >
-            {user.displayName.slice(0, 1).toUpperCase()}
-          </span>
-        ))}
-      </div>
-      <span className="max-w-[18rem] truncate text-[#505762]">{users.map((user) => user.displayName).join(', ')}</span>
-    </div>
-  );
-}
 
 function PageEditorLoadingSkeleton() {
   return (
@@ -149,13 +124,11 @@ export function PageEditor({
           title={controller.title}
           description={controller.description}
           onSave={controller.handleSaveMeta}
+          connectionStatus={controller.connectionStatus}
+          saveStatus={controller.saveStatus}
+          recoveryMessage={controller.recoveryMessage}
+          activeUsers={controller.activeUsers}
         />
-        <div className="flex flex-wrap items-center gap-2 border-b border-editor-border-subtle bg-white px-4 py-2 text-xs text-editor-text-tertiary">
-          <span className="rounded-full bg-[#111827] px-2 py-1 font-semibold text-white">collab: {controller.connectionStatus}</span>
-          <span>{controller.saveStatus}</span>
-          {controller.recoveryMessage ? <span className="rounded-full bg-[#fff4df] px-2 py-1 text-[#9a5b00]">{controller.recoveryMessage}</span> : null}
-          <PresenceStrip users={controller.activeUsers} />
-        </div>
         <PageEditorToolbar
           editor={controller.editor}
           onOpenLinkModal={controller.openLinkModal}
