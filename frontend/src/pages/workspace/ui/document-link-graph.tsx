@@ -528,7 +528,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
         {pages.length > 0 ? (
           <>
             {isModalOpen && (
-              <div className="fixed inset-0 z-40">
+              <div className="fixed inset-0 z-45">
                 <div className="absolute inset-0 bg-black/30" onClick={() => setIsModalOpen(false)} />
                 <div
                   className="absolute z-50 flex h-[min(76vh,640px)] w-[min(84vw,820px)] flex-col overflow-hidden rounded-3xl bg-white shadow-[0_30px_80px_rgba(17,25,40,0.25)]"
