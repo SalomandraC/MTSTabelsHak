@@ -1,5 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { wikiliveApi } from '../../../shared/api/wikilive';
+import { clearBrowserPersistence } from '../../../shared/lib/browser-persistence';
+import { resetWorkspaceRoute } from '../../../shared/lib/workspace-route';
 
 export type AuthState = 'bootstrapping' | 'unauthorized' | 'authorized';
 const FALLBACK_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
@@ -110,6 +112,8 @@ export function useAuthSession() {
     try {
       await wikiliveApi.logout();
     } finally {
+      await clearBrowserPersistence();
+      resetWorkspaceRoute();
       setDisplayName('');
       setRefreshIntervalMs(null);
       setAuthState('unauthorized');

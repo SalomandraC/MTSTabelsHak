@@ -97,13 +97,17 @@ export function PageEditor({
   commentCount = 0,
 }: PageEditorProps) {
   const { isEditorSlotEnabled } = usePlugins();
-  const isAiSlashEnabled = isEditorSlotEnabled('slash_menu');
-  const isAiToolbarEnabled = isEditorSlotEnabled('toolbar_bubble');
-  const isAiExtensionEnabled = isEditorSlotEnabled('editor_extension');
+  const canEdit = page?.access?.capabilities.canEdit ?? true;
+  const canComment = page?.access?.capabilities.canComment ?? true;
+  const canUseAi = page?.access?.capabilities.canUseAi ?? true;
+  const isAiSlashEnabled = isEditorSlotEnabled('slash_menu') && canUseAi;
+  const isAiToolbarEnabled = isEditorSlotEnabled('toolbar_bubble') && canUseAi;
+  const isAiExtensionEnabled = isEditorSlotEnabled('editor_extension') && canUseAi;
 
   const controller = usePageEditorController({
     spaceId,
     page,
+    canEdit,
     onRenamePage,
     onCheckpoint,
     onOpenCommentThread,
@@ -148,6 +152,7 @@ export function PageEditor({
         <PageEditorHeader
           title={controller.title}
           description={controller.description}
+          editable={canEdit}
           onSave={controller.handleSaveMeta}
         />
         <div className="flex flex-wrap items-center gap-2 border-b border-editor-border-subtle bg-white px-4 py-2 text-xs text-editor-text-tertiary">
@@ -156,14 +161,15 @@ export function PageEditor({
           {controller.recoveryMessage ? <span className="rounded-full bg-[#fff4df] px-2 py-1 text-[#9a5b00]">{controller.recoveryMessage}</span> : null}
           <PresenceStrip users={controller.activeUsers} />
         </div>
-        <PageEditorToolbar
-          editor={controller.editor}
-          onOpenLinkModal={controller.openLinkModal}
-          onOpenImageModal={controller.openImageModal}
-          onCreateComment={onCreateComment}
-          onOpenTimeMachine={onOpenTimeMachine}
-          commentCount={commentCount}
-        />
+          <PageEditorToolbar
+            editor={controller.editor}
+            canEdit={canEdit}
+            onOpenLinkModal={controller.openLinkModal}
+            onOpenImageModal={controller.openImageModal}
+            onCreateComment={canComment ? onCreateComment : undefined}
+            onOpenTimeMachine={canEdit ? onOpenTimeMachine : undefined}
+            commentCount={commentCount}
+          />
 
         <div
           className="relative mx-auto w-full max-w-4xl flex-1 px-2 pb-4 pt-1 sm:px-6 sm:pb-10 sm:pt-5"
@@ -179,20 +185,23 @@ export function PageEditor({
           {controller.editor && (
             <FloatingToolbar
               editor={controller.editor}
+              canEdit={canEdit}
               onOpenLinkModal={() => controller.openLinkModal()}
-              onCreateComment={onCreateComment}
+              onCreateComment={canComment ? onCreateComment : undefined}
               pageTitle={controller.title}
               isAiTransformEnabled={isAiToolbarEnabled}
             />
           )}
-          <SlashMenu
-            isOpen={controller.slashState.isOpen}
-            items={controller.filteredItems}
-            selectedIndex={controller.selectedIndex}
-            position={{ top: controller.slashState.top, left: controller.slashState.left }}
-            onHover={controller.setSelectedIndex}
-            onSelect={controller.applySlashItem}
-          />
+          {canEdit ? (
+            <SlashMenu
+              isOpen={controller.slashState.isOpen}
+              items={controller.filteredItems}
+              selectedIndex={controller.selectedIndex}
+              position={{ top: controller.slashState.top, left: controller.slashState.left }}
+              onHover={controller.setSelectedIndex}
+              onSelect={controller.applySlashItem}
+            />
+          ) : null}
           <PageLinkModal {...controller.linkModal} />
           <PageImageModal {...controller.imageModal} />
           <PagePickerModal {...controller.pagePicker} />

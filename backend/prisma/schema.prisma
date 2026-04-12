@@ -35,6 +35,12 @@ enum TemplateAccessLevel {
   public
 }
 
+enum DocumentAccessScope {
+  owner_only
+  space_members
+  link_holders
+}
+
 model TemplateCategory {
   id         String        @id @default(uuid())
   title      String        @unique
@@ -92,10 +98,27 @@ model WikiPage {
   lastIndexedAt       DateTime?        @map("last_indexed_at")
   node                WikiNode         @relation(fields: [nodeId], references: [id], onDelete: Cascade)
   document            PageDocument?
+  accessPolicy        PageAccessPolicy?
   checkpoints         PageCheckpoint[]
   updates             PageCrdtUpdate[]
 
   @@map("wiki_pages")
+}
+
+model PageAccessPolicy {
+  pageId        String              @id @map("page_id")
+  ownerUserId   String              @map("owner_user_id")
+  viewAccess    DocumentAccessScope @default(space_members) @map("view_access")
+  commentAccess DocumentAccessScope @default(space_members) @map("comment_access")
+  editAccess    DocumentAccessScope @default(space_members) @map("edit_access")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+  page          WikiPage            @relation(fields: [pageId], references: [nodeId], onDelete: Cascade)
+
+  @@index([ownerUserId])
+  @@index([viewAccess])
+  @@index([editAccess])
+  @@map("page_access_policies")
 }
 
 model PageDocument {

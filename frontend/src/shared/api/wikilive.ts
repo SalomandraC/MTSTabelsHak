@@ -74,6 +74,10 @@ export type PageSummary = {
   createdAt: string;
   updatedAt: string;
   backlinksCount: number;
+  role?: DocumentRole | null;
+  canView?: boolean;
+  canEdit?: boolean;
+  isLocked?: boolean;
 };
 
 export type TemplateField = {
@@ -193,6 +197,34 @@ export type PageEmbed = {
   displayMode: string | null;
 };
 
+export type DocumentRole = 'owner' | 'editor' | 'commentator' | 'guest';
+
+export type DocumentCapabilities = {
+  canView: boolean;
+  canEdit: boolean;
+  canComment: boolean;
+  canManageAccess: boolean;
+  canDelete: boolean;
+  canUseAi: boolean;
+  canUseAdvancedPlugins: boolean;
+};
+
+export type DocumentAccessPolicy = {
+  ownerUserId: string;
+  viewAccess: 'owner_only' | 'space_members' | 'link_holders';
+  commentAccess: 'owner_only' | 'space_members' | 'link_holders';
+  editAccess: 'owner_only' | 'space_members' | 'link_holders';
+};
+
+export type DocumentAccessSummary = {
+  role: DocumentRole | null;
+  principal: 'authenticated' | 'anonymous';
+  isSpaceMember: boolean;
+  isOwner: boolean;
+  capabilities: DocumentCapabilities;
+  policy: DocumentAccessPolicy;
+};
+
 export type WikiPage = {
   id: string;
   title: string;
@@ -203,6 +235,7 @@ export type WikiPage = {
   plainTextPreview: string | null;
   outgoingLinksCount: number;
   backlinksCount: number;
+  access?: DocumentAccessSummary;
   embeds: PageEmbed[];
   documentState?: PageDocumentState;
 };
@@ -281,10 +314,25 @@ export type CollabSession = {
     heartbeatIntervalSec: number;
   };
   documentState: PageDocumentState;
+  access?: {
+    role: DocumentRole | null;
+    capabilities: DocumentCapabilities;
+  };
   awareness?: {
     activeUsers?: PresenceUser[];
   };
 };
+
+export type WorkspaceRealtimeEvent =
+  | {
+      type: 'connected';
+      spaceId: string;
+    }
+  | {
+      type: 'page_access_updated';
+      spaceId: string;
+      pageId: string;
+    };
 
 export type MwsSpace = {
   id: string;
@@ -795,8 +843,17 @@ export const wikiliveApi = {
       query: { includeDocumentState: true },
     });
   },
+  getPageAccess(pageId: string) {
+    return request<{ access: DocumentAccessSummary }>(`/api/v1/pages/${pageId}/access`);
+  },
   updatePage(pageId: string, payload: { title?: string; icon?: string | null }) {
     return request<{ page: WikiPage }>(`/api/v1/pages/${pageId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+  updatePageAccess(pageId: string, payload: DocumentAccessPolicy) {
+    return request<{ access: DocumentAccessSummary }>(`/api/v1/pages/${pageId}/access`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     });
@@ -868,6 +925,34 @@ export const wikiliveApi = {
         knownServerVersion: payload.knownServerVersion,
       }),
     });
+  },
+  openWorkspaceRealtime(
+    spaceId: string,
+    handlers: {
+      onMessage: (event: WorkspaceRealtimeEvent) => void;
+      onError?: () => void;
+    },
+  ) {
+    const wsBaseUrl = API_BASE_URL.replace(/^http/i, 'ws');
+    const socket = new WebSocket(`${wsBaseUrl}/api/v1/realtime${toQueryString({ spaceId })}`);
+
+    socket.addEventListener('message', (event) => {
+      try {
+        handlers.onMessage(JSON.parse(event.data) as WorkspaceRealtimeEvent);
+      } catch {
+        handlers.onError?.();
+      }
+    });
+
+    socket.addEventListener('error', () => {
+      handlers.onError?.();
+    });
+
+    return {
+      close() {
+        socket.close();
+      },
+    };
   },
   createCheckpoint(
     pageId: string,

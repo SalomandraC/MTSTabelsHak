@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { wikiliveApi } from '../../../shared/api/wikilive';
 import { useAuthSession } from './use-auth-session';
+import * as browserPersistence from '../../../shared/lib/browser-persistence';
+import * as workspaceRoute from '../../../shared/lib/workspace-route';
 
 vi.mock('../../../shared/api/wikilive', async () => {
   const actual = await vi.importActual<typeof import('../../../shared/api/wikilive')>(
@@ -39,6 +41,8 @@ describe('useAuthSession', () => {
         displayName: 'MWS Space A',
       },
     });
+    vi.spyOn(browserPersistence, 'clearBrowserPersistence').mockResolvedValue(undefined);
+    vi.spyOn(workspaceRoute, 'resetWorkspaceRoute').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -180,6 +184,34 @@ describe('useAuthSession', () => {
     });
 
     expect(result.current.errorMessage).toBe('Сессия истекла. Введите API-ключ снова.');
+    expect(result.current.displayName).toBe('');
+  });
+
+  it('clears browser persistence on logout so previous workspace state is not reused', async () => {
+    vi.mocked(wikiliveApi.restoreSession).mockResolvedValueOnce({
+      user: {
+        userId: 'user-1',
+        displayName: 'MWS Space A',
+      },
+      expiresInSec: 900,
+    });
+
+    const { result } = renderHook(() => useAuthSession());
+
+    await waitFor(() => {
+      expect(result.current.authState).toBe('authorized');
+    });
+
+    window.localStorage.setItem('wikilive:selected-space-id', 'space-foreign');
+
+    await act(async () => {
+      await result.current.handleLogout();
+    });
+
+    expect(wikiliveApi.logout).toHaveBeenCalledTimes(1);
+    expect(browserPersistence.clearBrowserPersistence).toHaveBeenCalledTimes(1);
+    expect(workspaceRoute.resetWorkspaceRoute).toHaveBeenCalledTimes(1);
+    expect(result.current.authState).toBe('unauthorized');
     expect(result.current.displayName).toBe('');
   });
 });

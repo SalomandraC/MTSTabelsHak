@@ -4,10 +4,11 @@ import DOC from '../../../app/images/Doc.svg';
 type PageEditorHeaderProps = {
   title: string;
   description: string;
+  editable?: boolean;
   onSave?: (title: string, description: string) => void;
 };
 
-export function PageEditorHeader({ title, description, onSave }: PageEditorHeaderProps) {
+export function PageEditorHeader({ title, description, editable = true, onSave }: PageEditorHeaderProps) {
   const [editingField, setEditingField] = React.useState<'title' | 'description' | null>(null);
   const [localTitle, setLocalTitle] = React.useState(title);
   const [localDescription, setLocalDescription] = React.useState(description);
@@ -79,6 +80,9 @@ export function PageEditorHeader({ title, description, onSave }: PageEditorHeade
                 className="truncate font-wide text-sm leading-5 text-editor-text-primary cursor-text hover:bg-editor-bg-control/50 rounded px-1 -mx-1 transition-colors"
                 style={boldStyle}
                 onDoubleClick={() => {
+                  if (!editable) {
+                    return;
+                  }
                   setLocalTitle(title);
                   setEditingField('title');
                 }}
@@ -103,6 +107,9 @@ export function PageEditorHeader({ title, description, onSave }: PageEditorHeade
                 className="truncate text-sm leading-5 cursor-text hover:bg-editor-bg-control/50 rounded px-1 -mx-1 transition-colors"
                 style={{ ...fontFamilyStyle, color: 'rgba(150, 159, 168, 1)' }}
                 onDoubleClick={() => {
+                  if (!editable) {
+                    return;
+                  }
                   setLocalDescription(description);
                   setEditingField('description');
                 }}

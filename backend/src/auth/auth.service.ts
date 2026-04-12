@@ -17,6 +17,8 @@ export interface CollabTokenPayload {
   pageId: string;
   sessionId: string;
   clientId: string;
+  role: string;
+  readOnly: boolean;
 }
 
 interface AccessTokenPayload {
@@ -172,13 +174,21 @@ export class AuthService {
     return undefined;
   }
 
-  issueCollabToken(user: UserContext, pageId: string, sessionId: string, clientId: string): string {
+  issueCollabToken(
+    user: UserContext,
+    pageId: string,
+    sessionId: string,
+    clientId: string,
+    access: { role: string | null; capabilities: { canEdit: boolean } },
+  ): string {
     return this.jwtService.sign({
       sub: user.userId,
       pageId,
       sessionId,
       clientId,
       displayName: user.displayName,
+      role: access.role ?? 'guest',
+      readOnly: !access.capabilities.canEdit,
     });
   }
 

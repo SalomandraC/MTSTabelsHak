@@ -8,7 +8,10 @@ import * as Y from 'yjs';
 import { UserContext } from 'src/auth/user-context';
 import { decodeBase64ToBuffer } from 'src/common/utils';
 import { PrismaService } from 'src/infra/prisma/prisma.service';
+import { PageAccessService } from 'src/page-access/page-access.service';
+import { RealtimeService } from 'src/realtime/realtime.service';
 import { SearchService } from 'src/search/search.service';
+import { UpdatePageAccessDto } from './dto/update-page-access.dto';
 import { CreatePageDto } from './dto/create-page.dto';
 import { UpdatePageDto } from './dto/update-page.dto';
 
@@ -17,6 +20,8 @@ export class PagesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly searchService: SearchService,
+    private readonly pageAccessService: PageAccessService,
+    private readonly realtimeService: RealtimeService,
   ) {}
 
   async listPages(spaceId: string, query?: string, limit = 20) {
@@ -85,6 +90,8 @@ export class PagesService {
       },
     });
 
+    await this.pageAccessService.createDefaultPolicy(node.id, user.userId, db);
+
     return {
       page: {
         id: node.id,
@@ -94,11 +101,13 @@ export class PagesService {
         createdAt: node.createdAt,
         updatedAt: node.updatedAt,
         backlinksCount: 0,
+        access: await this.pageAccessService.resolvePageAccess(node.id, user, db),
       },
     };
   }
 
-  async getPage(pageId: string, includeDocumentState = true) {
+  async getPage(pageId: string, includeDocumentState = true, user?: UserContext) {
+    const access = await this.pageAccessService.assertCanView(pageId, user);
     const page = await this.prisma.wikiNode.findUnique({
       where: { id: pageId },
       include: {
@@ -128,6 +137,7 @@ export class PagesService {
         plainTextPreview: page.page?.plainTextPreview ?? null,
         outgoingLinksCount: page.sourceLinks.length,
         backlinksCount: page.targetLinks.length,
+        access,
         embeds: page.embeds.map((embed) => ({
           id: embed.id,
           type: 'mwsTableEmbed',
@@ -150,7 +160,13 @@ export class PagesService {
     };
   }
 
+  async getPageAccess(pageId: string, user?: UserContext) {
+    const access = await this.pageAccessService.assertCanView(pageId, user);
+    return { access };
+  }
+
   async updatePage(pageId: string, dto: UpdatePageDto, user: UserContext) {
+    await this.pageAccessService.assertCanEdit(pageId, user);
     const page = await this.prisma.wikiNode.findUnique({ where: { id: pageId } });
     if (!page || page.type !== WikiNodeType.page) {
       throw new NotFoundException('Page not found');
@@ -166,10 +182,43 @@ export class PagesService {
       },
     });
 
-    return this.getPage(pageId);
+    return this.getPage(pageId, true, user);
+  }
+
+  async updatePageAccess(pageId: string, dto: UpdatePageAccessDto, user: UserContext) {
+    await this.pageAccessService.assertCanManageAccess(pageId, user);
+    const page = await this.prisma.wikiNode.findUnique({
+      where: { id: pageId },
+      select: { id: true, spaceId: true, type: true },
+    });
+
+    if (!page || page.type !== WikiNodeType.page) {
+      throw new NotFoundException('Page not found');
+    }
+
+    await this.prisma.pageAccessPolicy.upsert({
+      where: { pageId },
+      create: {
+        pageId,
+        ownerUserId: user.userId,
+        viewAccess: dto.viewAccess,
+        commentAccess: dto.commentAccess,
+        editAccess: dto.editAccess,
+      },
+      update: {
+        viewAccess: dto.viewAccess,
+        commentAccess: dto.commentAccess,
+        editAccess: dto.editAccess,
+      },
+    });
+
+    const result = await this.getPageAccess(pageId, user);
+    this.realtimeService.broadcastPageAccessUpdated(page.spaceId, pageId);
+    return result;
   }
 
   async deletePage(pageId: string, user: UserContext): Promise<void> {
+    await this.pageAccessService.assertCanDelete(pageId, user);
     const page = await this.prisma.wikiNode.findUnique({ where: { id: pageId } });
     if (!page || page.type !== WikiNodeType.page) {
       throw new NotFoundException('Page not found');

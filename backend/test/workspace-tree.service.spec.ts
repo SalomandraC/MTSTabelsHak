@@ -62,8 +62,17 @@ describe('WorkspaceTreeService', () => {
         ]),
       },
     };
+    const pageAccessService = {
+      resolvePageAccess: jest.fn(async () => ({
+        role: 'owner',
+        capabilities: {
+          canView: true,
+          canEdit: true,
+        },
+      })),
+    };
 
-    const service = new WorkspaceTreeService(prisma as any, mwsService as any);
+    const service = new WorkspaceTreeService(prisma as any, mwsService as any, pageAccessService as any);
     const response = await service.getTree('space-1', user);
 
     expect(response.items[0].kind).toBe('mwsFolder');
@@ -74,6 +83,12 @@ describe('WorkspaceTreeService', () => {
         linkedPageId: 'page-1',
         parentId: 'mws:folder-1',
         title: 'Wiki: Roadmap',
+        wikiPage: expect.objectContaining({
+          role: 'owner',
+          canView: true,
+          canEdit: true,
+          isLocked: false,
+        }),
       }),
     );
   });

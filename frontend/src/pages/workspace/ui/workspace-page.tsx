@@ -5,14 +5,17 @@ import {
   ChevronDown,
   ChevronRight,
   Database,
+  Eye,
   FileDown,
   FileUp,
   FileText,
   Folder,
   History,
+  Lock,
   LogOut,
   MoreHorizontal,
   MessageSquare,
+  Pencil,
   Plus,
   Search,
   Sparkles,
@@ -34,6 +37,7 @@ import { ScrollArea } from '../../../shared/ui';
 import {
   DEFAULT_WIKILIVE_SPACE_ID,
   type Backlink,
+  type DocumentAccessPolicy,
   type MwsSpace,
   type OutgoingLink,
   type TemplateCategorySummary,
@@ -41,11 +45,13 @@ import {
   type PageTemplateSummary,
   type WikiPage,
   type WorkspaceTreeNode,
+  type WorkspaceRealtimeEvent,
   wikiliveApi,
 } from '../../../shared/api/wikilive';
 import { DocumentLinkGraph, type DocumentGraphEdge, type DocumentGraphPage } from './document-link-graph';
 import { CreateTemplateFromPageModal } from './create-template-from-page-modal';
 import { PageTemplateMarketplaceModal } from './page-template-marketplace-modal';
+import { readWorkspaceRoute, resolveAccessibleSpaceId, writeWorkspaceRoute } from '../../../shared/lib/workspace-route';
 import {
   LEFT_SIDEBAR_MAX_WIDTH,
   LEFT_SIDEBAR_MIN_WIDTH,
@@ -56,39 +62,6 @@ import {
 
 const SELECTED_SPACE_STORAGE_KEY = 'wikilive:selected-space-id';
 const DEFAULT_TEMPLATE_PAGE_SIZE = 20;
-
-type WorkspaceRouteState = {
-  spaceId: string | null;
-  pageId: string | null;
-};
-
-function readWorkspaceRoute(): WorkspaceRouteState {
-  const url = new URL(window.location.href);
-  const routeMatch = url.pathname.match(/^\/spaces\/([^/]+)(?:\/pages\/([^/]+))?/);
-
-  if (routeMatch) {
-    return {
-      spaceId: decodeURIComponent(routeMatch[1] ?? ''),
-      pageId: routeMatch[2] ? decodeURIComponent(routeMatch[2]) : null,
-    };
-  }
-
-  return {
-    spaceId: url.searchParams.get('spaceId'),
-    pageId: url.searchParams.get('pageId'),
-  };
-}
-
-function writeWorkspaceRoute(spaceId: string, pageId: string | null, mode: 'push' | 'replace' = 'push') {
-  const url = new URL(window.location.href);
-  url.pathname = pageId
-    ? `/spaces/${encodeURIComponent(spaceId)}/pages/${encodeURIComponent(pageId)}`
-    : `/spaces/${encodeURIComponent(spaceId)}`;
-  url.searchParams.delete('spaceId');
-  url.searchParams.delete('pageId');
-
-  window.history[mode === 'push' ? 'pushState' : 'replaceState']({}, '', url);
-}
 
 function getShareUrl(spaceId: string, pageId: string | null) {
   const url = new URL(window.location.href);
@@ -171,10 +144,31 @@ function getWorkspaceNodeIcon(node: WorkspaceTreeNode) {
     return <Database size={17} strokeWidth={1.8} />;
   }
 
+  if (node.wikiPage?.isLocked) {
+    return <Lock size={17} strokeWidth={1.8} />;
+  }
+
+  if (node.wikiPage?.role === 'editor') {
+    return <Pencil size={17} strokeWidth={1.8} />;
+  }
+
+  if (node.wikiPage?.role === 'commentator' || node.wikiPage?.role === 'guest') {
+    return <Eye size={17} strokeWidth={1.8} />;
+  }
+
   return <FileText size={17} strokeWidth={1.8} />;
 }
 
 type RightPanelMode = 'links' | 'comments' | 'timeMachine';
+
+const ACCESS_SCOPE_OPTIONS: Array<{
+  value: DocumentAccessPolicy['viewAccess'];
+  label: string;
+}> = [
+  { value: 'owner_only', label: 'Только владелец' },
+  { value: 'space_members', label: 'Участники пространства' },
+  { value: 'link_holders', label: 'Все, у кого есть ссылка' },
+];
 
 function WorkspaceTreeItem({
   node,
@@ -206,6 +200,7 @@ function WorkspaceTreeItem({
   const isExpanded = isExpandable ? expandedFolderIds.has(node.id) : false;
   const isActivePage = node.linkedPageId === activePageId;
   const isSelectedTable = node.kind === 'mwsTable' && node.id === selectedTableNodeId;
+  const canDeletePage = node.wikiPage?.role === 'owner';
   const itemPadding = 8 + depth * 22;
 
   useEffect(() => {
@@ -257,6 +252,10 @@ function WorkspaceTreeItem({
         <button
           type="button"
           onClick={() => {
+            if (node.kind === 'wikiPage' && node.wikiPage?.isLocked) {
+              return;
+            }
+
             if (node.kind === 'wikiPage' && node.linkedPageId) {
               onSelectPage(node.linkedPageId);
               return;
@@ -271,8 +270,13 @@ function WorkspaceTreeItem({
               onToggleFolder(node.id);
             }
           }}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
-        >
+           className="flex min-w-0 flex-1 items-center gap-2 text-left"
+           title={
+             node.kind === 'wikiPage' && node.wikiPage?.isLocked
+               ? 'У вас нет прав для доступа к документу, запросите их у владельца'
+               : undefined
+           }
+         >
           <span
             className={[
               node.kind === 'mwsFolder' ? 'text-[#df9b50]' : '',
@@ -333,18 +337,20 @@ function WorkspaceTreeItem({
                 >
                   Создать шаблон
                 </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setIsActionsMenuOpen(false);
-                    onDeletePage(node.linkedPageId!, node.title);
-                  }}
-                  className="flex w-full items-center px-3 py-2 text-left text-sm text-[#d70032] hover:bg-[#fff1f3]"
-                >
-                  Удалить
-                </button>
+                {canDeletePage ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setIsActionsMenuOpen(false);
+                      onDeletePage(node.linkedPageId!, node.title);
+                    }}
+                    className="flex w-full items-center px-3 py-2 text-left text-sm text-[#d70032] hover:bg-[#fff1f3]"
+                  >
+                    Удалить
+                  </button>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -587,6 +593,8 @@ export function WorkspacePage() {
   const [isInstantiatingTemplate, setIsInstantiatingTemplate] = useState(false);
   const [isCreatingTemplate, setIsCreatingTemplate] = useState(false);
   const [isDeletingTemplate, setIsDeletingTemplate] = useState(false);
+  const [accessDraft, setAccessDraft] = useState<DocumentAccessPolicy | null>(null);
+  const [isUpdatingAccess, setIsUpdatingAccess] = useState(false);
   const leftSidebar = useResizableSidebar({
     defaultWidth: LEFT_SIDEBAR_MIN_WIDTH,
     minWidth: LEFT_SIDEBAR_MIN_WIDTH,
@@ -602,6 +610,17 @@ export function WorkspacePage() {
 
   const visibleTree = useMemo(() => filterWorkspaceTree(tree, searchQuery), [searchQuery, tree]);
   const hasSearch = searchQuery.trim().length > 0;
+  const canManageAccess = activePage?.access?.capabilities.canManageAccess ?? false;
+  const canEditActivePage = activePage?.access?.capabilities.canEdit ?? true;
+  const hasAccessChanges = Boolean(
+    accessDraft &&
+      activePage?.access?.policy &&
+      (
+        accessDraft.viewAccess !== activePage.access.policy.viewAccess ||
+        accessDraft.commentAccess !== activePage.access.policy.commentAccess ||
+        accessDraft.editAccess !== activePage.access.policy.editAccess
+      ),
+  );
   const isDocumentGraphEnabled = isWorkspaceSidebarEnabled('document-graph');
   const isCommentsEnabled = isPluginEnabled('comments');
   const isTimeMachineEnabled = isPluginEnabled('time-machine');
@@ -688,6 +707,22 @@ export function WorkspacePage() {
     await refreshLinks(pageId);
   };
 
+  const applyPageAccessUpdate = useCallback(
+    async (pageId: string) => {
+      await refreshTree(selectedSpaceId, activePageId);
+
+      if (activePageId === pageId) {
+        try {
+          await refreshActivePage(pageId);
+        } catch (error) {
+          setActivePage(null);
+          setErrorMessage(error instanceof Error ? error.message : 'Не удалось обновить статус доступа к документу');
+        }
+      }
+    },
+    [activePageId, refreshTree, selectedSpaceId],
+  );
+
   const history = usePageHistory({
     pageId: activePageId,
     editor: activeEditor,
@@ -713,14 +748,19 @@ export function WorkspacePage() {
         const nextSpaces = response.items.length > 0 ? response.items : [{ id: DEFAULT_WIKILIVE_SPACE_ID, name: DEFAULT_WIKILIVE_SPACE_ID }];
         const storedSpaceId = localStorage.getItem(SELECTED_SPACE_STORAGE_KEY);
         const routeSpaceId = initialRoute.spaceId;
-        const nextSpaceId = routeSpaceId && nextSpaces.some((space) => space.id === routeSpaceId)
-          ? routeSpaceId
-          : nextSpaces.some((space) => space.id === storedSpaceId)
-            ? storedSpaceId
-            : nextSpaces[0]?.id ?? DEFAULT_WIKILIVE_SPACE_ID;
+        const nextSpaceId = resolveAccessibleSpaceId(
+          nextSpaces,
+          routeSpaceId,
+          storedSpaceId,
+          DEFAULT_WIKILIVE_SPACE_ID,
+        );
 
         setSpaces(nextSpaces);
         setSelectedSpaceId(nextSpaceId ?? DEFAULT_WIKILIVE_SPACE_ID);
+
+        if (nextSpaceId && nextSpaceId !== routeSpaceId) {
+          writeWorkspaceRoute(nextSpaceId, null, 'replace');
+        }
       })
       .catch((error) => {
         if (cancelled) {
@@ -863,6 +903,37 @@ export function WorkspacePage() {
       window.removeEventListener('popstate', handlePopState);
     };
   }, [selectedSpaceId]);
+
+  useEffect(() => {
+    setAccessDraft(
+      activePage?.access?.policy
+        ? {
+            ownerUserId: activePage.access.policy.ownerUserId,
+            viewAccess: activePage.access.policy.viewAccess,
+            commentAccess: activePage.access.policy.commentAccess,
+            editAccess: activePage.access.policy.editAccess,
+          }
+        : null,
+    );
+  }, [activePage?.access?.policy]);
+
+  useEffect(() => {
+    if (!selectedSpaceId) {
+      return;
+    }
+
+    const channel = wikiliveApi.openWorkspaceRealtime(selectedSpaceId, {
+      onMessage: (event: WorkspaceRealtimeEvent) => {
+        if (event.type === 'page_access_updated') {
+          void applyPageAccessUpdate(event.pageId);
+        }
+      },
+    });
+
+    return () => {
+      channel.close();
+    };
+  }, [applyPageAccessUpdate, selectedSpaceId]);
 
   useEffect(() => {
     if (!selectedSpaceId) {
@@ -1211,6 +1282,32 @@ export function WorkspacePage() {
     await refreshTree(selectedSpaceId, activePageId);
   };
 
+  const handleSaveAccessSettings = async () => {
+    if (!activePageId || !accessDraft || !canManageAccess) {
+      return;
+    }
+
+    setIsUpdatingAccess(true);
+    try {
+      const response = await wikiliveApi.updatePageAccess(activePageId, accessDraft);
+      setActivePage((current) =>
+        current
+          ? {
+              ...current,
+              access: response.access,
+            }
+          : current,
+      );
+      setAccessDraft(response.access.policy);
+      await refreshTree(selectedSpaceId, activePageId);
+      setErrorMessage('');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Не удалось обновить настройки доступа');
+    } finally {
+      setIsUpdatingAccess(false);
+    }
+  };
+
   const handleCheckpoint = async () => {
     if (!activePageId) {
       return;
@@ -1522,14 +1619,15 @@ export function WorkspacePage() {
 
           {isCommentsEnabled && rightPanelMode === 'comments' ? (
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-              <CommentsPanel
-                activeThread={comments.activeThread}
-                activeThreadId={comments.activeThreadId}
-                isLoading={comments.isLoading}
-                errorMessage={comments.errorMessage}
-                onRetry={() => void comments.refreshComments()}
-                onClose={handleCloseComments}
-                onSubmitMessage={comments.submitMessage}
+            <CommentsPanel
+              activeThread={comments.activeThread}
+              activeThreadId={comments.activeThreadId}
+              isLoading={comments.isLoading}
+              errorMessage={comments.errorMessage}
+              canComment={activePage?.access?.capabilities.canComment ?? true}
+              onRetry={() => void comments.refreshComments()}
+              onClose={handleCloseComments}
+              onSubmitMessage={comments.submitMessage}
                 onEditMessage={comments.editMessage}
                 onDeleteMessage={comments.deleteMessage}
                 onResolveThread={comments.resolveThread}
@@ -1595,7 +1693,7 @@ export function WorkspacePage() {
                     setEditingTemplate(null);
                     setIsCreateTemplateModalOpen(true);
                   }}
-                  disabled={!activeEditor}
+                  disabled={!activeEditor || !canEditActivePage}
                   className="mt-2 w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm font-semibold text-editor-text-secondary transition-colors hover:bg-editor-bg-control disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <span className="inline-flex items-center gap-2">
@@ -1603,7 +1701,7 @@ export function WorkspacePage() {
                     Сохранить как шаблон
                   </span>
                 </button>
-                {activePageId ? (
+                {activePageId && (activePage?.access?.capabilities.canDelete ?? true) ? (
                   <button
                     type="button"
                     onClick={() => void handleDeletePage(activePageId, activePage?.title ?? 'Без названия')}
@@ -1612,6 +1710,90 @@ export function WorkspacePage() {
                   >
                     {isDeletingPage ? 'Удаляем страницу...' : 'Удалить страницу'}
                   </button>
+                ) : null}
+                {canManageAccess && accessDraft ? (
+                  <div className="mt-3 rounded-xl border border-editor-border-subtle bg-[#fafbfc] p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">Доступ</p>
+                    <div className="mt-3 space-y-3">
+                      <label className="block text-xs text-editor-text-secondary">
+                        <span className="mb-1 block font-semibold">Кто может просматривать</span>
+                        <select
+                          value={accessDraft.viewAccess}
+                          onChange={(event) =>
+                            setAccessDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    viewAccess: event.target.value as DocumentAccessPolicy['viewAccess'],
+                                  }
+                                : current
+                            )
+                          }
+                          className="w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm text-editor-text-primary outline-none"
+                        >
+                          {ACCESS_SCOPE_OPTIONS.map((option) => (
+                            <option key={`view-${option.value}`} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block text-xs text-editor-text-secondary">
+                        <span className="mb-1 block font-semibold">Кто может комментировать</span>
+                        <select
+                          value={accessDraft.commentAccess}
+                          onChange={(event) =>
+                            setAccessDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    commentAccess: event.target.value as DocumentAccessPolicy['commentAccess'],
+                                  }
+                                : current
+                            )
+                          }
+                          className="w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm text-editor-text-primary outline-none"
+                        >
+                          {ACCESS_SCOPE_OPTIONS.map((option) => (
+                            <option key={`comment-${option.value}`} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block text-xs text-editor-text-secondary">
+                        <span className="mb-1 block font-semibold">Кто может редактировать</span>
+                        <select
+                          value={accessDraft.editAccess}
+                          onChange={(event) =>
+                            setAccessDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    editAccess: event.target.value as DocumentAccessPolicy['editAccess'],
+                                  }
+                                : current
+                            )
+                          }
+                          className="w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm text-editor-text-primary outline-none"
+                        >
+                          {ACCESS_SCOPE_OPTIONS.map((option) => (
+                            <option key={`edit-${option.value}`} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => void handleSaveAccessSettings()}
+                        disabled={!hasAccessChanges || isUpdatingAccess}
+                        className="w-full rounded-lg bg-[#d70032] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#b8002b] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isUpdatingAccess ? 'Сохраняем доступ...' : 'Сохранить доступ'}
+                      </button>
+                    </div>
+                  </div>
                 ) : null}
               </div>
               <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">

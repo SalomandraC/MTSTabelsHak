@@ -46,6 +46,7 @@ type CollabState = {
 type UsePageEditorControllerOptions = {
   spaceId: string;
   page: WikiPage | null;
+  canEdit: boolean;
   onRenamePage: (title: string) => Promise<void>;
   onCheckpoint: () => Promise<void>;
   onOpenCommentThread?: (threadId: string) => void;
@@ -144,6 +145,7 @@ function normalizeTemplateKey(label: string): string {
 export function usePageEditorController({
   spaceId,
   page,
+  canEdit,
   onRenamePage,
   onCheckpoint,
   onOpenCommentThread,
@@ -200,7 +202,7 @@ export function usePageEditorController({
     let ydoc: Y.Doc | null = null;
     let cleanupAwareness: (() => void) | null = null;
 
-    setSaveStatus('Открываем collaboration session');
+    setSaveStatus(canEdit ? 'Открываем collaboration session' : 'Открываем read-only session');
     setConnectionStatus('connecting');
     setRecoveryMessage('');
 
@@ -366,6 +368,7 @@ export function usePageEditorController({
     {
       extensions,
       content: collabState ? undefined : initialContent,
+      editable: canEdit,
       editorProps: {
         attributes: {
           class: 'tiptap h-full min-h-full',
@@ -484,7 +487,7 @@ export function usePageEditorController({
   );
 
   useEffect(() => {
-    if (!collabState) {
+    if (!collabState || !canEdit) {
       return;
     }
 
@@ -525,9 +528,13 @@ export function usePageEditorController({
         window.clearTimeout(checkpointTimer);
       }
     };
-  }, [collabState, onCheckpoint, page?.documentState?.checkpointId, page?.documentState?.serverVersion]);
+  }, [canEdit, collabState, onCheckpoint, page?.documentState?.checkpointId, page?.documentState?.serverVersion]);
 
   const handleSaveMeta = (newTitle: string) => {
+    if (!canEdit) {
+      return;
+    }
+
     void onRenamePage(newTitle).catch((error) => {
       setSaveStatus(error instanceof Error ? error.message : 'Не удалось переименовать страницу');
     });
@@ -584,7 +591,7 @@ export function usePageEditorController({
   };
 
   const openLinkModal = (position?: ModalPosition) => {
-    if (!editor) {
+    if (!editor || !canEdit) {
       return;
     }
 
@@ -608,7 +615,7 @@ export function usePageEditorController({
   };
 
   const handleInsertLink = () => {
-    if (!editor) {
+    if (!editor || !canEdit) {
       return;
     }
 
@@ -642,7 +649,7 @@ export function usePageEditorController({
   };
 
   const handleDeleteLink = () => {
-    if (!editor) {
+    if (!editor || !canEdit) {
       return;
     }
 
@@ -672,7 +679,7 @@ export function usePageEditorController({
   };
 
   const handleConfirmImageInsert = () => {
-    if (!editor || !imagePreviewSrc) {
+    if (!editor || !imagePreviewSrc || !canEdit) {
       return;
     }
 
@@ -700,7 +707,7 @@ export function usePageEditorController({
   };
 
   const handleInsertTemplateVariable = () => {
-    if (!editor) {
+    if (!editor || !canEdit) {
       return;
     }
 
@@ -719,7 +726,7 @@ export function usePageEditorController({
   };
 
   const deleteSlashRange = () => {
-    if (!editor || !slashStateRef.current.isOpen) {
+    if (!editor || !slashStateRef.current.isOpen || !canEdit) {
       return;
     }
 
@@ -731,7 +738,7 @@ export function usePageEditorController({
   };
 
   const applySlashItem = (item: PageEditorSlashCommandItem | SlashMenuItem) => {
-    if (!editor || !('run' in item)) {
+    if (!editor || !('run' in item) || !canEdit) {
       return;
     }
 
@@ -808,7 +815,7 @@ export function usePageEditorController({
   };
 
   const handleSelectPage = (selectedPage: PageSummary) => {
-    if (!editor) {
+    if (!editor || !canEdit) {
       return;
     }
 
@@ -817,7 +824,7 @@ export function usePageEditorController({
   };
 
   const handleSelectTable = (table: WikiTableSelection) => {
-    if (!editor) {
+    if (!editor || !canEdit) {
       return;
     }
 
@@ -874,7 +881,7 @@ export function usePageEditorController({
         return;
       }
 
-      if (!slashStateRef.current.isOpen || !editor) {
+      if (!slashStateRef.current.isOpen || !editor || !canEdit) {
         return;
       }
 
@@ -935,7 +942,7 @@ export function usePageEditorController({
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [closeImageModal, editor, isImageModalOpen, isLinkModalOpen, isTemplateVariableModalOpen]);
+  }, [canEdit, closeImageModal, editor, isImageModalOpen, isLinkModalOpen, isTemplateVariableModalOpen]);
 
   return {
     editor,
