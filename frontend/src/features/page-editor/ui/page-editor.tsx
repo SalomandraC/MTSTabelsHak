@@ -1,8 +1,9 @@
 import type { Content, Editor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { SlashMenu } from '../../slash-menu';
+import { AiInlineCopilot } from '../../plugins/ai-assistant';
 import { WikiTablePickerModal } from '../../wiki-tables';
 import { usePlugins } from '../../plugins';
 import type { PageHistoryCheckpoint, WikiPage } from '../../../shared/api/wikilive';
@@ -35,6 +36,78 @@ type PageEditorProps = {
   commentCount?: number;
   historyPreview?: PageHistoryCheckpoint | null;
 };
+
+type CopilotAnchor = {
+  x: number;
+  y: number;
+  surfaceWidth?: number;
+  target: 'table' | 'text';
+  datasheetId?: string | null;
+  viewId?: string | null;
+  tableSnapshot?: {
+    datasheetId?: string;
+    viewId?: string | null;
+    fields?: Array<Record<string, unknown>>;
+    records?: Array<Record<string, unknown>>;
+    total?: number;
+    updatedAt?: number;
+  } | null;
+};
+
+function getTableSnapshot(datasheetId?: string | null) {
+  if (!datasheetId) {
+    return null;
+  }
+
+  const globalStore = (window as unknown as {
+    __wikiliveTableSnapshots?: Record<string, unknown>;
+  });
+
+  return (globalStore.__wikiliveTableSnapshots?.[datasheetId] ?? null) as {
+    datasheetId?: string;
+    viewId?: string | null;
+    fields?: Array<Record<string, unknown>>;
+    records?: Array<Record<string, unknown>>;
+    total?: number;
+    updatedAt?: number;
+  } | null;
+}
+
+function getTableContextByDomTarget(target: EventTarget | null): { datasheetId?: string | null; viewId?: string | null } | null {
+  if (!(target instanceof HTMLElement)) {
+    return null;
+  }
+
+  const tableElement = target.closest('[data-type="mws-table-embed"]') as HTMLElement | null;
+  if (!tableElement) {
+    return null;
+  }
+
+  return {
+    datasheetId: tableElement.dataset.datasheetId ?? null,
+    viewId: tableElement.dataset.viewId ?? null,
+  };
+}
+
+function getTableContextBySelection(editor: Editor | null): { datasheetId?: string | null; viewId?: string | null } | null {
+  if (!editor) {
+    return null;
+  }
+
+  const selectionPos = editor.state.selection.from;
+  const resolved = editor.state.doc.resolve(selectionPos);
+  for (let depth = resolved.depth; depth >= 0; depth -= 1) {
+    const node = resolved.node(depth);
+    if (node.type.name === 'mwsTableEmbed') {
+      return {
+        datasheetId: (node.attrs?.datasheetId as string | null | undefined) ?? null,
+        viewId: (node.attrs?.viewId as string | null | undefined) ?? null,
+      };
+    }
+  }
+
+  return null;
+}
 
 function formatHistoryPreviewDate(value: string) {
   return new Intl.DateTimeFormat('ru-RU', {
@@ -197,13 +270,17 @@ function LivePageEditor({
   activeCommentThreadId = null,
   commentCount = 0,
 }: Omit<PageEditorProps, 'isLoading' | 'historyPreview'> & { page: WikiPage }) {
-  const { isEditorSlotEnabled } = usePlugins();
+  const { isEditorSlotEnabled, isAiAssistantFeatureEnabled } = usePlugins();
   const canEdit = page.access?.capabilities.canEdit ?? true;
   const canComment = page.access?.capabilities.canComment ?? true;
   const canUseAi = page.access?.capabilities.canUseAi ?? true;
   const isAiSlashEnabled = isEditorSlotEnabled('slash_menu') && canUseAi;
   const isAiToolbarEnabled = isEditorSlotEnabled('toolbar_bubble') && canUseAi;
-  const isAiExtensionEnabled = isEditorSlotEnabled('editor_extension') && canUseAi;
+  const isAiGhostEnabled = isAiAssistantFeatureEnabled('ghost_text') && canUseAi;
+  const isAiInlineChatEnabled = isAiAssistantFeatureEnabled('inline_chat') && canUseAi;
+  const [copilotAnchor, setCopilotAnchor] = useState<CopilotAnchor | null>(null);
+  const isCopilotOpen = Boolean(copilotAnchor);
+  const editorSurfaceRef = useRef<HTMLDivElement | null>(null);
 
   const controller = usePageEditorController({
     spaceId,
@@ -213,8 +290,19 @@ function LivePageEditor({
     onCheckpoint,
     onOpenCommentThread,
     isAiSlashEnabled,
-    isAiEditorExtensionEnabled: isAiExtensionEnabled,
+    isAiGhostEnabled,
   });
+
+  useEffect(() => {
+    const globalFlags = window as unknown as { __wikiliveCopilotOpen?: boolean };
+    globalFlags.__wikiliveCopilotOpen = isCopilotOpen;
+    window.dispatchEvent(new CustomEvent('wikilive:copilot-visibility', { detail: { open: isCopilotOpen } }));
+
+    return () => {
+      globalFlags.__wikiliveCopilotOpen = false;
+      window.dispatchEvent(new CustomEvent('wikilive:copilot-visibility', { detail: { open: false } }));
+    };
+  }, [isCopilotOpen]);
 
   useEffect(() => {
     onEditorChange?.(controller.editor);
@@ -231,6 +319,44 @@ function LivePageEditor({
       onDocumentStateEncoderChange?.(null);
     };
   }, [controller.getCurrentDocumentStateValue, onDocumentStateEncoderChange]);
+
+  useEffect(() => {
+    if (!isAiInlineChatEnabled) {
+      return;
+    }
+
+    const handleHotkey = (event: KeyboardEvent) => {
+      const isInlineHotkey = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'i';
+      if (!isInlineHotkey) {
+        return;
+      }
+
+      if (!controller.editor || !controller.editor.isFocused) {
+        return;
+      }
+
+      event.preventDefault();
+
+      const coords = controller.editor.view.coordsAtPos(controller.editor.state.selection.from);
+      const tableContext = getTableContextBySelection(controller.editor);
+      const surfaceRect = editorSurfaceRef.current?.getBoundingClientRect();
+
+      setCopilotAnchor({
+        x: coords.left - (surfaceRect?.left ?? 0),
+        y: coords.bottom - (surfaceRect?.top ?? 0),
+        surfaceWidth: surfaceRect?.width,
+        target: tableContext?.datasheetId ? 'table' : 'text',
+        datasheetId: tableContext?.datasheetId,
+        viewId: tableContext?.viewId,
+        tableSnapshot: getTableSnapshot(tableContext?.datasheetId),
+      });
+    };
+
+    window.addEventListener('keydown', handleHotkey);
+    return () => {
+      window.removeEventListener('keydown', handleHotkey);
+    };
+  }, [controller.editor, isAiInlineChatEnabled]);
 
   return (
     <main className="flex h-full min-h-0 flex-col bg-editor-bg-page px-0 py-0">
@@ -257,8 +383,28 @@ function LivePageEditor({
         />
 
         <div
+          ref={editorSurfaceRef}
           className="relative mx-auto w-full max-w-4xl flex-1 px-2 pb-4 pt-1 sm:px-6 sm:pb-10 sm:pt-5"
           data-page-editor-surface
+          onContextMenu={(event) => {
+            if (!isAiInlineChatEnabled || !controller.editor) {
+              return;
+            }
+
+            event.preventDefault();
+            const tableContext = getTableContextByDomTarget(event.target) ?? getTableContextBySelection(controller.editor);
+            const surfaceRect = editorSurfaceRef.current?.getBoundingClientRect();
+
+            setCopilotAnchor({
+              x: event.clientX - (surfaceRect?.left ?? 0),
+              y: event.clientY - (surfaceRect?.top ?? 0),
+              surfaceWidth: surfaceRect?.width,
+              target: tableContext?.datasheetId ? 'table' : 'text',
+              datasheetId: tableContext?.datasheetId,
+              viewId: tableContext?.viewId,
+              tableSnapshot: getTableSnapshot(tableContext?.datasheetId),
+            });
+          }}
         >
           <EditorContent editor={controller.editor} />
           <CommentAnchorOverlay
@@ -294,6 +440,16 @@ function LivePageEditor({
           <PagePickerModal {...controller.pagePicker} />
           <TemplateVariableModal {...controller.templateVariableModal} />
           <WikiTablePickerModal {...controller.tablePicker} />
+          <AiInlineCopilot
+            enabled={isAiInlineChatEnabled}
+            isOpen={isCopilotOpen}
+            anchor={copilotAnchor}
+            editor={controller.editor}
+            spaceId={spaceId}
+            pageId={page.id}
+            pageTitle={controller.title}
+            onClose={() => setCopilotAnchor(null)}
+          />
         </div>
       </section>
     </main>

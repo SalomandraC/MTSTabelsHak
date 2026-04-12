@@ -24,6 +24,20 @@ import {
   ROW_HEIGHT,
   useWikiTableEmbed
 } from '../model/use-wiki-table-embed';
+import type { MwsField, MwsRecord } from '../../../shared/api/wikilive';
+
+type AiTableMutationDetail = {
+  datasheetId?: string;
+  op?: 'create_records' | 'add_table_column' | 'refresh';
+  records?: MwsRecord[];
+  field?: MwsField;
+};
+
+type AiTableRefreshDetail = {
+  datasheetId?: string | null;
+  viewId?: string | null;
+  reason?: string;
+};
 
 function isDirectEditKey(event: React.KeyboardEvent<HTMLElement>) {
   return (
@@ -37,6 +51,77 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
 
   useEffect(() => {
     controllerRef.current = controller;
+  }, [controller]);
+
+  useEffect(() => {
+    const datasheetId = controller.attrs.datasheetId;
+    if (!datasheetId) {
+      return;
+    }
+
+    const globalStore = (window as unknown as {
+      __wikiliveTableSnapshots?: Record<string, unknown>;
+    });
+
+    if (!globalStore.__wikiliveTableSnapshots) {
+      globalStore.__wikiliveTableSnapshots = {};
+    }
+
+    globalStore.__wikiliveTableSnapshots[datasheetId] = {
+      datasheetId,
+      viewId: controller.attrs.viewId ?? null,
+      fields: controller.fields,
+      records: controller.records.slice(0, 200),
+      total: controller.total,
+      updatedAt: Date.now(),
+    };
+  }, [
+    controller.attrs.datasheetId,
+    controller.attrs.viewId,
+    controller.fields,
+    controller.records,
+    controller.total,
+  ]);
+
+  useEffect(() => {
+    const handleRefreshRequest = (event: Event) => {
+      const customEvent = event as CustomEvent<AiTableRefreshDetail>;
+      const detail = customEvent.detail;
+      const targetDatasheetId = detail?.datasheetId ?? undefined;
+
+      if (targetDatasheetId && targetDatasheetId !== controller.attrs.datasheetId) {
+        return;
+      }
+
+      void controller.refreshTable();
+    };
+
+    const handleMutation = (event: Event) => {
+      const customEvent = event as CustomEvent<AiTableMutationDetail>;
+      const detail = customEvent.detail;
+      const targetDatasheetId = detail?.datasheetId;
+
+      if (!targetDatasheetId || targetDatasheetId !== controller.attrs.datasheetId) {
+        return;
+      }
+
+      if (detail.op === 'create_records' && Array.isArray(detail.records) && detail.records.length > 0) {
+        controller.applyAiRecords(detail.records);
+      }
+
+      if (detail.op === 'add_table_column' && detail.field) {
+        controller.applyAiField(detail.field);
+      }
+
+      void controller.refreshTable();
+    };
+
+    window.addEventListener('wikilive:ai-table-refresh-request', handleRefreshRequest);
+    window.addEventListener('wikilive:ai-table-mutation', handleMutation);
+    return () => {
+      window.removeEventListener('wikilive:ai-table-refresh-request', handleRefreshRequest);
+      window.removeEventListener('wikilive:ai-table-mutation', handleMutation);
+    };
   }, [controller]);
   const [isCreateFieldModalOpen, setIsCreateFieldModalOpen] = useState(false);
   const [isHideFieldsModalOpen, setIsHideFieldsModalOpen] = useState(false);
@@ -438,6 +523,8 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
           : 'border-editor-border-subtle'
       ].join(' ')}
       data-type="mws-table-embed"
+      data-datasheet-id={controller.attrs.datasheetId ?? undefined}
+      data-view-id={controller.attrs.viewId ?? undefined}
       contentEditable={false}
       onKeyDownCapture={(event: React.KeyboardEvent<HTMLDivElement>) => {
         if (

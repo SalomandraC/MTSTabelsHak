@@ -19,6 +19,7 @@ export interface ChatQuestionInput {
 
 export interface ChatQuestionResponse {
   answer: string;
+  needsRefresh: boolean;
   usedTools: Array<{
     toolName: string;
     args: Record<string, unknown>;

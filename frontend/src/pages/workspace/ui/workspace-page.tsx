@@ -586,6 +586,8 @@ export function WorkspacePage() {
     pendingPluginId,
     togglePlugin,
     updatePluginSettings,
+    aiAssistantFeatures,
+    toggleAiAssistantFeature,
     isPluginEnabled,
     isWorkspaceSidebarEnabled,
   } = usePlugins();
@@ -2018,9 +2020,11 @@ export function WorkspacePage() {
         isLoading={isPluginsLoading}
         errorMessage={pluginsErrorMessage}
         pendingPluginId={pendingPluginId}
+        aiAssistantFeatures={aiAssistantFeatures}
         onClose={() => setIsPluginsModalOpen(false)}
         onTogglePlugin={(pluginId, enabled) => void togglePlugin(pluginId, enabled)}
         onToggleSettings={(pluginId, settings) => void updatePluginSettings(pluginId, settings)}
+        onToggleAiAssistantFeature={toggleAiAssistantFeature}
       />
       <MwsTableActionModal
         node={selectedTableNode}

@@ -13,9 +13,33 @@ type AIGhostTextStorage = {
   requestId: number;
 };
 
+type CopilotVisibilityEvent = CustomEvent<{ open: boolean }>;
+
 const ghostTextPluginKey = new PluginKey<DecorationSet>('aiGhostTextPlugin');
 
+function isCopilotOpen(): boolean {
+  const globalFlags = window as unknown as { __wikiliveCopilotOpen?: boolean };
+  return Boolean(globalFlags.__wikiliveCopilotOpen);
+}
+
+function clearSuggestion(instance: {
+  storage: { suggestion: string; requestId: number };
+  editor: { state: any; view: { dispatch: (transaction: any) => void } };
+}) {
+  if (!instance.storage.suggestion) {
+    return;
+  }
+
+  instance.storage.suggestion = '';
+  instance.storage.requestId += 1;
+  instance.editor.view.dispatch(instance.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
+}
+
 function buildDecorations(editor: any, suggestion: string): DecorationSet {
+  if (isCopilotOpen()) {
+    return DecorationSet.empty;
+  }
+
   const state = editor.state;
   const selection = state.selection;
 
@@ -55,10 +79,29 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
   onCreate() {
     this.storage.suggestion = '';
     this.storage.requestId = 0;
+
+    const handler = (event: Event) => {
+      const customEvent = event as CopilotVisibilityEvent;
+      if (!customEvent.detail?.open) {
+        return;
+      }
+
+      clearSuggestion(this as unknown as {
+        storage: { suggestion: string; requestId: number };
+        editor: { state: any; view: { dispatch: (transaction: any) => void } };
+      });
+    };
+
+    (this as unknown as { __copilotVisibilityHandler?: (event: Event) => void }).__copilotVisibilityHandler = handler;
+    window.addEventListener('wikilive:copilot-visibility', handler);
   },
 
   onDestroy() {
     window.clearTimeout((this as unknown as { __aiGhostTimer?: number }).__aiGhostTimer);
+    const handler = (this as unknown as { __copilotVisibilityHandler?: (event: Event) => void }).__copilotVisibilityHandler;
+    if (handler) {
+      window.removeEventListener('wikilive:copilot-visibility', handler);
+    }
   },
 
   addProseMirrorPlugins() {
@@ -139,13 +182,22 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
 
   onSelectionUpdate() {
     if (!this.editor.state.selection.empty && this.storage.suggestion) {
-      this.storage.suggestion = '';
-      this.storage.requestId += 1;
-      this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
+      clearSuggestion(this as unknown as {
+        storage: { suggestion: string; requestId: number };
+        editor: { state: any; view: { dispatch: (transaction: any) => void } };
+      });
     }
   },
 
   onUpdate() {
+    if (isCopilotOpen()) {
+      clearSuggestion(this as unknown as {
+        storage: { suggestion: string; requestId: number };
+        editor: { state: any; view: { dispatch: (transaction: any) => void } };
+      });
+      return;
+    }
+
     const selection = this.editor.state.selection;
     if (!selection.empty) {
       return;
@@ -200,4 +252,5 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
       });
     }, this.options.debounceMs);
   },
+
 });
