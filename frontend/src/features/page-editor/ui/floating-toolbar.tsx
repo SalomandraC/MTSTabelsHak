@@ -283,11 +283,14 @@ export function FloatingToolbar({
       />
       <ToolbarButton
         icon={
-          <Code2 className="h-3.5 w-3.5" style={{ color: 'rgba(80, 87, 98, 1)' }} />
+          <Code2
+            className="h-3.5 w-3.5"
+            style={state.isCodeBlock ? { filter: redFilter } : { color: 'rgba(80, 87, 98, 1)' }}
+          />
         }
-        onClick={() => editor.chain().focus().toggleCode().run()}
-        pressed={state.isCode}
-        disabled={!canEdit || !state.canCode}
+        onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+        pressed={state.isCodeBlock}
+        disabled={!canEdit || !state.canCodeBlock}
         isFirst={false}
         isLast={true}
         aria-label="Код"
