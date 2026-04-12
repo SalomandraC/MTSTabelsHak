@@ -3,6 +3,7 @@ import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { Public } from 'src/common/decorators/public.decorator';
 import { UserContext } from 'src/auth/user-context';
 import { ExecuteToolDto } from './dto/execute-tool.dto';
+import { PlanTableMutationDto } from './dto/plan-table-mutation.dto';
 import {
   ChatRequestDto,
   CompletionRequestDto,
@@ -78,6 +79,19 @@ export class AiToolsController {
     return this.aiToolRegistryService.executeTool(dto.toolName, dto.args, user, {
       pageId: dto.pageId,
       workspaceId: dto.workspaceId,
+    });
+  }
+
+  @Post('plan-mutation')
+  @Public()
+  planTableMutation(@Body() dto: PlanTableMutationDto) {
+    return this.aiAssistantService.planTableMutation({
+      operation: dto.operation,
+      prompt: dto.prompt,
+      spaceId: dto.spaceId,
+      datasheetId: dto.datasheetId,
+      viewId: dto.viewId,
+      tableSnapshot: dto.tableSnapshot,
     });
   }
 }

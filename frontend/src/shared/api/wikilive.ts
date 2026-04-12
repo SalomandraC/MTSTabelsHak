@@ -488,6 +488,28 @@ export type AiExecuteToolResponse = {
   };
 };
 
+export type AiPlanMutationPayload = {
+  operation: 'create_records' | 'add_table_column';
+  prompt: string;
+  spaceId: string;
+  datasheetId: string;
+  viewId?: string;
+  tableSnapshot?: {
+    datasheetId?: string;
+    viewId?: string | null;
+    fields?: Array<Record<string, unknown>>;
+    records?: Array<Record<string, unknown>>;
+    total?: number;
+    updatedAt?: number;
+  };
+};
+
+export type AiPlanMutationResponse = {
+  toolName: 'create_records' | 'add_table_column';
+  args: Record<string, unknown>;
+  summary: string;
+};
+
 function toQueryString(query: RequestOptions['query']) {
   const params = new URLSearchParams();
 
@@ -1150,6 +1172,12 @@ export const wikiliveApi = {
   },
   aiExecuteTool(payload: AiExecuteToolPayload) {
     return requestWithAuth<AiExecuteToolResponse>('/api/v1/ai/execute', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiPlanMutation(payload: AiPlanMutationPayload) {
+    return requestWithAuth<AiPlanMutationResponse>('/api/v1/ai/plan-mutation', {
       method: 'POST',
       body: JSON.stringify(payload),
     });

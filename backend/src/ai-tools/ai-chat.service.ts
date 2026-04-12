@@ -18,7 +18,7 @@ export class AiChatService {
 
     const toolDefinitions = this.aiToolRegistryService
       .getToolDefinitions()
-      .filter((definition) => ['create_records', 'patch_records', 'get_records'].includes(definition.function.name));
+      .filter((definition) => ['create_records', 'patch_records', 'get_records', 'add_table_column'].includes(definition.function.name));
     const conversation: AiChatMessage[] = [...messages];
     const usedTools: Array<{ toolName: string; args: Record<string, unknown> }> = [];
     const references: Array<Record<string, unknown>> = [];
@@ -122,7 +122,8 @@ export class AiChatService {
         role: 'system',
         content: [
           'You are a wiki assistant that answers user questions using the page context and available tools.',
-          'If the user asks about records, tasks, rows, or table content, use the get_mws_records tool.',
+          'If the user asks about records, rows, or table content, use get_records.',
+          'If the user asks to add a new table column, use add_table_column.',
           'When tool arguments require a datasheetId, use the exact Target MWS datasheetId from the context.',
           'Keep the answer concise, factual, and grounded in the provided context or tool output.',
         ].join(' '),

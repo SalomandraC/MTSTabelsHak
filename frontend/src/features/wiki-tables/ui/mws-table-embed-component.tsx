@@ -48,6 +48,36 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
   }, [controller]);
 
   useEffect(() => {
+    const datasheetId = controller.attrs.datasheetId;
+    if (!datasheetId) {
+      return;
+    }
+
+    const globalStore = (window as unknown as {
+      __wikiliveTableSnapshots?: Record<string, unknown>;
+    });
+
+    if (!globalStore.__wikiliveTableSnapshots) {
+      globalStore.__wikiliveTableSnapshots = {};
+    }
+
+    globalStore.__wikiliveTableSnapshots[datasheetId] = {
+      datasheetId,
+      viewId: controller.attrs.viewId ?? null,
+      fields: controller.fields,
+      records: controller.records.slice(0, 200),
+      total: controller.total,
+      updatedAt: Date.now(),
+    };
+  }, [
+    controller.attrs.datasheetId,
+    controller.attrs.viewId,
+    controller.fields,
+    controller.records,
+    controller.total,
+  ]);
+
+  useEffect(() => {
     const handleMutation = (event: Event) => {
       const customEvent = event as CustomEvent<AiTableMutationDetail>;
       const detail = customEvent.detail;

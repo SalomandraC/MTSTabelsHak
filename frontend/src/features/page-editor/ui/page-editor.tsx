@@ -1,8 +1,9 @@
 import type { Editor } from '@tiptap/core';
 import { EditorContent } from '@tiptap/react';
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { SlashMenu } from '../../slash-menu';
+import { AiInlineCopilot } from '../../plugins/ai-assistant';
 import { WikiTablePickerModal } from '../../wiki-tables';
 import { usePlugins } from '../../plugins';
 import type { PresenceUser, WikiPage } from '../../../shared/api/wikilive';
@@ -32,6 +33,85 @@ type PageEditorProps = {
   activeCommentThreadId?: string | null;
   commentCount?: number;
 };
+
+type CopilotAnchor = {
+  x: number;
+  y: number;
+  target: 'table' | 'text';
+  datasheetId?: string | null;
+  viewId?: string | null;
+  tableSnapshot?: {
+    datasheetId?: string;
+    viewId?: string | null;
+    fields?: Array<Record<string, unknown>>;
+    records?: Array<Record<string, unknown>>;
+    total?: number;
+    updatedAt?: number;
+  } | null;
+};
+
+function getTableSnapshot(datasheetId?: string | null) {
+  if (!datasheetId) {
+    return null;
+  }
+
+  const globalStore = (window as unknown as {
+    __wikiliveTableSnapshots?: Record<string, unknown>;
+  });
+
+  return (globalStore.__wikiliveTableSnapshots?.[datasheetId] ?? null) as {
+    datasheetId?: string;
+    viewId?: string | null;
+    fields?: Array<Record<string, unknown>>;
+    records?: Array<Record<string, unknown>>;
+    total?: number;
+    updatedAt?: number;
+  } | null;
+}
+
+function getTableContextByCoords(editor: Editor | null, x: number, y: number): { datasheetId?: string | null; viewId?: string | null } | null {
+  if (!editor) {
+    return null;
+  }
+
+  const posAtCoords = editor.view.posAtCoords({ left: x, top: y });
+  if (!posAtCoords?.pos) {
+    return null;
+  }
+
+  const resolved = editor.state.doc.resolve(posAtCoords.pos);
+  for (let depth = resolved.depth; depth >= 0; depth -= 1) {
+    const node = resolved.node(depth);
+    if (node.type.name === 'mwsTableEmbed') {
+      return {
+        datasheetId: (node.attrs?.datasheetId as string | null | undefined) ?? null,
+        viewId: (node.attrs?.viewId as string | null | undefined) ?? null,
+      };
+    }
+  }
+
+  return null;
+}
+
+function getTableContextBySelection(editor: Editor | null): { datasheetId?: string | null; viewId?: string | null } | null {
+  if (!editor) {
+    return null;
+  }
+
+  const selectionPos = editor.state.selection.from;
+  const resolved = editor.state.doc.resolve(selectionPos);
+  for (let depth = resolved.depth; depth >= 0; depth -= 1) {
+    const node = resolved.node(depth);
+    if (node.type.name === 'mwsTableEmbed') {
+      return {
+        datasheetId: (node.attrs?.datasheetId as string | null | undefined) ?? null,
+        viewId: (node.attrs?.viewId as string | null | undefined) ?? null,
+      };
+    }
+  }
+
+  return null;
+}
 
 function PresenceStrip({ users }: { users: PresenceUser[] }) {
   if (users.length === 0) {
@@ -100,6 +180,7 @@ export function PageEditor({
   const isAiSlashEnabled = isEditorSlotEnabled('slash_menu');
   const isAiToolbarEnabled = isEditorSlotEnabled('toolbar_bubble');
   const isAiExtensionEnabled = isEditorSlotEnabled('editor_extension');
+  const [copilotAnchor, setCopilotAnchor] = useState<CopilotAnchor | null>(null);
 
   const controller = usePageEditorController({
     spaceId,
@@ -126,6 +207,44 @@ export function PageEditor({
       onDocumentStateEncoderChange?.(null);
     };
   }, [controller.getCurrentDocumentStateValue, isLoading, onDocumentStateEncoderChange, page]);
+
+  const isCopilotOpen = useMemo(() => Boolean(copilotAnchor), [copilotAnchor]);
+
+  useEffect(() => {
+    if (!isAiExtensionEnabled || isLoading || !page) {
+      return;
+    }
+
+    const handleHotkey = (event: KeyboardEvent) => {
+      const isInlineHotkey = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'i';
+      if (!isInlineHotkey) {
+        return;
+      }
+
+      if (!controller.editor || !controller.editor.isFocused) {
+        return;
+      }
+
+      event.preventDefault();
+
+      const coords = controller.editor.view.coordsAtPos(controller.editor.state.selection.from);
+      const tableContext = getTableContextBySelection(controller.editor);
+
+      setCopilotAnchor({
+        x: coords.left,
+        y: coords.bottom,
+        target: tableContext?.datasheetId ? 'table' : 'text',
+        datasheetId: tableContext?.datasheetId,
+        viewId: tableContext?.viewId,
+        tableSnapshot: getTableSnapshot(tableContext?.datasheetId),
+      });
+    };
+
+    window.addEventListener('keydown', handleHotkey);
+    return () => {
+      window.removeEventListener('keydown', handleHotkey);
+    };
+  }, [controller.editor, isAiExtensionEnabled, isLoading, page]);
 
   if (isLoading) {
     return <PageEditorLoadingSkeleton />;
@@ -168,6 +287,23 @@ export function PageEditor({
         <div
           className="relative mx-auto w-full max-w-4xl flex-1 px-2 pb-4 pt-1 sm:px-6 sm:pb-10 sm:pt-5"
           data-page-editor-surface
+          onContextMenu={(event) => {
+            if (!isAiExtensionEnabled || !controller.editor) {
+              return;
+            }
+
+            event.preventDefault();
+            const tableContext = getTableContextByCoords(controller.editor, event.clientX, event.clientY);
+
+            setCopilotAnchor({
+              x: event.clientX,
+              y: event.clientY,
+              target: tableContext?.datasheetId ? 'table' : 'text',
+              datasheetId: tableContext?.datasheetId,
+              viewId: tableContext?.viewId,
+              tableSnapshot: getTableSnapshot(tableContext?.datasheetId),
+            });
+          }}
         >
           <EditorContent editor={controller.editor} />
           <CommentAnchorOverlay
@@ -198,6 +334,16 @@ export function PageEditor({
           <PagePickerModal {...controller.pagePicker} />
           <TemplateVariableModal {...controller.templateVariableModal} />
           <WikiTablePickerModal {...controller.tablePicker} />
+          <AiInlineCopilot
+            enabled={isAiExtensionEnabled}
+            isOpen={isCopilotOpen}
+            anchor={copilotAnchor}
+            editor={controller.editor}
+            spaceId={spaceId}
+            pageId={page.id}
+            pageTitle={controller.title}
+            onClose={() => setCopilotAnchor(null)}
+          />
         </div>
       </section>
     </main>

@@ -1,11 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Editor } from '@tiptap/core';
 
-import {
-  type AiExecuteToolResponse,
-  type MwsField,
-  wikiliveApi,
-} from '../../../../shared/api/wikilive';
+import { type AiExecuteToolResponse, type MwsField, wikiliveApi } from '../../../../shared/api/wikilive';
 import { getEditorMarkdown } from '../model/editor-markdown';
 
 type CopilotTarget = 'table' | 'text';
@@ -22,6 +18,14 @@ type Anchor = {
   target: CopilotTarget;
   datasheetId?: string | null;
   viewId?: string | null;
+  tableSnapshot?: {
+    datasheetId?: string;
+    viewId?: string | null;
+    fields?: Array<Record<string, unknown>>;
+    records?: Array<Record<string, unknown>>;
+    total?: number;
+    updatedAt?: number;
+  } | null;
 };
 
 function dispatchTableMutation(detail: {
@@ -35,15 +39,6 @@ function dispatchTableMutation(detail: {
       detail,
     }),
   );
-}
-
-function pickTextField(fields: MwsField[]): MwsField | null {
-  const preferred = fields.find((field) => {
-    const type = field.type.toLowerCase();
-    return type.includes('text') || type.includes('string') || type.includes('singletext');
-  });
-
-  return preferred ?? fields[0] ?? null;
 }
 
 function parseColumnName(prompt: string): string {
@@ -171,38 +166,50 @@ export function AiInlineCopilot({
     setPendingAction(null);
 
     if (anchor.target === 'table' && anchor.datasheetId) {
+      const datasheetId = anchor.datasheetId;
       await withBusy(async () => {
-        const result = await wikiliveApi.aiExecuteTool({
-          toolName: 'analyze_table_data',
-          args: {
-            datasheetId: anchor.datasheetId,
-            viewId: anchor.viewId ?? undefined,
-            pageSize: 100,
-            pageNum: 1,
-          },
+        const records = Array.isArray(anchor.tableSnapshot?.records) ? anchor.tableSnapshot?.records ?? [] : [];
+        const response = await wikiliveApi.aiChat({
+          question: [
+            'Ты анализируешь конкретную таблицу MWS.',
+            `Вот ее данные JSON: ${JSON.stringify(anchor.tableSnapshot ?? { datasheetId: anchor.datasheetId })}`,
+            'Используй инструменты get_records, create_records, add_table_column при необходимости.',
+            'Дай краткий аналитический вывод: тренды, риски, аномалии.',
+          ].join('\n'),
           pageId: pageId ?? undefined,
-          workspaceId: spaceId,
+          datasheetId,
+          viewId: anchor.viewId ?? undefined,
+          pageTitle,
+          pageSnapshot: {
+            markdown: getEditorMarkdown(editor),
+          },
         });
 
-        if (!result.ok) {
-          throw new Error(result.error?.message ?? 'Не удалось проанализировать таблицу');
-        }
-
-        setOutput(String(result.data?.markdown ?? 'Анализ выполнен, но ответ пустой'));
-        return result;
+        const intro = `Вижу вашу таблицу с ${records.length} записями, готов анализировать...`;
+        setOutput(`${intro}\n\n${response.answer}`);
+        return response;
       });
       return;
     }
 
     await withBusy(async () => {
       const response = await wikiliveApi.aiChat({
-        question: prompt.trim() || 'Сделай краткий аналитический обзор текущего документа с выводами и рисками.',
+        question: [
+          'Ты помощник по тексту.',
+          `Вот содержание документа: ${getEditorMarkdown(editor)}`,
+          `Запрос пользователя: ${prompt.trim() || 'Напиши краткое дополнение к текущему документу.'}`,
+          'Верни только готовый текст для вставки в документ.',
+        ].join('\n'),
         pageId: pageId ?? undefined,
         pageTitle,
         pageSnapshot: {
           markdown: getEditorMarkdown(editor),
         },
       });
+
+      if (editor) {
+        editor.commands.insertContent(response.answer);
+      }
 
       setOutput(response.answer);
       return response;
@@ -298,60 +305,58 @@ export function AiInlineCopilot({
   };
 
   const prepareAddData = async () => {
-    if (!anchor.datasheetId) {
+    const datasheetId = anchor.datasheetId;
+    if (!datasheetId) {
       setStatus('Команда доступна только для таблицы');
       return;
     }
 
     setPendingAction(null);
     await withBusy(async () => {
-      const fieldsResponse = await wikiliveApi.listMwsFields(anchor.datasheetId!, anchor.viewId);
-      const field = pickTextField(fieldsResponse.items);
-
-      if (!field) {
-        throw new Error('Не удалось подобрать поле для новой строки');
-      }
-
-      const text = prompt.trim() || 'Добавлено AI Copilot';
-      const fields: Record<string, unknown> = {
-        [field.id]: text,
-      };
+      const planned = await wikiliveApi.aiPlanMutation({
+        operation: 'create_records',
+        prompt: prompt.trim() || 'Добавь одну релевантную строку по контексту таблицы',
+        spaceId,
+        datasheetId,
+        viewId: anchor.viewId ?? undefined,
+        tableSnapshot: anchor.tableSnapshot ?? undefined,
+      });
 
       setPendingAction({
-        label: `Создать 1 строку в поле ${field.name}`,
-        toolName: 'create_records',
-        args: {
-          datasheetId: anchor.datasheetId,
-          fieldKey: 'id',
-          records: [{ fields }],
-        },
+        label: planned.summary,
+        toolName: planned.toolName,
+        args: planned.args,
       });
-      setOutput(`Подготовлено изменение: будет создана новая строка (fieldKey: id).`);
+      setOutput(`AI подготовил команду: ${planned.summary}`);
       setStatus('Нажмите Применить');
     });
   };
 
   const prepareAddColumn = async () => {
-    if (!anchor.datasheetId) {
+    const datasheetId = anchor.datasheetId;
+    if (!datasheetId) {
       setStatus('Команда доступна только для таблицы');
       return;
     }
 
-    const columnName = parseColumnName(prompt);
-    const columnType = parseColumnType(prompt);
-
-    setPendingAction({
-      label: `Добавить колонку "${columnName}" (${columnType})`,
-      toolName: 'add_table_column',
-      args: {
+    await withBusy(async () => {
+      const planned = await wikiliveApi.aiPlanMutation({
+        operation: 'add_table_column',
+        prompt: prompt.trim() || `Добавь колонку ${parseColumnName(prompt)} типа ${parseColumnType(prompt)}`,
         spaceId,
-        datasheetId: anchor.datasheetId,
-        name: columnName,
-        type: columnType,
-      },
+        datasheetId,
+        viewId: anchor.viewId ?? undefined,
+        tableSnapshot: anchor.tableSnapshot ?? undefined,
+      });
+
+      setPendingAction({
+        label: planned.summary,
+        toolName: planned.toolName,
+        args: planned.args,
+      });
+      setOutput(`AI подготовил команду: ${planned.summary}`);
+      setStatus('Нажмите Применить');
     });
-    setOutput(`Подготовлено изменение схемы: колонка "${columnName}".`);
-    setStatus('Нажмите Применить');
   };
 
   const applyPendingAction = async () => {
@@ -360,6 +365,39 @@ export function AiInlineCopilot({
     }
 
     await withBusy(async () => {
+      if (anchor.datasheetId && pendingAction.toolName === 'create_records') {
+        const optimisticRecords = Array.isArray(pendingAction.args.records)
+          ? pendingAction.args.records.map((item, index) => {
+              const record = item as { fields?: Record<string, unknown> };
+              return {
+                recordId: `temp-ai-${Date.now()}-${index}`,
+                fields: record.fields ?? {},
+              };
+            })
+          : [];
+
+        if (optimisticRecords.length > 0) {
+          dispatchTableMutation({
+            datasheetId: anchor.datasheetId,
+            op: 'create_records',
+            records: optimisticRecords,
+          });
+        }
+      }
+
+      if (anchor.datasheetId && pendingAction.toolName === 'add_table_column') {
+        dispatchTableMutation({
+          datasheetId: anchor.datasheetId,
+          op: 'add_table_column',
+          field: {
+            id: `temp-ai-field-${Date.now()}`,
+            name: String(pendingAction.args.name ?? 'Новая колонка'),
+            type: String(pendingAction.args.type ?? 'SingleText'),
+            property: (pendingAction.args.property as Record<string, unknown> | undefined) ?? undefined,
+          },
+        });
+      }
+
       const result: AiExecuteToolResponse = await wikiliveApi.aiExecuteTool({
         toolName: pendingAction.toolName,
         args: pendingAction.args,
@@ -372,24 +410,10 @@ export function AiInlineCopilot({
       }
 
       if (anchor.datasheetId) {
-        if (pendingAction.toolName === 'create_records') {
-          dispatchTableMutation({
-            datasheetId: anchor.datasheetId,
-            op: 'create_records',
-            records: (result.canonicalRecords ?? []).map((item) => ({
-              recordId: item.recordId,
-              fields: item.fields,
-            })),
-          });
-        }
-
-        if (pendingAction.toolName === 'add_table_column') {
-          dispatchTableMutation({
-            datasheetId: anchor.datasheetId,
-            op: 'add_table_column',
-            field: (result.data?.field as MwsField | undefined) ?? undefined,
-          });
-        }
+        dispatchTableMutation({
+          datasheetId: anchor.datasheetId,
+          op: 'refresh',
+        });
       }
 
       setOutput(`Изменение применено: ${pendingAction.label}`);

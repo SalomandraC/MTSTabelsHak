@@ -65,6 +65,94 @@ export class AiAssistantService {
     return { text: output.trim() };
   }
 
+  async planTableMutation(input: {
+    operation: 'create_records' | 'add_table_column';
+    prompt: string;
+    spaceId: string;
+    datasheetId: string;
+    viewId?: string;
+    tableSnapshot?: {
+      datasheetId?: string;
+      viewId?: string | null;
+      fields?: Array<Record<string, unknown>>;
+      records?: Array<Record<string, unknown>>;
+      total?: number;
+      updatedAt?: number;
+    };
+  }): Promise<{ toolName: 'create_records' | 'add_table_column'; args: Record<string, unknown>; summary: string }> {
+    const messages: AiChatMessage[] = [
+      {
+        role: 'system',
+        content: [
+          'You convert user prompt to a strictly valid JSON command for MWS tools.',
+          'Output only JSON object with keys: toolName, args, summary.',
+          'Allowed toolName values: create_records, add_table_column.',
+          'For create_records args must include datasheetId, fieldKey:"id", records:[{fields:{...}}].',
+          'For add_table_column args must include spaceId, datasheetId, name, type, optional property.',
+          'Never ask clarifying questions. Use table snapshot and user prompt directly.',
+        ].join(' '),
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          operation: input.operation,
+          prompt: input.prompt,
+          spaceId: input.spaceId,
+          datasheetId: input.datasheetId,
+          viewId: input.viewId,
+          tableSnapshot: input.tableSnapshot ?? null,
+        }),
+      },
+    ];
+
+    const response = await this.aiProviderClientService.complete({
+      messages,
+      temperature: 0.1,
+      maxTokens: 700,
+      responseFormat: 'json_object',
+    });
+
+    const raw = this.extractText(response);
+    let parsed: Record<string, unknown>;
+
+    try {
+      parsed = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      throw new BadRequestException({
+        code: 'AI_RESPONSE_INVALID_JSON',
+        message: 'AI mutation plan is not valid JSON',
+      });
+    }
+
+    const toolName = String(parsed.toolName ?? input.operation) as 'create_records' | 'add_table_column';
+    const args = (parsed.args && typeof parsed.args === 'object' ? parsed.args : {}) as Record<string, unknown>;
+    const summary = String(parsed.summary ?? 'Команда подготовлена');
+
+    if (toolName === 'create_records') {
+      return {
+        toolName,
+        args: {
+          datasheetId: String(args.datasheetId ?? input.datasheetId),
+          fieldKey: 'id',
+          records: Array.isArray(args.records) ? args.records : [],
+        },
+        summary,
+      };
+    }
+
+    return {
+      toolName: 'add_table_column',
+      args: {
+        spaceId: String(args.spaceId ?? input.spaceId),
+        datasheetId: String(args.datasheetId ?? input.datasheetId),
+        name: String(args.name ?? 'Новая колонка'),
+        type: String(args.type ?? 'SingleText'),
+        property: args.property,
+      },
+      summary,
+    };
+  }
+
   buildCompletionMessages(currentText: string, context: PageContextInput = {}): AiChatMessage[] {
     return [
       {

@@ -32,6 +32,8 @@ export class AiToolRegistryService {
     user: UserContext,
     context: ToolExecutionContext = {},
   ): Promise<ToolExecutionResult> {
+    console.log('EXECUTE TOOL:', toolName, args);
+
     const schema = AI_TOOL_SCHEMA_BY_NAME[toolName];
     if (!schema) {
       throw new BadRequestException({
