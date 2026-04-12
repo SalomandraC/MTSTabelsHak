@@ -522,9 +522,94 @@ export type AiGenerateResponse = {
 
 export type AiChatResponse = {
   answer: string;
+  needsRefresh?: boolean;
   usedTools?: Array<{ toolName: string; args: Record<string, unknown> }>;
   contextMarkdown?: string;
   references?: Array<Record<string, unknown>>;
+};
+
+export type AiExecuteToolPayload = {
+  toolName: string;
+  args: Record<string, unknown>;
+  pageId?: string;
+  workspaceId?: string;
+};
+
+export type AiExecuteToolResponse = {
+  ok: boolean;
+  toolName: string;
+  data?: Record<string, unknown>;
+  canonicalRecords?: Array<{
+    recordId: string;
+    fields: Record<string, unknown>;
+    createdAt?: string | null;
+    updatedAt?: string | null;
+  }>;
+  error?: {
+    code: string;
+    message: string;
+    status?: number;
+    details?: unknown;
+  };
+};
+
+export type AiPlanMutationPayload = {
+  operation: 'create_records' | 'add_table_column';
+  prompt: string;
+  spaceId: string;
+  datasheetId: string;
+  viewId?: string;
+  tableSnapshot?: {
+    datasheetId?: string;
+    viewId?: string | null;
+    fields?: Array<Record<string, unknown>>;
+    records?: Array<Record<string, unknown>>;
+    total?: number;
+    updatedAt?: number;
+  };
+};
+
+export type AiPlanMutationResponse = {
+  toolName: 'create_records' | 'add_table_column';
+  args: Record<string, unknown>;
+  summary: string;
+};
+
+export type AiPlanWorkflowPayload = {
+  prompt: string;
+  spaceId: string;
+  datasheetId: string;
+  viewId?: string;
+  tableSnapshot?: {
+    datasheetId?: string;
+    viewId?: string | null;
+    fields?: Array<Record<string, unknown>>;
+    records?: Array<Record<string, unknown>>;
+    total?: number;
+    updatedAt?: number;
+  };
+};
+
+export type AiPlanWorkflowResponse = {
+  summary: string;
+  commands: Array<
+    | {
+        type: 'ADD_COLUMN';
+        column: {
+          name: string;
+          type: string;
+          property?: Record<string, unknown>;
+        };
+      }
+    | {
+        type: 'ADD_ROW';
+        rows: Array<{ fields: Record<string, unknown> }>;
+      }
+    | {
+        type: 'UPDATE_RECORDS';
+        records: Array<{ recordId: string; fields: Record<string, unknown> }>;
+      }
+  >;
 };
 
 function toQueryString(query: RequestOptions['query']) {
@@ -1238,6 +1323,24 @@ export const wikiliveApi = {
   },
   aiChat(payload: AiChatPayload) {
     return requestWithAuth<AiChatResponse>('/api/v1/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiExecuteTool(payload: AiExecuteToolPayload) {
+    return requestWithAuth<AiExecuteToolResponse>('/api/v1/ai/execute', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiPlanMutation(payload: AiPlanMutationPayload) {
+    return requestWithAuth<AiPlanMutationResponse>('/api/v1/ai/plan-mutation', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiPlanWorkflow(payload: AiPlanWorkflowPayload) {
+    return requestWithAuth<AiPlanWorkflowResponse>('/api/v1/ai/plan-workflow', {
       method: 'POST',
       body: JSON.stringify(payload),
     });

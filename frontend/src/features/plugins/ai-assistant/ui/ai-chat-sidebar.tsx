@@ -4,6 +4,7 @@ import type { Editor } from '@tiptap/core';
 
 import { wikiliveApi } from '../../../../shared/api/wikilive';
 import { getEditorMarkdown } from '../model/editor-markdown';
+import { useAiTableContext } from '../model/use-ai-table-context';
 
 type ChatMessage = {
   id: string;
@@ -26,6 +27,7 @@ export function AiChatSidebar({
   const [question, setQuestion] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const { handleAiChatResponse } = useAiTableContext();
 
   if (!enabled) {
     return (
@@ -58,6 +60,8 @@ export function AiChatSidebar({
           markdown: getEditorMarkdown(editor),
         },
       });
+
+      handleAiChatResponse(response);
 
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: 'assistant', text: response.answer }]);
     } catch (error) {

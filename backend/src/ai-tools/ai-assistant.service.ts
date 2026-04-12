@@ -65,6 +65,549 @@ export class AiAssistantService {
     return { text: output.trim() };
   }
 
+  async planTableMutation(input: {
+    operation: 'create_records' | 'add_table_column';
+    prompt: string;
+    spaceId: string;
+    datasheetId: string;
+    viewId?: string;
+    tableSnapshot?: {
+      datasheetId?: string;
+      viewId?: string | null;
+      fields?: Array<Record<string, unknown>>;
+      records?: Array<Record<string, unknown>>;
+      total?: number;
+      updatedAt?: number;
+    };
+  }): Promise<{ toolName: 'create_records' | 'add_table_column'; args: Record<string, unknown>; summary: string }> {
+    const messages: AiChatMessage[] = [
+      {
+        role: 'system',
+        content: [
+          'You convert user prompt to a strictly valid JSON command for MWS tools.',
+          'Output only JSON object with keys: toolName, args, summary.',
+          'Allowed toolName values: create_records, add_table_column.',
+          'For create_records args must include datasheetId, fieldKey:"id", records:[{fields:{...}}].',
+          'For add_table_column args must include spaceId, datasheetId, name, type, optional property.',
+          'If tableSnapshot has missing or empty records, assume caller will fetch data with get_records before execution and still produce a valid command.',
+          'Never ask clarifying questions. Use table snapshot and user prompt directly.',
+        ].join(' '),
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          operation: input.operation,
+          prompt: input.prompt,
+          spaceId: input.spaceId,
+          datasheetId: input.datasheetId,
+          viewId: input.viewId,
+          tableSnapshot: input.tableSnapshot ?? null,
+        }),
+      },
+    ];
+
+    const response = await this.aiProviderClientService.complete({
+      messages,
+      temperature: 0.1,
+      maxTokens: 700,
+      responseFormat: 'json_object',
+    });
+
+    const raw = this.extractText(response);
+    const parsed = await this.parseJsonObjectWithRecovery(raw, {
+      operation: 'table-mutation',
+      requiredTopLevelKeys: ['toolName', 'args', 'summary'],
+    });
+
+    const toolName = String(parsed.toolName ?? input.operation) as 'create_records' | 'add_table_column';
+    const args = (parsed.args && typeof parsed.args === 'object' ? parsed.args : {}) as Record<string, unknown>;
+    const summary = String(parsed.summary ?? 'Команда подготовлена');
+
+    if (toolName === 'create_records') {
+      const command = {
+        toolName,
+        args: {
+          datasheetId: String(args.datasheetId ?? input.datasheetId),
+          fieldKey: 'id',
+          records: Array.isArray(args.records) ? args.records : [],
+        },
+        summary,
+      };
+
+      console.log('SYNC COMMAND GENERATED:', command);
+      return command;
+    }
+
+    const command: { toolName: 'add_table_column'; args: Record<string, unknown>; summary: string } = {
+      toolName: 'add_table_column',
+      args: {
+        spaceId: String(args.spaceId ?? input.spaceId),
+        datasheetId: String(args.datasheetId ?? input.datasheetId),
+        name: String(args.name ?? 'Новая колонка'),
+        type: String(args.type ?? 'SingleText'),
+        property: args.property,
+      },
+      summary,
+    };
+
+    console.log('SYNC COMMAND GENERATED:', command);
+    return command;
+  }
+
+  async planTableWorkflow(input: {
+    prompt: string;
+    spaceId: string;
+    datasheetId: string;
+    viewId?: string;
+    tableSnapshot?: {
+      datasheetId?: string;
+      viewId?: string | null;
+      fields?: Array<Record<string, unknown>>;
+      records?: Array<Record<string, unknown>>;
+      total?: number;
+      updatedAt?: number;
+    };
+  }): Promise<{
+    summary: string;
+    commands: Array<
+      | {
+          type: 'ADD_COLUMN';
+          column: {
+            name: string;
+            type: string;
+            property?: Record<string, unknown>;
+          };
+        }
+      | {
+          type: 'ADD_ROW';
+          rows: Array<{ fields: Record<string, unknown> }>;
+        }
+      | {
+          type: 'UPDATE_RECORDS';
+          records: Array<{ recordId: string; fields: Record<string, unknown> }>;
+        }
+    >;
+  }> {
+    if (this.isFillAllEmptyFieldsIntent(input.prompt)) {
+      return this.buildFillEmptyFieldsWorkflowPlan(input);
+    }
+
+    const messages: AiChatMessage[] = [
+      {
+        role: 'system',
+        content: [
+          'You are a table workflow planner for WikiLive.',
+          'Analyze the current table context and the user prompt.',
+          'Return only JSON with keys: summary, commands.',
+          'commands must be an array of workflow commands.',
+          'Allowed command types: ADD_COLUMN, ADD_ROW, UPDATE_RECORDS.',
+          'For ADD_COLUMN output {"type":"ADD_COLUMN","column":{"name":"...","type":"...","property":{...}?}}.',
+          'For ADD_ROW output {"type":"ADD_ROW","rows":[{"fields":{...}}]}.',
+          'For UPDATE_RECORDS output {"type":"UPDATE_RECORDS","records":[{"recordId":"...","fields":{...}}]}.',
+          'When user asks to fill or enrich existing rows, prefer UPDATE_RECORDS and do not create duplicate rows.',
+          'If user specifies row indexes or ranges (for example 1-6), treat it as updating existing rows via UPDATE_RECORDS.',
+          'Do not use ADD_ROW for tasks that target existing rows.',
+          'Prefer creating columns first when existing columns do not match the task.',
+          'If the snapshot is empty or insufficient, infer the needed schema from the prompt and still propose valid commands.',
+          'Use fieldKey id compatible row values.',
+          'Never ask clarifying questions.',
+        ].join(' '),
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          prompt: input.prompt,
+          spaceId: input.spaceId,
+          datasheetId: input.datasheetId,
+          viewId: input.viewId,
+          tableSnapshot: input.tableSnapshot ?? null,
+        }),
+      },
+    ];
+
+    const response = await this.aiProviderClientService.complete({
+      messages,
+      temperature: 0.15,
+      maxTokens: 900,
+      responseFormat: 'json_object',
+    });
+
+    const raw = this.extractText(response);
+    let parsed: Record<string, unknown>;
+
+    try {
+      parsed = await this.parseJsonObjectWithRecovery(raw, {
+        operation: 'table-workflow',
+        requiredTopLevelKeys: ['summary', 'commands'],
+      });
+    } catch (error) {
+      console.warn('AI workflow JSON parse failed, using deterministic fallback plan', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return this.buildFallbackWorkflowPlan(input);
+    }
+
+    const summary = String(parsed.summary ?? 'План готов');
+    const commands = Array.isArray(parsed.commands) ? parsed.commands : [];
+
+    const normalizedCommands = commands
+      .map((command: any) => {
+        if (command?.type === 'ADD_COLUMN') {
+          return {
+            type: 'ADD_COLUMN' as const,
+            column: {
+              name: String(command.column?.name ?? 'Новая колонка'),
+              type: String(command.column?.type ?? 'SingleText'),
+              property: command.column?.property && typeof command.column.property === 'object'
+                ? (command.column.property as Record<string, unknown>)
+                : undefined,
+            },
+          };
+        }
+
+        if (command?.type === 'ADD_ROW') {
+          return {
+            type: 'ADD_ROW' as const,
+            rows: Array.isArray(command.rows)
+              ? command.rows.map((row: any) => ({
+                  fields: row?.fields && typeof row.fields === 'object' ? (row.fields as Record<string, unknown>) : {},
+                }))
+              : [],
+          };
+        }
+
+        if (command?.type === 'UPDATE_RECORDS') {
+          return {
+            type: 'UPDATE_RECORDS' as const,
+            records: Array.isArray(command.records)
+              ? command.records
+                  .map((record: any) => ({
+                    recordId: String(record?.recordId ?? ''),
+                    fields:
+                      record?.fields && typeof record.fields === 'object'
+                        ? (record.fields as Record<string, unknown>)
+                        : {},
+                  }))
+                  .filter((record: { recordId: string }) => record.recordId.length > 0)
+              : [],
+          };
+        }
+
+        return null;
+      })
+      .filter(Boolean) as Array<
+        | {
+            type: 'ADD_COLUMN';
+            column: { name: string; type: string; property?: Record<string, unknown> };
+          }
+        | {
+            type: 'ADD_ROW';
+            rows: Array<{ fields: Record<string, unknown> }>;
+          }
+        | {
+            type: 'UPDATE_RECORDS';
+            records: Array<{ recordId: string; fields: Record<string, unknown> }>;
+          }
+      >;
+
+    const command = { summary, commands: normalizedCommands };
+
+    if (this.isFillAllEmptyFieldsIntent(input.prompt) && normalizedCommands.length === 0) {
+      return this.buildFillEmptyFieldsWorkflowPlan(input);
+    }
+
+    console.log('SYNC COMMAND GENERATED:', command);
+    return command;
+  }
+
+  private isFillAllEmptyFieldsIntent(prompt: string): boolean {
+    const value = String(prompt ?? '').toLowerCase();
+
+    const hasFillVerb = /(заполни|заполнить|fill|populate|дополни|добавь\s+данные)/i.test(value);
+    const hasEmptyTarget = /(пуст(ые|ые\s+поля|ые\s+строки|ые\s+ячейки|ых\s+пол(я|ей)|ых\s+строк)|empty\s+(fields|cells|rows))/i.test(value);
+    const hasAllQuantifier = /(все|во\s+все|all)/i.test(value);
+
+    return hasFillVerb && hasEmptyTarget && hasAllQuantifier;
+  }
+
+  private buildFillEmptyFieldsWorkflowPlan(input: {
+    prompt: string;
+    tableSnapshot?: {
+      fields?: Array<Record<string, unknown>>;
+      records?: Array<Record<string, unknown>>;
+    };
+  }): {
+    summary: string;
+    commands: Array<
+      | {
+          type: 'ADD_COLUMN';
+          column: {
+            name: string;
+            type: string;
+            property?: Record<string, unknown>;
+          };
+        }
+      | {
+          type: 'ADD_ROW';
+          rows: Array<{ fields: Record<string, unknown> }>;
+        }
+      | {
+          type: 'UPDATE_RECORDS';
+          records: Array<{ recordId: string; fields: Record<string, unknown> }>;
+        }
+    >;
+  } {
+    const rawFields = Array.isArray(input.tableSnapshot?.fields) ? input.tableSnapshot?.fields ?? [] : [];
+    const rawRecords = Array.isArray(input.tableSnapshot?.records) ? input.tableSnapshot?.records ?? [] : [];
+
+    const fields: Array<{ id: string; type: string; name: string; property?: Record<string, unknown> }> = [];
+
+    for (const field of rawFields) {
+      const id = String(field.id ?? '');
+      if (!id) {
+        continue;
+      }
+
+      fields.push({
+        id,
+        type: String(field.type ?? 'SingleText'),
+        name: String(field.name ?? id),
+        property:
+          field.property && typeof field.property === 'object'
+            ? (field.property as Record<string, unknown>)
+            : undefined,
+      });
+    }
+
+    const records = rawRecords
+      .map((record) => {
+        const recordId = String(record.recordId ?? '');
+        const rowFields =
+          record.fields && typeof record.fields === 'object'
+            ? (record.fields as Record<string, unknown>)
+            : (record as Record<string, unknown>);
+
+        if (!recordId) {
+          return null;
+        }
+
+        return {
+          recordId,
+          fields: rowFields,
+        };
+      })
+      .filter((record): record is { recordId: string; fields: Record<string, unknown> } => record !== null);
+
+    if (fields.length === 0 || records.length === 0) {
+      return {
+        summary: 'Не удалось заполнить пустые поля: snapshot таблицы пустой.',
+        commands: [],
+      };
+    }
+
+    const updates = records
+      .map((record, rowIndex) => {
+        const patch: Record<string, unknown> = {};
+
+        for (const field of fields) {
+          const currentValue = record.fields[field.id];
+          if (this.isEmptyCellValue(currentValue)) {
+            patch[field.id] = this.buildSyntheticValue(field.type, rowIndex + 1);
+          }
+        }
+
+        return {
+          recordId: record.recordId,
+          fields: patch,
+        };
+      })
+      .filter((update) => Object.keys(update.fields).length > 0);
+
+    return {
+      summary: `Заполнены пустые поля в ${updates.length} строках`,
+      commands: [
+        {
+          type: 'UPDATE_RECORDS',
+          records: updates,
+        },
+      ],
+    };
+  }
+
+  private buildFallbackWorkflowPlan(input: {
+    prompt: string;
+    tableSnapshot?: {
+      fields?: Array<Record<string, unknown>>;
+      records?: Array<Record<string, unknown>>;
+    };
+  }): {
+    summary: string;
+    commands: Array<
+      | {
+          type: 'ADD_COLUMN';
+          column: {
+            name: string;
+            type: string;
+            property?: Record<string, unknown>;
+          };
+        }
+      | {
+          type: 'ADD_ROW';
+          rows: Array<{ fields: Record<string, unknown> }>;
+        }
+      | {
+          type: 'UPDATE_RECORDS';
+          records: Array<{ recordId: string; fields: Record<string, unknown> }>;
+        }
+    >;
+  } {
+    const rawFields = Array.isArray(input.tableSnapshot?.fields) ? input.tableSnapshot?.fields ?? [] : [];
+    const rawRecords = Array.isArray(input.tableSnapshot?.records) ? input.tableSnapshot?.records ?? [] : [];
+
+    const fields = rawFields
+      .map((field) => {
+        const id = String(field.id ?? '');
+        const type = String(field.type ?? 'SingleText');
+        const name = String(field.name ?? id);
+
+        if (!id) {
+          return null;
+        }
+
+        return { id, type, name };
+      })
+      .filter((field): field is { id: string; type: string; name: string } => field !== null);
+
+    const records = rawRecords
+      .map((record) => {
+        const recordId = String(record.recordId ?? '');
+        const rowFields =
+          record.fields && typeof record.fields === 'object'
+            ? (record.fields as Record<string, unknown>)
+            : (record as Record<string, unknown>);
+
+        if (!recordId) {
+          return null;
+        }
+
+        return {
+          recordId,
+          fields: rowFields,
+        };
+      })
+      .filter((record): record is { recordId: string; fields: Record<string, unknown> } => record !== null);
+
+    if (fields.length === 0 || records.length === 0) {
+      return {
+        summary: 'Не удалось прочитать структуру таблицы из snapshot, fallback-план пустой.',
+        commands: [],
+      };
+    }
+
+    const range = this.parseRequestedRowRange(input.prompt);
+    const start = range?.start ?? 1;
+    const end = Math.min(range?.end ?? records.length, records.length);
+    const slice = records.slice(Math.max(0, start - 1), end);
+
+    const updates = slice.map((record, rowIndex) => {
+      const patch: Record<string, unknown> = {};
+
+      for (const field of fields) {
+        const currentValue = record.fields[field.id];
+        if (this.isEmptyCellValue(currentValue)) {
+          patch[field.id] = this.buildSyntheticValue(field.type, rowIndex + 1);
+        }
+      }
+
+      if (Object.keys(patch).length === 0) {
+        const textField = fields.find((field) => this.isTextFieldType(field.type)) ?? fields[0];
+        patch[textField.id] = `Обновлено ${rowIndex + 1}`;
+      }
+
+      return {
+        recordId: record.recordId,
+        fields: patch,
+      };
+    });
+
+    return {
+      summary: `Fallback-план: обновить существующие строки ${start}-${end}`,
+      commands: [
+        {
+          type: 'UPDATE_RECORDS',
+          records: updates,
+        },
+      ],
+    };
+  }
+
+  private parseRequestedRowRange(prompt: string): { start: number; end: number } | null {
+    const value = String(prompt ?? '');
+
+    const dashRange = value.match(/(?:строк[аи]?|rows?)\s*(\d{1,4})\s*[-–—]\s*(\d{1,4})/i);
+    if (dashRange) {
+      const start = Number(dashRange[1]);
+      const end = Number(dashRange[2]);
+      if (Number.isFinite(start) && Number.isFinite(end) && start > 0 && end >= start) {
+        return { start, end };
+      }
+    }
+
+    const fromToRange = value.match(/(?:строк[аи]?|rows?)\s*с\s*(\d{1,4})\s*по\s*(\d{1,4})/i);
+    if (fromToRange) {
+      const start = Number(fromToRange[1]);
+      const end = Number(fromToRange[2]);
+      if (Number.isFinite(start) && Number.isFinite(end) && start > 0 && end >= start) {
+        return { start, end };
+      }
+    }
+
+    return null;
+  }
+
+  private isTextFieldType(type: string): boolean {
+    const normalized = String(type).toLowerCase();
+    return normalized.includes('text') || normalized.includes('string') || normalized.includes('single');
+  }
+
+  private isEmptyCellValue(value: unknown): boolean {
+    if (value === null || value === undefined) {
+      return true;
+    }
+
+    if (typeof value === 'string') {
+      return value.trim().length === 0;
+    }
+
+    if (Array.isArray(value)) {
+      return value.length === 0;
+    }
+
+    return false;
+  }
+
+  private buildSyntheticValue(type: string, index: number): unknown {
+    const normalized = String(type).toLowerCase();
+
+    if (normalized.includes('number') || normalized.includes('currency') || normalized.includes('rating')) {
+      return index * 10;
+    }
+
+    if (normalized.includes('checkbox') || normalized.includes('bool')) {
+      return index % 2 === 0;
+    }
+
+    if (normalized.includes('date')) {
+      return `2026-01-${String(Math.max(1, Math.min(28, index))).padStart(2, '0')}`;
+    }
+
+    if (normalized.includes('multi') || normalized.includes('select')) {
+      return ['Обновлено'];
+    }
+
+    return `Обновлено ${index}`;
+  }
+
   buildCompletionMessages(currentText: string, context: PageContextInput = {}): AiChatMessage[] {
     return [
       {
@@ -132,6 +675,81 @@ export class AiAssistantService {
 
   private extractText(response: { choices?: Array<{ message?: { content?: string | null } }> }): string {
     return String(response.choices?.[0]?.message?.content ?? '').trim();
+  }
+
+  private tryParseJsonObject(rawText: string): Record<string, unknown> | null {
+    const normalized = String(rawText ?? '').trim();
+    if (!normalized) {
+      return null;
+    }
+
+    const candidates: string[] = [normalized];
+
+    const fenced = normalized.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fenced?.[1]) {
+      candidates.push(fenced[1].trim());
+    }
+
+    const firstBrace = normalized.indexOf('{');
+    const lastBrace = normalized.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      candidates.push(normalized.slice(firstBrace, lastBrace + 1).trim());
+    }
+
+    for (const candidate of candidates) {
+      try {
+        const parsed = JSON.parse(candidate);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>;
+        }
+      } catch {
+        // Ignore candidate parse failures and keep trying alternatives.
+      }
+    }
+
+    return null;
+  }
+
+  private async parseJsonObjectWithRecovery(
+    rawText: string,
+    options: { operation: string; requiredTopLevelKeys: string[] },
+  ): Promise<Record<string, unknown>> {
+    const direct = this.tryParseJsonObject(rawText);
+    if (direct) {
+      return direct;
+    }
+
+    const repairResponse = await this.aiProviderClientService.complete({
+      messages: [
+        {
+          role: 'system',
+          content: [
+            'You are a JSON repair assistant.',
+            'Given model output that should be JSON, return only one valid JSON object.',
+            `Required top-level keys: ${options.requiredTopLevelKeys.join(', ')}.`,
+            'Do not add prose, markdown fences, or comments.',
+          ].join(' '),
+        },
+        {
+          role: 'user',
+          content: rawText,
+        },
+      ],
+      temperature: 0,
+      maxTokens: 900,
+      responseFormat: 'json_object',
+    });
+
+    const repairedRaw = this.extractText(repairResponse);
+    const repaired = this.tryParseJsonObject(repairedRaw);
+    if (repaired) {
+      return repaired;
+    }
+
+    throw new BadRequestException({
+      code: 'AI_RESPONSE_INVALID_JSON',
+      message: `AI ${options.operation} plan is not valid JSON`,
+    });
   }
 
   private parseDocument(rawText: string): ProseMirrorDocument {

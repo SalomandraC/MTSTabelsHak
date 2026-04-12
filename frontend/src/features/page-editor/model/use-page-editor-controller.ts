@@ -52,7 +52,7 @@ type UsePageEditorControllerOptions = {
   onCheckpoint: () => Promise<void>;
   onOpenCommentThread?: (threadId: string) => void;
   isAiSlashEnabled: boolean;
-  isAiEditorExtensionEnabled: boolean;
+  isAiGhostEnabled: boolean;
 };
 
 const baseSlashState: SlashState = {
@@ -151,7 +151,7 @@ export function usePageEditorController({
   onCheckpoint,
   onOpenCommentThread,
   isAiSlashEnabled,
-  isAiEditorExtensionEnabled,
+  isAiGhostEnabled,
 }: UsePageEditorControllerOptions) {
   const { items: plugins } = usePlugins();
   const [slashState, setSlashState] = useState<SlashState>(baseSlashState);
@@ -304,9 +304,14 @@ export function usePageEditorController({
       createPageEditorExtensions({
         ydoc: collabState?.ydoc,
         provider: collabState?.provider,
-        enableGhostText: isAiEditorExtensionEnabled,
+        enableGhostText: isAiGhostEnabled,
         requestAutocomplete: async (currentText: string) => {
-          if (!isAiEditorExtensionEnabled) {
+          const globalFlags = window as unknown as { __wikiliveCopilotOpen?: boolean };
+          if (globalFlags.__wikiliveCopilotOpen) {
+            return '';
+          }
+
+          if (!isAiGhostEnabled) {
             return '';
           }
 
@@ -330,7 +335,7 @@ export function usePageEditorController({
     [
       collabState?.provider,
       collabState?.ydoc,
-      isAiEditorExtensionEnabled,
+      isAiGhostEnabled,
       onOpenCommentThread,
       page?.title,
       userColor,
