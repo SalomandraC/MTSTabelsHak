@@ -663,6 +663,7 @@ export function WorkspacePage() {
   const [isPluginsModalOpen, setIsPluginsModalOpen] = useState(false);
   const [activeEditor, setActiveEditor] = useState<Editor | null>(null);
   const [documentStateEncoder, setDocumentStateEncoder] = useState<(() => string | null) | null>(null);
+  const [documentStateRestorer, setDocumentStateRestorer] = useState<((value: string) => boolean) | null>(null);
   const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>('links');
   const [historyPreviewCheckpoint, setHistoryPreviewCheckpoint] = useState<PageHistoryCheckpoint | null>(null);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
@@ -834,9 +835,9 @@ export function WorkspacePage() {
 
   const history = usePageHistory({
     pageId: activePageId,
-    editor: activeEditor,
     enabled: isTimeMachineEnabled && Boolean(activePage) && rightPanelMode === 'timeMachine',
     getDocumentStateValue: documentStateEncoder,
+    applyDocumentStateValue: documentStateRestorer,
     onRestored: async () => {
       setHistoryPreviewCheckpoint(null);
       if (activePageId) {
@@ -1589,6 +1590,10 @@ export function WorkspacePage() {
     setDocumentStateEncoder(() => encoder);
   }, []);
 
+  const handleDocumentStateRestorerChange = useCallback((restorer: ((value: string) => boolean) | null) => {
+    setDocumentStateRestorer(() => restorer);
+  }, []);
+
   const handleConfirmLogout = async () => {
     setIsLoggingOut(true);
 
@@ -1959,6 +1964,7 @@ export function WorkspacePage() {
             onCheckpoint={handleCheckpoint}
             onEditorChange={setActiveEditor}
             onDocumentStateEncoderChange={handleDocumentStateEncoderChange}
+            onDocumentStateRestorerChange={handleDocumentStateRestorerChange}
             onCreateComment={isCommentsEnabled && !isHistoryPreviewActive ? handleCreateComment : undefined}
             onOpenCommentThread={isCommentsEnabled && !isHistoryPreviewActive ? handleOpenCommentThread : undefined}
             onOpenTimeMachine={isTimeMachineEnabled && !isHistoryPreviewActive ? handleOpenTimeMachine : undefined}
@@ -2024,6 +2030,8 @@ export function WorkspacePage() {
                 onShowCurrentVersion={handleShowCurrentVersion}
                 onShowSelectedVersion={handleShowSelectedVersion}
                 onRestoreCheckpoint={history.restoreCheckpoint}
+                canRestore={canEditActivePage}
+                restoreDisabledReason="У вас недостаточно прав для восстановления версии"
                 onRetry={() => void history.refreshHistory()}
                 onClose={() => setRightPanelMode('links')}
               />

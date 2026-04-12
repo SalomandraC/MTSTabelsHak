@@ -378,6 +378,35 @@ export function usePageEditorController({
     return bytesToBase64(Y.encodeStateAsUpdate(collabState.ydoc));
   }, [collabState]);
 
+  const applyDocumentStateValue = useCallback((value: string) => {
+    if (!collabState) {
+      return false;
+    }
+
+    const nextDocument = new Y.Doc();
+    Y.applyUpdate(nextDocument, base64ToBytes(value));
+
+    const currentFragment = collabState.ydoc.getXmlFragment('default');
+    const nextFragment = nextDocument.getXmlFragment('default');
+    const clonedChildren = nextFragment
+      .toArray()
+      .filter((child): child is Y.XmlElement | Y.XmlText => child instanceof Y.XmlElement || child instanceof Y.XmlText)
+      .map((child) => child.clone());
+
+    collabState.ydoc.transact(() => {
+      if (currentFragment.length > 0) {
+        currentFragment.delete(0, currentFragment.length);
+      }
+
+      if (clonedChildren.length > 0) {
+        currentFragment.insert(0, clonedChildren);
+      }
+    }, 'history-restore');
+
+    nextDocument.destroy();
+    return true;
+  }, [collabState]);
+
   const editor = useEditor(
     {
       extensions,
@@ -1083,5 +1112,6 @@ export function usePageEditorController({
       onClose: closeTemplateVariableModal,
     },
     getCurrentDocumentStateValue,
+    applyDocumentStateValue,
   };
 }

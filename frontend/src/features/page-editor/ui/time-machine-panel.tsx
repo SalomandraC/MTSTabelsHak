@@ -15,6 +15,8 @@ type TimeMachinePanelProps = {
   onShowCurrentVersion: () => void;
   onShowSelectedVersion: () => void;
   onRestoreCheckpoint: () => Promise<void>;
+  canRestore: boolean;
+  restoreDisabledReason?: string;
   onRetry: () => void;
   onClose: () => void;
 };
@@ -86,11 +88,14 @@ export function TimeMachinePanel({
   onShowCurrentVersion,
   onShowSelectedVersion,
   onRestoreCheckpoint,
+  canRestore,
+  restoreDisabledReason,
   onRetry,
   onClose,
 }: TimeMachinePanelProps) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const previewText = getPreviewText(selectedCheckpoint);
+  const restoreButtonTitle = !canRestore ? restoreDisabledReason : undefined;
 
   return (
     <>
@@ -206,15 +211,23 @@ export function TimeMachinePanel({
               </div>
             </div>
             <div className="sticky bottom-0 border-t border-editor-border-subtle bg-white px-6 py-4">
-              <button
-                type="button"
-                onClick={() => setIsConfirmOpen(true)}
-                disabled={!selectedCheckpoint || isRestoring}
-                className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#d70032] px-4 text-sm font-semibold text-white transition duration-200 ease-out hover:-translate-y-0.5 hover:-translate-x-0.5 hover:bg-[#c2154c] hover:shadow-[0_15px_40px_-20px_rgba(216,31,85,0.75)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fbcfe8] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isRestoring ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
-                {isRestoring ? 'Восстанавливаем' : 'Восстановить эту версию'}
-              </button>
+              <div title={restoreButtonTitle}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!canRestore) {
+                      return;
+                    }
+
+                    setIsConfirmOpen(true);
+                  }}
+                  disabled={!selectedCheckpoint || isRestoring || !canRestore}
+                  className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#d70032] px-4 text-sm font-semibold text-white transition duration-200 ease-out hover:-translate-y-0.5 hover:-translate-x-0.5 hover:bg-[#c2154c] hover:shadow-[0_15px_40px_-20px_rgba(216,31,85,0.75)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fbcfe8] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isRestoring ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                  {isRestoring ? 'Восстанавливаем' : 'Восстановить эту версию'}
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -245,9 +258,15 @@ export function TimeMachinePanel({
               <button
                 type="button"
                 onClick={async () => {
+                  if (!canRestore) {
+                    return;
+                  }
+
                   setIsConfirmOpen(false);
                   await onRestoreCheckpoint();
                 }}
+                disabled={!canRestore}
+                title={restoreButtonTitle}
                 className="inline-flex h-11 w-full cursor-pointer items-center justify-center rounded-lg bg-[#d70032] px-4 text-sm font-semibold text-white transition duration-200 ease-out hover:-translate-y-0.5 hover:-translate-x-0.5 hover:bg-[#c2154c] sm:w-auto"
               >
                 Подтвердить восстановление

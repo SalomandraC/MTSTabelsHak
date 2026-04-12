@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Content, Editor } from '@tiptap/core';
 import {
   type PageHistoryCheckpoint,
   type PageHistoryItem,
@@ -8,17 +7,17 @@ import {
 
 type UsePageHistoryOptions = {
   pageId: string | null;
-  editor: Editor | null;
   enabled: boolean;
   getDocumentStateValue: (() => string | null) | null;
+  applyDocumentStateValue: ((value: string) => boolean) | null;
   onRestored: () => Promise<void>;
 };
 
 export function usePageHistory({
   pageId,
-  editor,
   enabled,
   getDocumentStateValue,
+  applyDocumentStateValue,
   onRestored,
 }: UsePageHistoryOptions) {
   const [items, setItems] = useState<PageHistoryItem[]>([]);
@@ -105,7 +104,7 @@ export function usePageHistory({
   }, [enabled, openCheckpoint, selectedCheckpoint?.checkpoint.id, selectedCheckpointId]);
 
   const restoreCheckpoint = useCallback(async () => {
-    if (!pageId || !editor || !selectedCheckpoint || !getDocumentStateValue) {
+    if (!pageId || !selectedCheckpoint || !getDocumentStateValue || !applyDocumentStateValue) {
       setErrorMessage('Редактор еще не готов к восстановлению версии');
       return;
     }
@@ -122,7 +121,11 @@ export function usePageHistory({
 
     try {
       await wikiliveApi.createCheckpoint(pageId, beforeRestoreValue, 'manual');
-      editor.commands.setContent(selectedCheckpoint.document as Content);
+
+      const didApplyState = applyDocumentStateValue(selectedCheckpoint.documentState.value);
+      if (!didApplyState) {
+        throw new Error('Не удалось применить выбранную версию документа');
+      }
 
       const restoredValue = getDocumentStateValue();
       if (!restoredValue) {
@@ -137,7 +140,7 @@ export function usePageHistory({
     } finally {
       setIsRestoring(false);
     }
-  }, [editor, getDocumentStateValue, onRestored, pageId, refreshHistory, selectedCheckpoint]);
+  }, [applyDocumentStateValue, getDocumentStateValue, onRestored, pageId, refreshHistory, selectedCheckpoint]);
 
   return {
     items,
