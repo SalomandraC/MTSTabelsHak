@@ -1086,6 +1086,16 @@ export function useWikiTableEmbed(
       });
   };
 
+  const applyAiRecords = (nextRecords: MwsRecord[]) => {
+    if (!Array.isArray(nextRecords) || nextRecords.length === 0) {
+      return;
+    }
+
+    setRecords((current) => [...current, ...nextRecords]);
+    setTotal((current) => current + nextRecords.length);
+    setStaleMessage('');
+  };
+
   const createField = async (
     payload: Omit<CreateMwsFieldPayload, 'spaceId'>
   ) => {
@@ -1192,6 +1202,43 @@ export function useWikiTableEmbed(
         );
       });
   };
+
+  const applyAiField = (field: MwsField | null) => {
+    if (!field) {
+      return;
+    }
+
+    setData((current) => {
+      if (!current) {
+        return current;
+      }
+
+      if (current.embed.fields.some((item) => item.id === field.id)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        embed: {
+          ...current.embed,
+          fields: [...current.embed.fields, field],
+        },
+      };
+    });
+
+    setRecords((current) =>
+      current.map((record) => ({
+        ...record,
+        fields: {
+          ...record.fields,
+          [field.id]: null,
+        },
+      })),
+    );
+    setStaleMessage('');
+  };
+
+  const refreshTable = () => loadEmbed({ silent: true });
 
   const deleteRow = async (record: MwsRecord | null) => {
     if (!attrs.datasheetId || !record) {
@@ -1572,9 +1619,12 @@ export function useWikiTableEmbed(
     groupRule,
     setGroupRule,
     loadEmbed,
+    refreshTable,
     loadNextPage,
     createRow,
     createField,
+    applyAiRecords,
+    applyAiField,
     deleteRow,
     uploadAttachment,
     uploadAttachments,

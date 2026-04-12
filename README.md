@@ -144,6 +144,7 @@ MWS-first проводник:
 - OpenAPI: [docs/openapi.yaml](/Users/nikitababicenko/PhpstormProjects/truetecharena/docs/openapi.yaml)
 - Память проекта: [docs/PROJECT_MEMORY.md](/Users/nikitababicenko/PhpstormProjects/truetecharena/docs/PROJECT_MEMORY.md)
 - Анализ MWS API: [docs/MWS_TABLES_API_ANALYSIS.md](/Users/nikitababicenko/PhpstormProjects/truetecharena/docs/MWS_TABLES_API_ANALYSIS.md)
+- Короткая карта CRUD-синхронизации MWS: [docs/MWS_TABLES_CRUD_SYNC_SHORT.md](docs/MWS_TABLES_CRUD_SYNC_SHORT.md)
 - Postman коллекция: [postman/wikilive-api.postman_collection.json](/Users/nikitababicenko/PhpstormProjects/truetecharena/postman/wikilive-api.postman_collection.json)
 - Postman окружение: [postman/wikilive-local.postman_environment.json](/Users/nikitababicenko/PhpstormProjects/truetecharena/postman/wikilive-local.postman_environment.json)
 

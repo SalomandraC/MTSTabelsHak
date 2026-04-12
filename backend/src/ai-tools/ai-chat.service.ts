@@ -7,6 +7,8 @@ import { ToolExecutionResult } from './ai-tool-registry.types';
 
 @Injectable()
 export class AiChatService {
+  private readonly mutationToolNames = new Set(['create_records', 'patch_records', 'add_table_column']);
+
   constructor(
     private readonly aiProviderClientService: AiProviderClientService,
     private readonly aiToolRegistryService: AiToolRegistryService,
@@ -18,10 +20,11 @@ export class AiChatService {
 
     const toolDefinitions = this.aiToolRegistryService
       .getToolDefinitions()
-      .filter((definition) => ['create_records', 'patch_records', 'get_records'].includes(definition.function.name));
+      .filter((definition) => ['create_records', 'patch_records', 'get_records', 'add_table_column'].includes(definition.function.name));
     const conversation: AiChatMessage[] = [...messages];
     const usedTools: Array<{ toolName: string; args: Record<string, unknown> }> = [];
     const references: Array<Record<string, unknown>> = [];
+    let needsRefresh = false;
 
     let response = await this.aiProviderClientService.complete({
       messages,
@@ -39,6 +42,8 @@ export class AiChatService {
         break;
       }
 
+      console.log('AI TOOL_CALLS ROUND:', round, toolCalls.map((call) => call.function.name));
+
       conversation.push({
         role: 'assistant',
         content: assistantMessage?.content ?? '',
@@ -50,9 +55,15 @@ export class AiChatService {
         const args = this.parseToolArguments(toolCall.function.arguments);
         usedTools.push({ toolName, args });
 
+        console.log('EXECUTE TOOL FROM CHAT:', toolName, args);
+
         const toolResult = await this.executeTool(toolName, args, user, {
           pageId: input.pageId,
         });
+
+        if (toolResult.ok && this.mutationToolNames.has(toolName)) {
+          needsRefresh = true;
+        }
 
         if (toolResult.ok && toolResult.canonicalRecords?.length) {
           references.push(
@@ -91,6 +102,7 @@ export class AiChatService {
 
     return {
       answer,
+      needsRefresh,
       usedTools,
       contextMarkdown,
       references,
@@ -121,10 +133,17 @@ export class AiChatService {
       {
         role: 'system',
         content: [
-          'You are a wiki assistant that answers user questions using the page context and available tools.',
-          'If the user asks about records, tasks, rows, or table content, use the get_mws_records tool.',
+            'You are a powerful data administrator for WikiLive tables.',
+            'Your goal is to change the real MWS table data through tools, not by describing JSON to the user.',
+            'If the user asks to fill fields, add data, update rows, or change table structure, use tools silently on the backend.',
+            'For any table mutation task, call get_records first if you need current table data.',
+            'After reading records, use patch_records, create_records, or add_table_column as needed.',
+            'If the question is about records, rows, or table content, use get_records.',
+            'If the user asks to add a new table column, use add_table_column.',
+            'If the user asks to fill empty fields, patch existing records instead of answering with code or JSON.',
           'When tool arguments require a datasheetId, use the exact Target MWS datasheetId from the context.',
-          'Keep the answer concise, factual, and grounded in the provided context or tool output.',
+            'Only answer the user after the table has already been changed by tools.',
+            'Keep the answer concise, factual, and grounded in the provided context or tool output.',
         ].join(' '),
       },
       {
