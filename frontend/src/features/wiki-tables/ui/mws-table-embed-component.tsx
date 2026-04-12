@@ -519,7 +519,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       className={[
         'my-4 flex flex-col overflow-hidden rounded-lg border bg-white shadow-sm',
         selected
-          ? 'border-[#7b67ee] ring-2 ring-[#7b67ee]/20'
+          ? 'border-[#d70032] ring-2 ring-[#d70032]/20'
           : 'border-editor-border-subtle'
       ].join(' ')}
       data-type="mws-table-embed"
