@@ -267,6 +267,50 @@ describe('MwsTableEmbedComponent', () => {
     );
   });
 
+  it('collapses and expands the live table block without losing its summary', async () => {
+    render(
+      <MwsTableEmbedComponent
+        node={
+          {
+            attrs: {
+              blockId: 'block-1',
+              title: 'Таблица 2',
+              spaceId: 'space-1',
+              nodeId: 'node-2',
+              datasheetId: 'dst-2',
+              viewId: 'view-1',
+              selectedFieldIds: ['fld-title'],
+              pageSize: 20,
+              allowInlineEdit: true,
+              displayMode: 'table'
+            }
+          } as never
+        }
+        selected={false}
+        editor={null as never}
+        getPos={null as never}
+        updateAttributes={vi.fn()}
+        deleteNode={vi.fn()}
+        decorations={[]}
+        extension={null as never}
+        HTMLAttributes={{}}
+        innerDecorations={null as never}
+        view={null as never}
+      />
+    );
+
+    expect(await screen.findByTestId('mws_canvas_grid')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Свернуть' }));
+
+    expect(screen.getByTestId('mws_canvas_grid')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Сортировка' })).not.toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }));
+
+    expect(await screen.findByTestId('mws_canvas_grid')).toBeInTheDocument();
+  });
+
   it('starts inline editing on the first typed key after a cell is selected', async () => {
     render(
       <MwsTableEmbedComponent

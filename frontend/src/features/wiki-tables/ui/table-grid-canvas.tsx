@@ -15,12 +15,14 @@ import { resolveTableGridHeight } from './table-grid-layout';
 export type TableGridProps = {
   controller: MwsTableEmbedController;
   isExpanded?: boolean;
+  isReadOnly?: boolean;
   selectColorToCss: (color: string) => string;
 };
 
 export function TableGridCanvas({
   controller,
   isExpanded = false,
+  isReadOnly = false,
   selectColorToCss,
   onCanvasKeyDown,
   selectEditorRef,
@@ -42,6 +44,7 @@ export function TableGridCanvas({
 }) {
   const gridHeight = resolveTableGridHeight(controller.gridHeight, isExpanded);
   const selectedAttachmentCell =
+    !isReadOnly &&
     controller.selection &&
     controller.selectedField?.type === 'Attachment' &&
     controller.selectedRecord
@@ -110,6 +113,7 @@ export function TableGridCanvas({
             const addRowEnd = addRowStart + ADD_ROW_HEIGHT;
 
             if (
+              !isReadOnly &&
               onAddColumn &&
               y >= 0 &&
               y <= HEADER_HEIGHT &&
@@ -121,6 +125,7 @@ export function TableGridCanvas({
             }
 
             if (
+              !isReadOnly &&
               onAddRow &&
               x >= 0 &&
               x <= INDEX_WIDTH &&
@@ -131,19 +136,28 @@ export function TableGridCanvas({
               return;
             }
 
+            if (isReadOnly) {
+              controller.setSelection(null);
+              controller.setEditingCell(null);
+              controller.setEditingSelectCell(null);
+              return;
+            }
+
             const nextSelection = controller.hitTest(event);
             controller.setSelection(nextSelection);
             controller.setEditingCell(null);
             controller.setEditingSelectCell(null);
             controller.beginEdit(nextSelection, { fromSingleClick: true });
           }}
-          onDoubleClick={(event) =>
-            controller.beginEdit(controller.hitTest(event))
-          }
-          onKeyDown={onCanvasKeyDown}
+          onDoubleClick={(event) => {
+            if (!isReadOnly) {
+              controller.beginEdit(controller.hitTest(event));
+            }
+          }}
+          onKeyDown={isReadOnly ? undefined : onCanvasKeyDown}
           tabIndex={0}
         />
-        {controller.editingCell ? (
+        {!isReadOnly && controller.editingCell ? (
           <input
             autoFocus
             value={controller.editingCell.value}
@@ -176,7 +190,7 @@ export function TableGridCanvas({
             }}
           />
         ) : null}
-        {controller.editingSelectCell ? (
+        {!isReadOnly && controller.editingSelectCell ? (
           <div
             data-testid="mws_select_editor"
             ref={selectEditorRef}
