@@ -13,6 +13,7 @@ import TaskItem from '@tiptap/extension-task-item';
 import TaskList from '@tiptap/extension-task-list';
 import Typography from '@tiptap/extension-typography';
 import Underline from '@tiptap/extension-underline';
+import HorizontalRule from '@tiptap/extension-horizontal-rule';
 import StarterKit from '@tiptap/starter-kit';
 import bash from 'highlight.js/lib/languages/bash';
 import csharp from 'highlight.js/lib/languages/csharp';
@@ -91,6 +92,20 @@ const DashShortcut = Extension.create({
   },
 });
 
+// Кастомное расширение HorizontalRule с отключённым isolating
+// чтобы можно было добавлять контент после него и удалять его
+const CustomHorizontalRule = HorizontalRule.extend({
+  addOptions() {
+    const parentOptions = this.parent?.();
+    return {
+      HTMLAttributes: {},
+      nextNodeType: 'paragraph',
+      ...parentOptions,
+      isolating: false,
+    } as any;
+  },
+});
+
 export const initialContent = `
 <div data-type="rootblock"><h1>Новая страница</h1></div>
 <div data-type="rootblock"><p></p></div>
@@ -138,6 +153,7 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
       autolink: true,
     }),
     Underline,
+    CustomHorizontalRule,
     TextAlign.configure({
       types: ['heading', 'paragraph', 'taskItem'],
     }),
@@ -152,6 +168,10 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     StarterKit.configure({
       document: false,
       codeBlock: false,
+      dropcursor: false,
+      link: false,
+      underline: false,
+      horizontalRule: false,
     }),
     Placeholder.configure({
       emptyEditorClass: 'is-editor-empty',

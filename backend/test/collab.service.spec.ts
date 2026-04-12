@@ -14,6 +14,9 @@ describe('CollabService', () => {
 
   beforeEach(() => {
     prisma = {
+      user: {
+        upsert: jest.fn(async () => ({ userId: 'user-1', clientId: null, displayName: 'Ivan' })),
+      },
       wikiNode: {
         findUnique: jest.fn(async () => ({ id: 'page-1' })),
       },
@@ -69,6 +72,18 @@ describe('CollabService', () => {
       );
 
     expect(pageAccessService.assertCanView).toHaveBeenCalledWith('page-1', user);
+    expect(prisma.user.upsert).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+      create: {
+        userId: 'user-1',
+        clientId: null,
+        displayName: 'Ivan',
+      },
+      update: {
+        clientId: null,
+        displayName: 'Ivan',
+      },
+    });
     expect(authService.issueCollabToken).toHaveBeenCalledWith(
       user,
       'page-1',
@@ -110,5 +125,31 @@ describe('CollabService', () => {
         user,
       ),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('skips malformed presence entries instead of failing the session', async () => {
+    redisService.smembers.mockResolvedValue([
+      JSON.stringify({ userId: 'peer-1', displayName: 'Anna' }),
+      '{not-json',
+      JSON.stringify({ userId: 123, displayName: 'Broken' }),
+    ]);
+
+    const result = await service.openSession(
+      'page-1',
+      {
+        client: {
+          clientId: 'client-1',
+          deviceId: 'device-1',
+          editorVersion: '3.0.0',
+        },
+      },
+      user,
+    );
+
+    expect(result.awareness.activeUsers).toHaveLength(1);
+    expect(result.awareness.activeUsers[0]).toMatchObject({
+      userId: 'peer-1',
+      displayName: 'Anna',
+    });
   });
 });

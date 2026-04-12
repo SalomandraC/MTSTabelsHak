@@ -386,6 +386,16 @@ export function usePageEditorController({
       editorProps: {
         attributes: {
           class: 'tiptap h-full min-h-full',
+          spellcheck: 'false',
+          autocorrect: 'off',
+          autocapitalize: 'off',
+          autocomplete: 'off',
+          writingsuggestions: 'false',
+          translate: 'no',
+          'data-gramm': 'false',
+          'data-gramm_editor': 'false',
+          'data-enable-grammarly': 'false',
+          'data-lt-active': 'false',
         },
         handleDrop: (view, event, _slice, moved) => {
           if (moved) {

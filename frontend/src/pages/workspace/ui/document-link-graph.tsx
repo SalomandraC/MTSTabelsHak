@@ -46,6 +46,8 @@ function normalizeNodeSize(fileSizeBytes?: number) {
 }
 
 function buildElements(pages: DocumentGraphPage[], edges: DocumentGraphEdge[]) {
+  const pageIdSet = new Set(pages.map((page) => page.id));
+
   const nodes = pages.map((page) => ({
     data: {
       id: page.id,
@@ -55,15 +57,17 @@ function buildElements(pages: DocumentGraphPage[], edges: DocumentGraphEdge[]) {
     classes: 'document-node',
   }));
 
-  const edgeElements = edges.map((edge, index) => ({
-    data: {
-      id: `edge-${edge.sourcePageId}-${edge.targetPageId}-${index}`,
-      source: edge.sourcePageId,
-      target: edge.targetPageId,
-      mentionCount: edge.mentionCount,
-    },
-    classes: 'document-edge',
-  }));
+  const edgeElements = edges
+    .filter((edge) => pageIdSet.has(edge.sourcePageId) && pageIdSet.has(edge.targetPageId))
+    .map((edge, index) => ({
+      data: {
+        id: `edge-${edge.sourcePageId}-${edge.targetPageId}-${index}`,
+        source: edge.sourcePageId,
+        target: edge.targetPageId,
+        mentionCount: edge.mentionCount,
+      },
+      classes: 'document-edge',
+    }));
 
   return [...nodes, ...edgeElements];
 }

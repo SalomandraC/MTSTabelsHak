@@ -46,6 +46,7 @@ import { DocumentLinkGraph, type DocumentGraphEdge, type DocumentGraphPage } fro
 import { CreateTemplateFromPageModal } from './create-template-from-page-modal';
 import { WorkspaceAccessSummary } from './workspace-access-summary';
 import { PageTemplateMarketplaceModal } from './page-template-marketplace-modal';
+import { WorkspacePageActionsMenu } from './workspace-page-actions-menu';
 import { shouldShowWorkspacePageActions } from './workspace-node-permissions';
 import { getWorkspaceNodeIcon } from './workspace-node-icon';
 import { readWorkspaceRoute, resolveAccessibleSpaceId, writeWorkspaceRoute } from '../../../shared/lib/workspace-route';
@@ -173,6 +174,7 @@ function WorkspaceTreeItem({
   onSelectMwsTable,
   onToggleFolder,
   onDeletePage,
+  onCreatePage,
 }: {
   node: WorkspaceTreeNode;
   depth: number;
@@ -183,16 +185,33 @@ function WorkspaceTreeItem({
   onSelectMwsTable: (node: WorkspaceTreeNode) => void;
   onToggleFolder: (folderId: string) => void;
   onDeletePage: (pageId: string, title: string) => void;
+  onCreatePage: (title: string, parentNodeId?: string | null) => Promise<void>;
 }) {
-  const actionsMenuRef = useRef<HTMLDivElement | null>(null);
+  const actionsMenuRef = useRef<HTMLDivElement>(null);
+  const createInputRef = useRef<HTMLInputElement>(null);
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
+  const [isCreateMode, setIsCreateMode] = useState(false);
+  const [isCreatingPage, setIsCreatingPage] = useState(false);
+  const [createPageTitle, setCreatePageTitle] = useState('');
+  const [createError, setCreateError] = useState('');
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ left: number; top: number } | null>(null);
   const hasChildren = node.children.length > 0;
   const isExpandable = node.kind === 'mwsFolder' || hasChildren;
   const isExpanded = isExpandable ? expandedFolderIds.has(node.id) : false;
   const isActivePage = node.linkedPageId === activePageId;
   const isSelectedTable = node.kind === 'mwsTable' && node.id === selectedTableNodeId;
   const canDeletePage = node.wikiPage?.role === 'owner';
+  const canOpenActionsMenu = shouldShowWorkspacePageActions(node);
   const itemPadding = 8 + depth * 22;
+
+  const closeActionsMenu = useCallback(() => {
+    setIsActionsMenuOpen(false);
+    setIsCreateMode(false);
+    setIsCreatingPage(false);
+    setCreatePageTitle('');
+    setCreateError('');
+    setContextMenuPosition(null);
+  }, []);
 
   useEffect(() => {
     if (!isActionsMenuOpen) {
@@ -201,7 +220,7 @@ function WorkspaceTreeItem({
 
     const handlePointerDown = (event: MouseEvent) => {
       if (actionsMenuRef.current && !actionsMenuRef.current.contains(event.target as Node)) {
-        setIsActionsMenuOpen(false);
+        closeActionsMenu();
       }
     };
 
@@ -210,7 +229,54 @@ function WorkspaceTreeItem({
     return () => {
       window.removeEventListener('mousedown', handlePointerDown);
     };
-  }, [isActionsMenuOpen]);
+  }, [closeActionsMenu, isActionsMenuOpen]);
+
+  useEffect(() => {
+    if (!isCreateMode) {
+      return;
+    }
+
+    createInputRef.current?.focus();
+  }, [isCreateMode]);
+
+  const openCreateMode = () => {
+    setCreateError('');
+    setCreatePageTitle('');
+    setIsCreateMode(true);
+  };
+
+  const handleCreatePageSubmit = async () => {
+    const normalizedTitle = createPageTitle.trim();
+
+    if (!normalizedTitle) {
+      setCreateError('Введите название страницы');
+      return;
+    }
+
+    setCreateError('');
+    setIsCreatingPage(true);
+
+    try {
+      await onCreatePage(normalizedTitle, node.parentId ?? null);
+      closeActionsMenu();
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : 'Не удалось создать страницу');
+      setIsCreatingPage(false);
+    }
+  };
+
+  const openActionsMenuAtCursor = (event: React.MouseEvent) => {
+    const menuWidth = 176;
+    const menuHeight = 224;
+    const left = Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8));
+    const top = Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8));
+
+    setIsCreateMode(false);
+    setCreateError('');
+    setCreatePageTitle('');
+    setContextMenuPosition({ left, top });
+    setIsActionsMenuOpen(true);
+  };
 
   return (
     <li className="treeItemRoot relative" tabIndex={-1}>
@@ -223,6 +289,15 @@ function WorkspaceTreeItem({
         ].join(' ')}
         style={{ paddingLeft: itemPadding }}
         data-test-id="workspaceTreeNodeItem"
+        onContextMenu={(event) => {
+          if (!canOpenActionsMenu) {
+            return;
+          }
+
+          event.preventDefault();
+          event.stopPropagation();
+          openActionsMenuAtCursor(event);
+        }}
       >
         {isExpandable ? (
           <button
@@ -261,13 +336,13 @@ function WorkspaceTreeItem({
               onToggleFolder(node.id);
             }
           }}
-           className="flex min-w-0 flex-1 items-center gap-2 text-left"
-           title={
-             node.kind === 'wikiPage' && node.wikiPage?.isLocked
-               ? 'У вас нет прав для доступа к документу, запросите их у владельца'
-               : undefined
-           }
-         >
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          title={
+            node.kind === 'wikiPage' && node.wikiPage?.isLocked
+              ? 'У вас нет прав для доступа к документу, запросите их у владельца'
+              : undefined
+          }
+        >
           <span
             className={[
               node.kind === 'mwsFolder' ? 'text-[#df9b50]' : '',
@@ -281,13 +356,22 @@ function WorkspaceTreeItem({
           <span className="truncate">{node.title}</span>
         </button>
 
-        {shouldShowWorkspacePageActions(node) ? (
+        {canOpenActionsMenu ? (
           <div ref={actionsMenuRef} className="relative ml-1 shrink-0">
             <button
               type="button"
               onClick={(event) => {
                 event.stopPropagation();
-                setIsActionsMenuOpen((current) => !current);
+                if (isActionsMenuOpen) {
+                  closeActionsMenu();
+                  return;
+                }
+
+                setIsCreateMode(false);
+                setCreateError('');
+                setCreatePageTitle('');
+                setContextMenuPosition(null);
+                setIsActionsMenuOpen(true);
               }}
               className="flex h-6 w-6 items-center justify-center rounded text-[#b6b6b6] opacity-0 transition-opacity hover:bg-[#f2f3f5] hover:text-[#1f1f1f] group-hover:opacity-100"
               title="Действия"
@@ -298,40 +382,28 @@ function WorkspaceTreeItem({
               <MoreHorizontal size={14} strokeWidth={2.2} />
             </button>
 
-            {isActionsMenuOpen ? (
-              <div
-                role="menu"
-                aria-label={`Действия для страницы ${node.title}`}
-                className="absolute right-0 top-7 z-30 w-44 overflow-hidden rounded-xl border border-editor-border-subtle bg-white py-1 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
-              >
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setIsActionsMenuOpen(false);
-                    onSelectPage(node.linkedPageId!);
-                  }}
-                  className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
-                >
-                  Редактировать
-                </button>
-                {canDeletePage ? (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setIsActionsMenuOpen(false);
-                      onDeletePage(node.linkedPageId!, node.title);
-                    }}
-                    className="flex w-full items-center px-3 py-2 text-left text-sm text-[#d70032] hover:bg-[#fff1f3]"
-                  >
-                    Удалить
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
+            <WorkspacePageActionsMenu
+              title={node.title}
+              linkedPageId={node.linkedPageId ?? ''}
+              canDeletePage={Boolean(canDeletePage)}
+              isOpen={isActionsMenuOpen}
+              isCreateMode={isCreateMode}
+              isCreatingPage={isCreatingPage}
+              createPageTitle={createPageTitle}
+              createError={createError}
+              contextMenuPosition={contextMenuPosition}
+              createInputRef={createInputRef}
+              onCloseActionsMenu={closeActionsMenu}
+              onOpenCreateMode={openCreateMode}
+              onCreatePageTitleChange={setCreatePageTitle}
+              onCreatePageSubmit={() => void handleCreatePageSubmit()}
+              onCancelCreateMode={() => {
+                setIsCreateMode(false);
+                setCreateError('');
+              }}
+              onSelectPage={onSelectPage}
+              onDeletePage={() => onDeletePage(node.linkedPageId!, node.title)}
+            />
           </div>
         ) : null}
       </div>
@@ -350,6 +422,7 @@ function WorkspaceTreeItem({
               onSelectMwsTable={onSelectMwsTable}
               onToggleFolder={onToggleFolder}
               onDeletePage={onDeletePage}
+              onCreatePage={onCreatePage}
             />
           ))}
         </ul>
@@ -379,60 +452,63 @@ function MwsTableActionModal({
     return null;
   }
 
-  const isBusy = isCreating || isDeleting;
-
   return (
-    <div className="fixed inset-0 z-[80] bg-black/30" onMouseDown={onClose}>
-      <section
-        className="fixed left-1/2 top-1/2 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-editor-border-subtle bg-white shadow-[0_24px_70px_rgba(17,25,40,0.24)]"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Действия с MWS таблицей"
-        onMouseDown={(event) => event.stopPropagation()}
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Действия с таблицей ${node.title}`}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl border border-editor-border-subtle bg-white p-5 shadow-[0_20px_60px_rgba(15,23,42,0.2)]"
+        onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-editor-border-subtle p-5">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#d70032]">MWS Tables</p>
-            <h3 className="mt-2 truncate font-wide text-xl font-semibold text-[#1f1f1f]">{node.title}</h3>
-            <p className="mt-2 text-sm text-editor-text-tertiary">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold text-[#1f1f1f]">{node.title}</h3>
+            <p className="mt-1 text-sm text-[#6d7280]">
               Таблица остается живой сущностью MWS. WikiLive может создать рядом страницу с embedded live-таблицей.
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#8d8d8d] hover:bg-[#f2f3f5] hover:text-[#1f1f1f]"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-[#7a7f88] hover:bg-[#f2f3f5]"
             aria-label="Закрыть"
           >
-            <X size={17} strokeWidth={2.2} />
+            <X size={16} />
           </button>
         </div>
-        <div className="grid gap-3 p-5">
-          <button
-            type="button"
-            onClick={onCreatePage}
-            disabled={isBusy}
-            className="rounded-xl bg-[#d70032] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#b8002b] disabled:cursor-wait disabled:opacity-60"
-          >
-            {isCreating ? 'Создаем страницу...' : 'Создать страницу с таблицей'}
-          </button>
+
+        <div className="space-y-2">
           <button
             type="button"
             onClick={onOpenMws}
-            className="rounded-xl border border-[#1f1f1f] bg-white px-4 py-3 text-sm font-semibold text-[#1f1f1f] transition-colors hover:bg-[#f2f3f5]"
+            className="w-full rounded-lg border border-editor-border-subtle px-3 py-2 text-sm font-semibold text-[#1f1f1f] hover:bg-[#f7f8fa]"
           >
-            Перейти на таблицу в tables.mws.ru
+            Открыть в MWS
           </button>
+
+          <button
+            type="button"
+            onClick={onCreatePage}
+            disabled={isCreating}
+            className="w-full rounded-lg bg-[#d70032] px-3 py-2 text-sm font-semibold text-white hover:bg-[#b8002b] disabled:cursor-wait disabled:opacity-70"
+          >
+            {isCreating ? 'Создаем страницу...' : 'Создать страницу с таблицей'}
+          </button>
+
           <button
             type="button"
             onClick={onDelete}
-            disabled={isBusy}
-            className="rounded-xl border border-[#ffd2d9] bg-[#fff7f8] px-4 py-3 text-sm font-semibold text-[#b00025] transition-colors hover:border-[#d70032] hover:bg-[#fff1f3] disabled:cursor-wait disabled:opacity-60"
+            disabled={isDeleting}
+            className="w-full rounded-lg border border-[#ffd4da] px-3 py-2 text-sm font-semibold text-[#d70032] hover:bg-[#fff1f3] disabled:cursor-wait disabled:opacity-70"
           >
-            {isDeleting ? 'Удаляем таблицу...' : 'Удалить таблицу'}
+            {isDeleting ? 'Удаляем...' : 'Удалить узел из дерева'}
           </button>
         </div>
-      </section>
+      </div>
     </div>
   );
 }
@@ -449,13 +525,13 @@ function LogoutConfirmModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[90] bg-black/30" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
       <section
-        className="fixed left-1/2 top-1/2 w-[min(26rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-editor-border-subtle bg-white shadow-[0_24px_70px_rgba(17,25,40,0.24)]"
+        className="w-full max-w-xl overflow-hidden rounded-2xl border border-editor-border-subtle bg-white shadow-[0_20px_60px_rgba(15,23,42,0.25)]"
         role="dialog"
         aria-modal="true"
         aria-label="Подтверждение выхода"
-        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4 border-b border-editor-border-subtle p-5">
           <div className="min-w-0">
@@ -1015,12 +1091,16 @@ export function WorkspacePage() {
     setSelectedTableNode(node);
   };
 
-  const handleCreatePage = async () => {
-    const title = `Страница ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+  const handleCreatePage = async (title?: string, parentNodeId?: string | null) => {
+    const normalizedTitle = title?.trim();
+    const resolvedTitle =
+      normalizedTitle && normalizedTitle.length > 0
+        ? normalizedTitle
+        : `Страница ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
     setStatusMessage('Создаем страницу');
 
     try {
-      const created = await wikiliveApi.createPage(selectedSpaceId, title);
+      const created = await wikiliveApi.createPage(selectedSpaceId, resolvedTitle, parentNodeId);
       await refreshTree(selectedSpaceId, created.page.id);
       setActivePageId(created.page.id);
       writeWorkspaceRoute(selectedSpaceId, created.page.id, 'push');
@@ -1482,6 +1562,7 @@ export function WorkspacePage() {
                         onSelectMwsTable={handleSelectMwsTable}
                         onToggleFolder={handleToggleFolder}
                         onDeletePage={(pageId, title) => void handleDeletePage(pageId, title)}
+                        onCreatePage={(title, parentNodeId) => handleCreatePage(title, parentNodeId)}
                       />
                     ))}
                   </ul>
