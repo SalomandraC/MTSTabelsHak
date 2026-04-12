@@ -75,11 +75,11 @@
   #root {
     min-height: 100%;
     margin: 0;
+    font-family: 'MTSWide', var(--editor-font-sans);
   }
 
   body {
     min-height: 100vh;
-    font-family: var(--editor-font-sans);
     background-color: var(--editor-bg-page);
     color: var(--editor-text-primary);
   }
