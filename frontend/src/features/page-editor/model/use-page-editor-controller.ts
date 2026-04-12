@@ -17,8 +17,9 @@ import type { SlashMenuItem } from '../../slash-menu';
 import { createPageEditorExtensions, initialContent } from './editor-config';
 import { formatFileSize, readFileAsDataUrl, validateImageFile } from './image-utils';
 import type { PageEditorSlashCommandItem } from './slash-command-items';
-import { slashCommandItems } from './slash-command-items';
+import { getSlashCommandItems } from './slash-command-items';
 import { base64ToBytes, bytesToBase64, readStoredDraft, writeStoredDraft } from './yjs-utils';
+import { usePlugins } from '../../plugins';
 
 type SlashState = {
   isOpen: boolean;
@@ -152,6 +153,7 @@ export function usePageEditorController({
   isAiSlashEnabled,
   isAiEditorExtensionEnabled,
 }: UsePageEditorControllerOptions) {
+  const { items: plugins } = usePlugins();
   const [slashState, setSlashState] = useState<SlashState>(baseSlashState);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [saveStatus, setSaveStatus] = useState('Ожидаем страницу');
@@ -167,6 +169,9 @@ export function usePageEditorController({
   const [linkModalPosition, setLinkModalPosition] = useState<ModalPosition>({ top: 80, left: 80 });
 
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+
+  const [isIframeModalOpen, setIsIframeModalOpen] = useState(false);
+  const [iframeUrl, setIframeUrl] = useState('');
   const [imageErrorMessage, setImageErrorMessage] = useState('');
   const [imageFileName, setImageFileName] = useState('');
   const [imageFileSizeLabel, setImageFileSizeLabel] = useState('');
@@ -353,6 +358,16 @@ export function usePageEditorController({
     setImageFileName('');
     setImageFileSizeLabel('');
     setImagePreviewSrc('');
+  }, []);
+
+  const openIframeModal = () => {
+    setIframeUrl('');
+    setIsIframeModalOpen(true);
+  };
+
+  const closeIframeModal = useCallback(() => {
+    setIsIframeModalOpen(false);
+    setIframeUrl('');
   }, []);
 
   const getCurrentDocumentStateValue = useCallback(() => {
@@ -549,10 +564,12 @@ export function usePageEditorController({
     });
   };
 
+  const slashItems = useMemo(() => getSlashCommandItems(plugins), [plugins]);
+
   const filteredItems = useMemo(() => {
     const availableItems = isAiSlashEnabled
-      ? slashCommandItems
-      : slashCommandItems.filter((item) => item.id !== 'ai-generate');
+      ? slashItems
+      : slashItems.filter((item) => item.id !== 'ai-generate');
 
     if (!slashState.query) {
       return availableItems;
@@ -566,7 +583,7 @@ export function usePageEditorController({
         item.keywords.some((keyword) => keyword.toLowerCase().includes(normalized))
       );
     });
-  }, [isAiSlashEnabled, slashState.query]);
+  }, [isAiSlashEnabled, slashState.query, slashItems]);
 
   const filteredItemsRef = useRef(filteredItems);
 
@@ -703,6 +720,17 @@ export function usePageEditorController({
       .run();
 
     closeImageModal();
+  };
+
+  const handleConfirmIframe = () => {
+    if (!editor || !iframeUrl.trim()) return;
+
+    const normalizedUrl = iframeUrl.trim().startsWith('http')
+      ? iframeUrl.trim()
+      : `https://${iframeUrl.trim()}`;
+
+    editor.chain().focus().setIframe({ src: normalizedUrl }).run();
+    closeIframeModal();
   };
 
   const openTemplateVariableModal = (defaultLabel = '', defaultDescription = '') => {
@@ -998,6 +1026,7 @@ export function usePageEditorController({
     applySlashItem,
     openLinkModal,
     openImageModal,
+    openIframeModal,
     pagePicker: {
       isOpen: isPagePickerOpen,
       spaceId,
@@ -1035,6 +1064,13 @@ export function usePageEditorController({
       onClose: closeImageModal,
       onFileSelect: handleSelectImageFile,
       onConfirm: handleConfirmImageInsert,
+    },
+    iframeModal: {
+      isOpen: isIframeModalOpen,
+      url: iframeUrl,
+      onUrlChange: setIframeUrl,
+      onSubmit: handleConfirmIframe,
+      onClose: closeIframeModal,
     },
     templateVariableModal: {
       isOpen: isTemplateVariableModalOpen,

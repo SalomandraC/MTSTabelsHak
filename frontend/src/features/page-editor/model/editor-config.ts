@@ -39,6 +39,8 @@ import { Markdown } from 'tiptap-markdown';
 
 import { MwsTableEmbed } from '../../wiki-tables';
 import { AIGhostTextExtension } from '../../plugins/ai-assistant';
+import { CanvasBlock } from './canvas-block';
+import { IframeBlock } from './iframe-block';
 import { CodeBlockComponent } from '../ui/code-block-component.tsx';
 import { CommentAnchor } from './comment-anchor';
 import { ImageBlock } from './image-block';
@@ -142,6 +144,8 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
       onOpenThread: options.onOpenCommentThread,
     }),
     MwsTableEmbed,
+    CanvasBlock,
+    IframeBlock,
     TaskList,
     TaskItem.configure({ nested: true }),
     Link.configure({

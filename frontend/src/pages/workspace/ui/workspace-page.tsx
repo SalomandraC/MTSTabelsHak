@@ -584,6 +584,7 @@ export function WorkspacePage() {
     errorMessage: pluginsErrorMessage,
     pendingPluginId,
     togglePlugin,
+    updatePluginSettings,
     isPluginEnabled,
     isWorkspaceSidebarEnabled,
   } = usePlugins();
@@ -1983,6 +1984,7 @@ export function WorkspacePage() {
         pendingPluginId={pendingPluginId}
         onClose={() => setIsPluginsModalOpen(false)}
         onTogglePlugin={(pluginId, enabled) => void togglePlugin(pluginId, enabled)}
+        onToggleSettings={(pluginId, settings) => void updatePluginSettings(pluginId, settings)}
       />
       <MwsTableActionModal
         node={selectedTableNode}

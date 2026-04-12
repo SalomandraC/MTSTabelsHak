@@ -270,6 +270,7 @@ model PluginActivation {
   scopeType PluginScopeType @default(user) @map("scope_type")
   userId    String          @map("user_id")
   isEnabled Boolean         @default(true) @map("is_enabled")
+  settings  String?         @map("settings")
   createdAt DateTime        @default(now()) @map("created_at")
   updatedAt DateTime        @updatedAt @map("updated_at")
 

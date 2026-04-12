@@ -1,7 +1,9 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
+  Patch,
   Post,
 } from '@nestjs/common';
 import { UserContext } from 'src/auth/user-context';
@@ -25,5 +27,14 @@ export class PluginsController {
   @Post(':pluginId/deactivate')
   async deactivatePlugin(@Param('pluginId') pluginId: string, @CurrentUser() user: UserContext) {
     return this.pluginsService.deactivatePlugin(user, pluginId);
+  }
+
+  @Patch(':pluginId/settings')
+  async updateSettings(
+    @Param('pluginId') pluginId: string,
+    @CurrentUser() user: UserContext,
+    @Body('settings') settings: Record<string, boolean>,
+  ) {
+    return this.pluginsService.updatePluginSettings(user, pluginId, settings);
   }
 }
