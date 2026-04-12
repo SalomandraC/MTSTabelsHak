@@ -26,6 +26,30 @@ type Anchor = {
   } | null;
 };
 
+type TableSnapshot = {
+  datasheetId?: string;
+  viewId?: string | null;
+  fields?: Array<Record<string, unknown>>;
+  records?: Array<Record<string, unknown>>;
+  total?: number;
+  updatedAt?: number;
+};
+
+type ContextOption = {
+  id: string;
+  label: string;
+  kind: 'text' | 'table' | 'all';
+  datasheetId?: string;
+  viewId?: string;
+};
+
+type ActiveContext = {
+  kind: 'text' | 'table' | 'all';
+  datasheetId?: string;
+  viewId?: string;
+  tableSnapshot?: TableSnapshot | null;
+};
+
 type TableContext = {
   fields: MwsField[];
   records: MwsRecord[];
@@ -100,6 +124,53 @@ function parseColumnFromPrompt(prompt: string): { name: string; type: string } {
 
 function normalizeText(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function getStoredTableSnapshot(datasheetId?: string | null): TableSnapshot | null {
+  if (!datasheetId) {
+    return null;
+  }
+
+  const globalStore = window as unknown as {
+    __wikiliveTableSnapshots?: Record<string, unknown>;
+  };
+
+  return (globalStore.__wikiliveTableSnapshots?.[datasheetId] ?? null) as TableSnapshot | null;
+}
+
+function collectTableOptions(editor: Editor | null): ContextOption[] {
+  if (!editor) {
+    return [];
+  }
+
+  const options: ContextOption[] = [];
+  const seen = new Set<string>();
+
+  editor.state.doc.descendants((node) => {
+    if (node.type.name !== 'mwsTableEmbed') {
+      return true;
+    }
+
+    const datasheetId = String(node.attrs?.datasheetId ?? '');
+    if (!datasheetId || seen.has(datasheetId)) {
+      return true;
+    }
+
+    seen.add(datasheetId);
+    const viewId = typeof node.attrs?.viewId === 'string' ? String(node.attrs.viewId) : undefined;
+
+    options.push({
+      id: `table:${datasheetId}`,
+      kind: 'table',
+      datasheetId,
+      viewId,
+      label: `Таблица ${datasheetId.slice(0, 8)}${viewId ? ` · view ${viewId.slice(0, 6)}` : ''}`,
+    });
+
+    return true;
+  });
+
+  return options;
 }
 
 function parseRowRangeFromPrompt(prompt: string): { start: number; end: number } | null {
@@ -222,7 +293,9 @@ export function AiInlineCopilot({
   const [status, setStatus] = useState('');
   const [isBusy, setIsBusy] = useState(false);
   const [showReportMenu, setShowReportMenu] = useState(false);
+  const [showContextMenu, setShowContextMenu] = useState(false);
   const [createdPage, setCreatedPage] = useState<{ id: string; title: string } | null>(null);
+  const [selectedContextId, setSelectedContextId] = useState('detected');
   const { handleAiChatResponse, refreshTable: requestRefresh } = useAiTableContext();
 
   useEffect(() => {
@@ -231,19 +304,77 @@ export function AiInlineCopilot({
       setOutput('');
       setStatus('');
       setShowReportMenu(false);
+      setShowContextMenu(false);
       setCreatedPage(null);
+      setSelectedContextId('detected');
     }
   }, [isOpen]);
 
-  const modeLabel = useMemo(() => {
-    if (!anchor) {
-      return '[Текст]';
+  const contextOptions = useMemo(() => {
+    const options: ContextOption[] = [
+      { id: 'text', kind: 'text', label: 'Текст страницы' },
+      ...collectTableOptions(editor),
+      { id: 'all', kind: 'all', label: 'Всё (весь документ + все таблицы)' },
+    ];
+
+    return options;
+  }, [editor]);
+
+  useEffect(() => {
+    if (selectedContextId !== 'detected' && !contextOptions.some((option) => option.id === selectedContextId)) {
+      setSelectedContextId('detected');
+    }
+  }, [contextOptions, selectedContextId]);
+
+  const activeContext = useMemo<ActiveContext>(() => {
+    if (selectedContextId === 'detected') {
+      if (anchor?.target === 'table' && anchor.datasheetId) {
+        return {
+          kind: 'table',
+          datasheetId: anchor.datasheetId,
+          viewId: anchor.viewId ?? undefined,
+          tableSnapshot: anchor.tableSnapshot ?? getStoredTableSnapshot(anchor.datasheetId),
+        };
+      }
+
+      return { kind: 'text' };
     }
 
-    return anchor.target === 'table'
-      ? `[Таблица: ${anchor.datasheetId ?? 'unknown'}]`
-      : '[Текст]';
-  }, [anchor]);
+    const selected = contextOptions.find((option) => option.id === selectedContextId);
+
+    if (!selected) {
+      return { kind: 'text' };
+    }
+
+    if (selected.kind === 'text') {
+      return { kind: 'text' };
+    }
+
+    if (selected.kind === 'all') {
+      return { kind: 'all' };
+    }
+
+    return {
+      kind: 'table',
+      datasheetId: selected.datasheetId,
+      viewId: selected.viewId,
+      tableSnapshot: getStoredTableSnapshot(selected.datasheetId),
+    };
+  }, [anchor, contextOptions, selectedContextId]);
+
+  const modeLabel = useMemo(() => {
+    if (activeContext.kind === 'all') {
+      return '[Всё: документ + таблицы]';
+    }
+
+    if (activeContext.kind === 'table') {
+      return `[Таблица: ${activeContext.datasheetId ?? 'unknown'}]`;
+    }
+
+    return '[Текст]';
+  }, [activeContext]);
+
+  const hasManualContext = selectedContextId !== 'detected';
 
   const position = useMemo(() => {
     if (!anchor) {
@@ -299,26 +430,30 @@ export function AiInlineCopilot({
     dispatchTableMutation({ datasheetId, op: 'refresh' });
   };
 
-  const getTableContext = async (datasheetId: string): Promise<TableContext> => {
-    const snapshotFields = Array.isArray(anchor.tableSnapshot?.fields)
-      ? (anchor.tableSnapshot.fields as MwsField[])
+  const getTableContext = async (input: {
+    datasheetId: string;
+    viewId?: string;
+    tableSnapshot?: TableSnapshot | null;
+  }): Promise<TableContext> => {
+    const snapshotFields = Array.isArray(input.tableSnapshot?.fields)
+      ? (input.tableSnapshot.fields as MwsField[])
       : [];
-    const snapshotRecords = Array.isArray(anchor.tableSnapshot?.records)
-      ? (anchor.tableSnapshot.records as MwsRecord[])
+    const snapshotRecords = Array.isArray(input.tableSnapshot?.records)
+      ? (input.tableSnapshot.records as MwsRecord[])
       : [];
 
     if (snapshotFields.length > 0) {
       return {
         fields: snapshotFields,
         records: snapshotRecords,
-        total: Number(anchor.tableSnapshot?.total ?? snapshotRecords.length),
+        total: Number(input.tableSnapshot?.total ?? snapshotRecords.length),
       };
     }
 
     const [fieldsResponse, recordsResponse] = await Promise.all([
-      wikiliveApi.listMwsFields(datasheetId, anchor.viewId ?? undefined),
-      wikiliveApi.listMwsRecords(datasheetId, {
-        viewId: anchor.viewId ?? undefined,
+      wikiliveApi.listMwsFields(input.datasheetId, input.viewId ?? undefined),
+      wikiliveApi.listMwsRecords(input.datasheetId, {
+        viewId: input.viewId ?? undefined,
         pageSize: 50,
         pageNum: 1,
       }),
@@ -415,7 +550,11 @@ export function AiInlineCopilot({
   };
 
   const applyWorkflow = async (plan: WorkflowPlan, datasheetId: string) => {
-    const context = await getTableContext(datasheetId);
+    const context = await getTableContext({
+      datasheetId,
+      viewId: activeContext.viewId,
+      tableSnapshot: activeContext.tableSnapshot,
+    });
     const lookup = buildFieldLookup(context.fields);
     const createdFields = new Map<string, MwsField>();
 
@@ -465,22 +604,26 @@ export function AiInlineCopilot({
   };
 
   const runTableWorkflow = async () => {
-    const datasheetId = anchor.datasheetId;
+    const datasheetId = activeContext.kind === 'table' ? activeContext.datasheetId : undefined;
     if (!datasheetId) {
       setStatus('Команда доступна только для таблицы');
       return;
     }
 
     await withBusy(async () => {
-      const context = await getTableContext(datasheetId);
+      const context = await getTableContext({
+        datasheetId,
+        viewId: activeContext.viewId,
+        tableSnapshot: activeContext.tableSnapshot,
+      });
       const planned = await wikiliveApi.aiPlanWorkflow({
         prompt: prompt.trim(),
         spaceId,
         datasheetId,
-        viewId: anchor.viewId ?? undefined,
+        viewId: activeContext.viewId,
         tableSnapshot: {
           datasheetId,
-          viewId: anchor.viewId ?? undefined,
+          viewId: activeContext.viewId,
           fields: context.fields,
           records: context.records.map((record) => ({
             recordId: record.recordId,
@@ -497,16 +640,51 @@ export function AiInlineCopilot({
       await applyWorkflow(normalizedPlan, datasheetId);
       requestRefresh({
         datasheetId,
-        viewId: anchor.viewId ?? undefined,
+        viewId: activeContext.viewId,
       });
       setOutput(`${normalizedPlan.summary}\n\n${normalizedPlan.commands.map((command) => JSON.stringify(command)).join('\n')}`);
     });
   };
 
+  const buildAllTablesContextPayload = async () => {
+    const tableOptions = contextOptions.filter((option) => option.kind === 'table');
+    const payload: Array<Record<string, unknown>> = [];
+
+    for (const option of tableOptions) {
+      const datasheetId = option.datasheetId;
+      if (!datasheetId) {
+        continue;
+      }
+
+      const context = await getTableContext({
+        datasheetId,
+        viewId: option.viewId,
+        tableSnapshot: getStoredTableSnapshot(datasheetId),
+      });
+
+      payload.push({
+        datasheetId,
+        viewId: option.viewId ?? null,
+        fields: context.fields,
+        records: context.records.slice(0, 50).map((record) => ({
+          recordId: record.recordId,
+          fields: record.fields,
+        })),
+        total: context.total,
+      });
+    }
+
+    return payload;
+  };
+
   const runAnalyze = async () => {
     await withBusy(async () => {
-      if (anchor.target === 'table' && anchor.datasheetId) {
-        const context = await getTableContext(anchor.datasheetId);
+      if (activeContext.kind === 'table' && activeContext.datasheetId) {
+        const context = await getTableContext({
+          datasheetId: activeContext.datasheetId,
+          viewId: activeContext.viewId,
+          tableSnapshot: activeContext.tableSnapshot,
+        });
         const response = await wikiliveApi.aiChat({
           question: [
             'Ты анализируешь конкретную таблицу MWS.',
@@ -515,8 +693,8 @@ export function AiInlineCopilot({
             'Сделай короткий анализ: тренды, аномалии, выводы.',
           ].join('\n'),
           pageId: pageId ?? undefined,
-          datasheetId: anchor.datasheetId,
-          viewId: anchor.viewId ?? undefined,
+          datasheetId: activeContext.datasheetId,
+          viewId: activeContext.viewId,
           pageTitle,
           pageSnapshot: {
             markdown: getEditorMarkdown(editor),
@@ -524,12 +702,32 @@ export function AiInlineCopilot({
         });
 
         handleAiChatResponse(response, {
-          datasheetId: anchor.datasheetId,
-          viewId: anchor.viewId ?? undefined,
+          datasheetId: activeContext.datasheetId,
+          viewId: activeContext.viewId,
         });
 
         const intro = `Вижу вашу таблицу с ${context.records.length} записями, готов анализировать...`;
         setOutput(`${intro}\n\n${response.answer}`);
+        return;
+      }
+
+      if (activeContext.kind === 'all') {
+        const markdown = getEditorMarkdown(editor);
+        const tables = await buildAllTablesContextPayload();
+        const response = await wikiliveApi.aiChat({
+          question: [
+            'Ты помощник по общему анализу документа и всех таблиц на странице.',
+            `Содержание документа: ${markdown}`,
+            `Таблицы JSON: ${JSON.stringify(tables)}`,
+            'Сделай целостный анализ с общими выводами.',
+          ].join('\n'),
+          pageId: pageId ?? undefined,
+          pageTitle,
+          pageSnapshot: { markdown },
+        });
+
+        handleAiChatResponse(response);
+        setOutput(response.answer);
         return;
       }
 
@@ -545,18 +743,19 @@ export function AiInlineCopilot({
         pageSnapshot: { markdown },
       });
 
-      handleAiChatResponse(response, {
-        datasheetId: anchor.datasheetId,
-        viewId: anchor.viewId ?? undefined,
-      });
+      handleAiChatResponse(response);
 
       setOutput(response.answer);
     });
   };
 
   const createReportText = async (): Promise<string> => {
-    if (anchor.target === 'table' && anchor.datasheetId) {
-      const context = await getTableContext(anchor.datasheetId);
+    if (activeContext.kind === 'table' && activeContext.datasheetId) {
+      const context = await getTableContext({
+        datasheetId: activeContext.datasheetId,
+        viewId: activeContext.viewId,
+        tableSnapshot: activeContext.tableSnapshot,
+      });
       const response = await wikiliveApi.aiChat({
         question: [
           'Ты анализируешь конкретную таблицу MWS.',
@@ -565,8 +764,8 @@ export function AiInlineCopilot({
           'Сгенерируй отчет в markdown формате.',
         ].join('\n'),
         pageId: pageId ?? undefined,
-        datasheetId: anchor.datasheetId,
-        viewId: anchor.viewId ?? undefined,
+        datasheetId: activeContext.datasheetId,
+        viewId: activeContext.viewId,
         pageTitle,
         pageSnapshot: {
           markdown: getEditorMarkdown(editor),
@@ -574,10 +773,29 @@ export function AiInlineCopilot({
       });
 
       handleAiChatResponse(response, {
-        datasheetId: anchor.datasheetId,
-        viewId: anchor.viewId ?? undefined,
+        datasheetId: activeContext.datasheetId,
+        viewId: activeContext.viewId,
       });
 
+      return response.answer;
+    }
+
+    if (activeContext.kind === 'all') {
+      const markdown = getEditorMarkdown(editor);
+      const tables = await buildAllTablesContextPayload();
+      const response = await wikiliveApi.aiChat({
+        question: [
+          'Сформируй общий отчет по документу и всем таблицам на странице.',
+          `Содержание документа: ${markdown}`,
+          `Таблицы JSON: ${JSON.stringify(tables)}`,
+          `Дополнительный запрос: ${prompt.trim() || 'Сформируй общий аналитический отчет.'}`,
+        ].join('\n'),
+        pageId: pageId ?? undefined,
+        pageTitle,
+        pageSnapshot: { markdown },
+      });
+
+      handleAiChatResponse(response);
       return response.answer;
     }
 
@@ -593,10 +811,7 @@ export function AiInlineCopilot({
       pageSnapshot: { markdown },
     });
 
-    handleAiChatResponse(response, {
-      datasheetId: anchor.datasheetId,
-      viewId: anchor.viewId ?? undefined,
-    });
+    handleAiChatResponse(response);
 
     return response.answer;
   };
@@ -651,7 +866,7 @@ export function AiInlineCopilot({
       return;
     }
 
-    if (anchor.target === 'table' && anchor.datasheetId) {
+    if (activeContext.kind === 'table' && activeContext.datasheetId) {
       if (isAnalysisPrompt(trimmed)) {
         await runAnalyze();
         return;
@@ -679,10 +894,7 @@ export function AiInlineCopilot({
         editor.commands.insertContent(response.answer);
       }
 
-      handleAiChatResponse(response, {
-        datasheetId: anchor.datasheetId,
-        viewId: anchor.viewId ?? undefined,
-      });
+      handleAiChatResponse(response);
 
       setOutput(response.answer);
     });
@@ -705,8 +917,46 @@ export function AiInlineCopilot({
         </button>
       </div>
 
-      <div className="mb-2 rounded-md border border-editor-border-subtle bg-[#fafbfd] px-2 py-1 text-xs text-editor-text-tertiary">
-        Режим: {modeLabel}
+      <div className="relative mb-2">
+        <button
+          type="button"
+          onClick={() => setShowContextMenu((value) => !value)}
+          disabled={isBusy}
+          className="w-full rounded-md border border-editor-border-subtle bg-[#fafbfd] px-2 py-1 text-left text-xs text-editor-text-tertiary hover:bg-editor-bg-control disabled:opacity-50"
+        >
+          Режим: {modeLabel}{hasManualContext ? ' · выбран вручную' : ''}
+        </button>
+
+        {showContextMenu ? (
+          <div className="absolute left-0 right-0 top-9 z-[90] rounded-md border border-editor-border-subtle bg-white p-1 shadow-lg">
+            {contextOptions.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-editor-bg-control"
+                onClick={() => {
+                  setSelectedContextId(option.id);
+                  setShowContextMenu(false);
+                }}
+              >
+                {option.label}
+              </button>
+            ))}
+
+            {hasManualContext ? (
+              <button
+                type="button"
+                className="mt-1 block w-full rounded border border-editor-border-subtle px-2 py-1 text-left text-xs text-editor-text-tertiary hover:bg-editor-bg-control"
+                onClick={() => {
+                  setSelectedContextId('detected');
+                  setShowContextMenu(false);
+                }}
+              >
+                Вернуться к определению по месту
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="mb-2 flex gap-2">
