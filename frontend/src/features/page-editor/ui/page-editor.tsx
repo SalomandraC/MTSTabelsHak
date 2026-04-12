@@ -37,6 +37,7 @@ type PageEditorProps = {
 type CopilotAnchor = {
   x: number;
   y: number;
+  surfaceWidth?: number;
   target: 'table' | 'text';
   datasheetId?: string | null;
   viewId?: string | null;
@@ -227,6 +228,7 @@ export function PageEditor({
       setCopilotAnchor({
         x: coords.left - (surfaceRect?.left ?? 0),
         y: coords.bottom - (surfaceRect?.top ?? 0),
+        surfaceWidth: surfaceRect?.width,
         target: tableContext?.datasheetId ? 'table' : 'text',
         datasheetId: tableContext?.datasheetId,
         viewId: tableContext?.viewId,
@@ -294,6 +296,7 @@ export function PageEditor({
             setCopilotAnchor({
               x: event.clientX - (surfaceRect?.left ?? 0),
               y: event.clientY - (surfaceRect?.top ?? 0),
+              surfaceWidth: surfaceRect?.width,
               target: tableContext?.datasheetId ? 'table' : 'text',
               datasheetId: tableContext?.datasheetId,
               viewId: tableContext?.viewId,

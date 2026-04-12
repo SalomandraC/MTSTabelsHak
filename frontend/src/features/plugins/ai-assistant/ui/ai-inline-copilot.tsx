@@ -10,6 +10,7 @@ type CopilotTarget = 'table' | 'text';
 type Anchor = {
   x: number;
   y: number;
+  surfaceWidth?: number;
   target: CopilotTarget;
   datasheetId?: string | null;
   viewId?: string | null;
@@ -162,9 +163,25 @@ export function AiInlineCopilot({
       return { left: 0, top: 0 };
     }
 
-    // Absolute positioning inside relative editor container.
+    const panelWidth = 560;
+    const gap = 8;
+    const margin = 8;
+    const surfaceWidth = anchor.surfaceWidth ?? 1200;
+
+    const preferRight = anchor.x + gap;
+    const preferLeft = anchor.x - panelWidth - gap;
+    const canOpenRight = preferRight + panelWidth <= surfaceWidth - margin;
+    const canOpenLeft = preferLeft >= margin;
+
+    let left = preferRight;
+    if (!canOpenRight && canOpenLeft) {
+      left = preferLeft;
+    } else if (!canOpenRight && !canOpenLeft) {
+      left = Math.min(Math.max(anchor.x + gap, margin), Math.max(margin, surfaceWidth - panelWidth - margin));
+    }
+
     return {
-      left: Math.max(8, anchor.x + 8),
+      left,
       top: Math.max(8, anchor.y + 8),
     };
   }, [anchor]);
