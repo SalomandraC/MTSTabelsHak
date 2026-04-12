@@ -38,7 +38,7 @@ export function AIBubbleMenu({ editor, pageTitle }: AIBubbleMenuProps) {
       return;
     }
 
-    const selectedText = editor.state.doc.textBetween(from, to, ' ').trim();
+    const selectedText = editor.state.doc.textBetween(from, to, '\n').trim();
     if (!selectedText) {
       setVisible(false);
       return;
@@ -59,7 +59,7 @@ export function AIBubbleMenu({ editor, pageTitle }: AIBubbleMenuProps) {
     }
 
     const { from, to } = editor.state.selection;
-    const text = editor.state.doc.textBetween(from, to, ' ').trim();
+    const text = editor.state.doc.textBetween(from, to, '\n').trim();
 
     if (!text) {
       return;

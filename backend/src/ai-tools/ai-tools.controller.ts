@@ -52,7 +52,7 @@ export class AiToolsController {
   @Post('transform')
   @Public()
   transform(@Body() dto: TransformRequestDto) {
-    return this.aiAssistantService.transformText(dto.text, dto.transformation, {
+    return this.aiAssistantService.transformText(dto.text, dto.transformation, dto.styleId, {
       pageTitle: dto.pageTitle,
       pageSnapshot: dto.pageSnapshot,
     });

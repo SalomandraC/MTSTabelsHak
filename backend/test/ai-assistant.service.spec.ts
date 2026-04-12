@@ -61,15 +61,50 @@ describe('AiAssistantService', () => {
       choices: [{ message: { content: 'Professional rewrite' } }],
     });
 
-    const result = await service.transformText('rewrite me', 'professional', {
+    const result = await service.transformText('rewrite me', 'professional', 'business', {
       pageTitle: 'Policy doc',
     });
 
     expect(result.text).toBe('Professional rewrite');
 
     const request = aiProviderClientService.complete.mock.calls[0][0];
-    expect(request.messages[0].content).toContain('professional, enterprise tone');
+    expect(request.messages[0].content).toContain('business style suitable for enterprise communication');
     expect(request.messages[1].content).toContain('Transformation: professional');
+    expect(request.messages[1].content).toContain('style: business');
     expect(request.messages[1].content).toContain('rewrite me');
+  });
+
+  it('uses church style prompt with biblical cadence guidance', async () => {
+    aiProviderClientService.complete.mockResolvedValueOnce({
+      choices: [{ message: { content: 'Ибо сказано: поступай мудро.' } }],
+    });
+
+    const result = await service.transformText('действуй разумно', 'professional', 'church');
+
+    expect(result.text).toBe('Ибо сказано: поступай мудро.');
+
+    const request = aiProviderClientService.complete.mock.calls[0][0];
+    expect(request.messages[0].content).toContain('biblical cadence');
+    expect(request.messages[0].content).toContain('"ибо сказано"');
+    expect(request.messages[0].content).toContain('Do not fabricate real scripture references.');
+    expect(request.messages[1].content).toContain('style: church');
+  });
+
+  it('includes strict output rules for selected fragment transform', () => {
+    const messages = service.buildTransformMessages('Тестовый текст', 'professional', 'business');
+
+    expect(messages[0].content).toContain('Return only the transformed selected fragment text');
+    expect(messages[0].content).toContain('Do not output labels or metadata');
+    expect(messages[0].content).toContain('Do not add markdown tables, separators, or horizontal rules');
+  });
+
+  it('sanitizes leaked metadata and horizontal rules in transform output', async () => {
+    aiProviderClientService.complete.mockResolvedValueOnce({
+      choices: [{ message: { content: 'Page title: Wiki: Новая таблица\n---\nПереработанный вариант\nОбновленный текст' } }],
+    });
+
+    const result = await service.transformText('Исходный текст без линий', 'professional', 'business');
+
+    expect(result.text).toBe('Обновленный текст');
   });
 });

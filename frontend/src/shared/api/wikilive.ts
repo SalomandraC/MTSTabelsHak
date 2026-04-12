@@ -484,6 +484,7 @@ export type ResolveTableEmbedResponse = {
 };
 
 export type AiTransformType = 'professional' | 'shorten' | 'expand' | 'fix_grammar';
+export type AiTransformStyleId = 'standard' | 'business' | 'military' | 'medieval' | 'church' | 'fix' | 'expand';
 
 export type AiAutocompletePayload = {
   currentText: string;
@@ -500,6 +501,7 @@ export type AiGeneratePayload = {
 export type AiTransformPayload = {
   text: string;
   transformation: AiTransformType;
+  styleId?: AiTransformStyleId;
   pageTitle?: string;
   pageSnapshot?: Record<string, unknown>;
 };

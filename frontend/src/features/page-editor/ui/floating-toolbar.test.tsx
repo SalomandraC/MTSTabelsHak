@@ -31,6 +31,12 @@ vi.mock('@tiptap/react', () => ({
   }),
 }));
 
+vi.mock('../../plugins', () => ({
+  usePlugins: () => ({
+    items: [],
+  }),
+}));
+
 function createEditorMock() {
   const callbacks = new Map<string, (...args: unknown[]) => void>();
   const chainResult = {
