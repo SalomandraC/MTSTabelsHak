@@ -524,6 +524,8 @@ export function WorkspacePage() {
     errorMessage: pluginsErrorMessage,
     pendingPluginId,
     togglePlugin,
+    aiAssistantFeatures,
+    toggleAiAssistantFeature,
     isPluginEnabled,
     isWorkspaceSidebarEnabled,
   } = usePlugins();
@@ -1701,8 +1703,10 @@ export function WorkspacePage() {
         isLoading={isPluginsLoading}
         errorMessage={pluginsErrorMessage}
         pendingPluginId={pendingPluginId}
+        aiAssistantFeatures={aiAssistantFeatures}
         onClose={() => setIsPluginsModalOpen(false)}
         onTogglePlugin={(pluginId, enabled) => void togglePlugin(pluginId, enabled)}
+        onToggleAiAssistantFeature={toggleAiAssistantFeature}
       />
       <MwsTableActionModal
         node={selectedTableNode}

@@ -20,6 +20,16 @@ import {
   type WorkspaceSidebarSlot,
 } from './plugin-registry';
 
+export type AiAssistantFeatureSlot = 'ghost_text' | 'inline_chat' | 'text_transform';
+
+const AI_ASSISTANT_FEATURES_STORAGE_KEY = 'wikilive.ai-assistant.features.v1';
+
+const AI_ASSISTANT_FEATURE_DEFAULTS: Record<AiAssistantFeatureSlot, boolean> = {
+  ghost_text: true,
+  inline_chat: true,
+  text_transform: true,
+};
+
 type PluginsContextValue = {
   items: PluginCatalogItem[];
   plan: PluginPlan | null;
@@ -31,6 +41,9 @@ type PluginsContextValue = {
   isPluginEnabled: (pluginId: string) => boolean;
   isWorkspaceSidebarEnabled: (slot: WorkspaceSidebarSlot) => boolean;
   isEditorSlotEnabled: (slot: EditorSlot) => boolean;
+  aiAssistantFeatures: Record<AiAssistantFeatureSlot, boolean>;
+  isAiAssistantFeatureEnabled: (slot: AiAssistantFeatureSlot) => boolean;
+  toggleAiAssistantFeature: (slot: AiAssistantFeatureSlot, enabled: boolean) => void;
 };
 
 const PluginsContext = createContext<PluginsContextValue | null>(null);
@@ -51,6 +64,32 @@ export function PluginsProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [pendingPluginId, setPendingPluginId] = useState<string | null>(null);
+  const [aiAssistantFeatures, setAiAssistantFeatures] = useState<Record<AiAssistantFeatureSlot, boolean>>(
+    AI_ASSISTANT_FEATURE_DEFAULTS,
+  );
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(AI_ASSISTANT_FEATURES_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as Partial<Record<AiAssistantFeatureSlot, boolean>>;
+      setAiAssistantFeatures((current) => ({
+        ...current,
+        ...Object.fromEntries(
+          Object.entries(parsed).filter((entry): entry is [AiAssistantFeatureSlot, boolean] => typeof entry[1] === 'boolean'),
+        ),
+      }));
+    } catch {
+      // Ignore invalid persisted values and keep defaults.
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(AI_ASSISTANT_FEATURES_STORAGE_KEY, JSON.stringify(aiAssistantFeatures));
+  }, [aiAssistantFeatures]);
 
   const refreshCatalog = useCallback(async () => {
     setIsLoading(true);
@@ -94,10 +133,32 @@ export function PluginsProvider({ children }: { children: ReactNode }) {
     pendingPluginId,
     refreshCatalog,
     togglePlugin,
+    aiAssistantFeatures,
+    isAiAssistantFeatureEnabled: (slot: AiAssistantFeatureSlot) => Boolean(aiAssistantFeatures[slot]),
+    toggleAiAssistantFeature: (slot: AiAssistantFeatureSlot, enabled: boolean) => {
+      setAiAssistantFeatures((current) => ({
+        ...current,
+        [slot]: enabled,
+      }));
+    },
     isPluginEnabled: (pluginId: string) => catalog.items.some((item) => item.id === pluginId && item.enabled),
-    isWorkspaceSidebarEnabled: (slot: WorkspaceSidebarSlot) => isWorkspaceSidebarSlotEnabled(catalog.items, slot),
-    isEditorSlotEnabled: (slot: EditorSlot) => isEditorSlotEnabled(catalog.items, slot),
-  }), [catalog.items, catalog.plan, errorMessage, isLoading, pendingPluginId, refreshCatalog, togglePlugin]);
+    isWorkspaceSidebarEnabled: (slot: WorkspaceSidebarSlot) => {
+      const runtimeEnabled = isWorkspaceSidebarSlotEnabled(catalog.items, slot);
+      return runtimeEnabled;
+    },
+    isEditorSlotEnabled: (slot: EditorSlot) => {
+      const runtimeEnabled = isEditorSlotEnabled(catalog.items, slot);
+      if (!runtimeEnabled) {
+        return false;
+      }
+
+      if (slot === 'toolbar_bubble') {
+        return Boolean(aiAssistantFeatures.text_transform);
+      }
+
+      return true;
+    },
+  }), [aiAssistantFeatures, catalog.items, catalog.plan, errorMessage, isLoading, pendingPluginId, refreshCatalog, togglePlugin]);
 
   return <PluginsContext.Provider value={value}>{children}</PluginsContext.Provider>;
 }

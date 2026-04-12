@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { BrainCircuit, Boxes, Crown, GitBranch, MessageSquareQuote, ShieldCheck, Star, X } from 'lucide-react';
 import type { PluginCatalogItem, PluginPlan } from '../../../shared/api/wikilive';
 import { ModalActionButton } from '../../../shared/ui';
+import type { AiAssistantFeatureSlot } from '../model/plugins-context';
 
 type PluginsModalProps = {
   isOpen: boolean;
@@ -10,9 +11,17 @@ type PluginsModalProps = {
   isLoading: boolean;
   errorMessage: string;
   pendingPluginId: string | null;
+  aiAssistantFeatures: Record<AiAssistantFeatureSlot, boolean>;
   onClose: () => void;
   onTogglePlugin: (pluginId: string, enabled: boolean) => void;
+  onToggleAiAssistantFeature: (slot: AiAssistantFeatureSlot, enabled: boolean) => void;
 };
+
+const AI_ASSISTANT_FEATURE_LABELS: Array<{ slot: AiAssistantFeatureSlot; label: string }> = [
+  { slot: 'ghost_text', label: 'Подсказки при наборе (ghost)' },
+  { slot: 'inline_chat', label: 'Inline chat' },
+  { slot: 'text_transform', label: 'Сократить и улучшить' },
+];
 
 function getStatusLabel(item: PluginCatalogItem) {
   switch (item.status) {
@@ -110,8 +119,10 @@ export function PluginsModal({
   isLoading,
   errorMessage,
   pendingPluginId,
+  aiAssistantFeatures,
   onClose,
   onTogglePlugin,
+  onToggleAiAssistantFeature,
 }: PluginsModalProps) {
   useEffect(() => {
     if (!isOpen) {
@@ -227,6 +238,51 @@ export function PluginsModal({
                         ) : null}
                         {item.lockedReason ? (
                           <p className="mt-3 text-xs leading-5 text-editor-text-tertiary">{item.lockedReason}</p>
+                        ) : null}
+
+                        {item.id === 'ai-assistant' ? (
+                          <div className="mt-4 rounded-xl border border-editor-border-subtle bg-white/75 p-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-editor-text-tertiary">
+                              Функции модуля
+                            </p>
+                            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                              {AI_ASSISTANT_FEATURE_LABELS.map((feature) => {
+                                const enabled = aiAssistantFeatures[feature.slot];
+                                const disabled = !item.enabled || !item.canToggle || isPending;
+
+                                return (
+                                  <button
+                                    key={feature.slot}
+                                    type="button"
+                                    disabled={disabled}
+                                    onClick={() => onToggleAiAssistantFeature(feature.slot, !enabled)}
+                                    className={[
+                                      'flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition-colors',
+                                      enabled
+                                        ? 'border-[#d6f1e5] bg-[#edf9f2] text-[#1f8056]'
+                                        : 'border-editor-border-subtle bg-white text-editor-text-secondary',
+                                      disabled ? 'cursor-not-allowed opacity-60' : 'hover:bg-editor-bg-control',
+                                    ].join(' ')}
+                                  >
+                                    <span
+                                      className={[
+                                        'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold leading-none',
+                                        enabled
+                                          ? 'border-[#1f8056] bg-[#1f8056] text-white'
+                                          : 'border-editor-border-control bg-white text-transparent',
+                                      ].join(' ')}
+                                    >
+                                      ✓
+                                    </span>
+                                    <span>{feature.label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {!item.enabled ? (
+                              <p className="mt-2 text-[11px] text-editor-text-tertiary">Сначала подключите модуль ИИ, затем включайте нужные функции.</p>
+                            ) : null}
+                          </div>
                         ) : null}
                       </div>
 

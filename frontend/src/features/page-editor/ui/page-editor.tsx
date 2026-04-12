@@ -169,10 +169,11 @@ export function PageEditor({
   activeCommentThreadId = null,
   commentCount = 0,
 }: PageEditorProps) {
-  const { isEditorSlotEnabled } = usePlugins();
+  const { isEditorSlotEnabled, isAiAssistantFeatureEnabled } = usePlugins();
   const isAiSlashEnabled = isEditorSlotEnabled('slash_menu');
   const isAiToolbarEnabled = isEditorSlotEnabled('toolbar_bubble');
-  const isAiExtensionEnabled = isEditorSlotEnabled('editor_extension');
+  const isAiGhostEnabled = isAiAssistantFeatureEnabled('ghost_text');
+  const isAiInlineChatEnabled = isAiAssistantFeatureEnabled('inline_chat');
   const [copilotAnchor, setCopilotAnchor] = useState<CopilotAnchor | null>(null);
   const isCopilotOpen = Boolean(copilotAnchor);
   const editorSurfaceRef = useRef<HTMLDivElement | null>(null);
@@ -184,7 +185,7 @@ export function PageEditor({
     onCheckpoint,
     onOpenCommentThread,
     isAiSlashEnabled,
-    isAiEditorExtensionEnabled: isAiExtensionEnabled,
+    isAiGhostEnabled,
   });
 
   useEffect(() => {
@@ -215,7 +216,7 @@ export function PageEditor({
   }, [controller.getCurrentDocumentStateValue, isLoading, onDocumentStateEncoderChange, page]);
 
   useEffect(() => {
-    if (!isAiExtensionEnabled || isLoading || !page) {
+    if (!isAiInlineChatEnabled || isLoading || !page) {
       return;
     }
 
@@ -250,7 +251,7 @@ export function PageEditor({
     return () => {
       window.removeEventListener('keydown', handleHotkey);
     };
-  }, [controller.editor, isAiExtensionEnabled, isLoading, page]);
+  }, [controller.editor, isAiInlineChatEnabled, isLoading, page]);
 
   if (isLoading) {
     return <PageEditorLoadingSkeleton />;
@@ -295,7 +296,7 @@ export function PageEditor({
           className="relative mx-auto w-full max-w-4xl flex-1 px-2 pb-4 pt-1 sm:px-6 sm:pb-10 sm:pt-5"
           data-page-editor-surface
           onContextMenu={(event) => {
-            if (!isAiExtensionEnabled || !controller.editor) {
+            if (!isAiInlineChatEnabled || !controller.editor) {
               return;
             }
 
@@ -344,7 +345,7 @@ export function PageEditor({
           <TemplateVariableModal {...controller.templateVariableModal} />
           <WikiTablePickerModal {...controller.tablePicker} />
           <AiInlineCopilot
-            enabled={isAiExtensionEnabled}
+            enabled={isAiInlineChatEnabled}
             isOpen={isCopilotOpen}
             anchor={copilotAnchor}
             editor={controller.editor}
