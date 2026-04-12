@@ -571,3 +571,8 @@
   font-family: 'MTSWide', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-weight: bold;
 }
+
+.time-machine-panel,
+.time-machine-panel * {
+  font-family: 'MTSWide', var(--editor-font-sans);
+}
