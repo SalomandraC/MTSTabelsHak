@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { UserContext } from 'src/auth/user-context';
 import { MwsService } from 'src/mws/mws.service';
+import { PagesService } from 'src/pages/pages.service';
 import { AI_TOOL_DEFINITIONS, AI_TOOL_SCHEMA_BY_NAME } from './tool-definitions';
 import { validateToolArguments } from './tool-schema-validator';
 import {
@@ -17,6 +18,7 @@ import { WikiDocumentInjectionService } from './wiki-document-injection.service'
 export class AiToolRegistryService {
   constructor(
     private readonly mwsService: MwsService,
+    private readonly pagesService: PagesService,
     private readonly wikiDocumentInjectionService: WikiDocumentInjectionService,
   ) {}
 
@@ -50,6 +52,12 @@ export class AiToolRegistryService {
           return await this.getRecords(args, user, context);
         case 'delete_records':
           return await this.deleteRecords(args, user, context);
+        case 'analyze_table_data':
+          return await this.analyzeTableData(args, user, context);
+        case 'create_wiki_page':
+          return await this.createWikiPage(args, user, context);
+        case 'add_table_column':
+          return await this.addTableColumn(args, user, context);
         case 'smart_import':
           return await this.smartImport(args, user, context);
         default:
@@ -175,6 +183,90 @@ export class AiToolRegistryService {
       data,
       editorCommand,
     } satisfies ToolExecutionSuccess;
+  }
+
+  private async analyzeTableData(
+    args: Record<string, unknown>,
+    user: UserContext,
+    context: ToolExecutionContext,
+  ): Promise<ToolExecutionSuccess> {
+    const result = await this.mwsService.listRecords(
+      String(args.datasheetId),
+      {
+        viewId: typeof args.viewId === 'string' ? args.viewId : undefined,
+        pageSize: typeof args.pageSize === 'number' ? args.pageSize : 100,
+        pageNum: typeof args.pageNum === 'number' ? args.pageNum : 1,
+        fields: Array.isArray(args.fields) ? args.fields.join(',') : undefined,
+        fieldKey: 'id',
+        cellFormat: 'json',
+      },
+      user,
+    );
+
+    const markdown = this.buildTableAnalysisMarkdown(result.items ?? []);
+
+    return {
+      ok: true,
+      toolName: 'analyze_table_data',
+      data: {
+        datasheetId: String(args.datasheetId),
+        viewId: typeof args.viewId === 'string' ? args.viewId : null,
+        markdown,
+        total: result.total,
+        pageNum: result.pageNum,
+        pageSize: result.pageSize,
+      },
+    };
+  }
+
+  private async createWikiPage(
+    args: Record<string, unknown>,
+    user: UserContext,
+    _context: ToolExecutionContext,
+  ): Promise<ToolExecutionSuccess> {
+    const created = await this.pagesService.createPage(
+      {
+        spaceId: String(args.spaceId),
+        title: String(args.title),
+        parentNodeId: typeof args.parentNodeId === 'string' ? args.parentNodeId : undefined,
+        icon: typeof args.icon === 'string' ? args.icon : 'doc',
+      },
+      user,
+    );
+
+    return {
+      ok: true,
+      toolName: 'create_wiki_page',
+      data: {
+        page: created.page,
+      },
+    };
+  }
+
+  private async addTableColumn(
+    args: Record<string, unknown>,
+    user: UserContext,
+    _context: ToolExecutionContext,
+  ): Promise<ToolExecutionSuccess> {
+    const result = await this.mwsService.createField(
+      String(args.spaceId),
+      String(args.datasheetId),
+      {
+        name: String(args.name),
+        type: String(args.type),
+        property: isPlainObject(args.property) ? args.property : undefined,
+      } as any,
+      user,
+    );
+
+    return {
+      ok: true,
+      toolName: 'add_table_column',
+      data: {
+        datasheetId: String(args.datasheetId),
+        field: result.field,
+      },
+    };
   }
 
   private async findCandidates(
@@ -339,6 +431,92 @@ export class AiToolRegistryService {
         updatedAt: record.updatedAt ? String(record.updatedAt) : null,
       };
     });
+  }
+
+  private buildTableAnalysisMarkdown(items: unknown[]): string {
+    const rows = Array.isArray(items) ? items : [];
+    const numericStats = new Map<string, { count: number; sum: number; min: number; max: number }>();
+    const nonEmptyByField = new Map<string, number>();
+
+    for (const item of rows) {
+      const record = item as Record<string, unknown>;
+      const fields = isPlainObject(record.fields) ? (record.fields as Record<string, unknown>) : {};
+
+      Object.entries(fields).forEach(([fieldId, value]) => {
+        if (value !== null && value !== undefined && String(value).trim() !== '') {
+          nonEmptyByField.set(fieldId, (nonEmptyByField.get(fieldId) ?? 0) + 1);
+        }
+
+        const numericValue = this.toNumber(value);
+        if (numericValue === null) {
+          return;
+        }
+
+        const current = numericStats.get(fieldId);
+        if (!current) {
+          numericStats.set(fieldId, {
+            count: 1,
+            sum: numericValue,
+            min: numericValue,
+            max: numericValue,
+          });
+          return;
+        }
+
+        current.count += 1;
+        current.sum += numericValue;
+        current.min = Math.min(current.min, numericValue);
+        current.max = Math.max(current.max, numericValue);
+      });
+    }
+
+    const topNonEmpty = [...nonEmptyByField.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    const topNumeric = [...numericStats.entries()]
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, 5);
+
+    const lines: string[] = [];
+    lines.push('## Анализ таблицы');
+    lines.push('');
+    lines.push(`- Строк проанализировано: ${rows.length}`);
+
+    if (topNonEmpty.length > 0) {
+      lines.push('- Наиболее заполненные поля:');
+      topNonEmpty.forEach(([fieldId, count]) => {
+        lines.push(`  - ${fieldId}: ${count} заполненных значений`);
+      });
+    }
+
+    if (topNumeric.length > 0) {
+      lines.push('- Числовые тренды и диапазоны:');
+      topNumeric.forEach(([fieldId, stat]) => {
+        const avg = stat.sum / Math.max(1, stat.count);
+        lines.push(`  - ${fieldId}: avg=${avg.toFixed(2)}, min=${stat.min.toFixed(2)}, max=${stat.max.toFixed(2)}, n=${stat.count}`);
+      });
+    }
+
+    if (topNumeric.length === 0 && topNonEmpty.length === 0) {
+      lines.push('- Недостаточно структурированных данных для вывода трендов.');
+    }
+
+    return lines.join('\n');
+  }
+
+  private toNumber(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value.replace(/\s+/g, '').replace(',', '.');
+      const parsed = Number(normalized);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    return null;
   }
 }
 

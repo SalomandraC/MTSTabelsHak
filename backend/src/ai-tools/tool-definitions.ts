@@ -97,6 +97,53 @@ const deleteRecordsSchema: JsonSchema = {
   additionalProperties: false,
 };
 
+const analyzeTableDataSchema: JsonSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  required: ['datasheetId'],
+  properties: {
+    datasheetId: { type: 'string', minLength: 1 },
+    viewId: { type: 'string' },
+    pageSize: { type: 'integer', minimum: 1, maximum: 500, default: 100 },
+    pageNum: { type: 'integer', minimum: 1, maximum: 1000, default: 1 },
+    fields: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+  additionalProperties: false,
+};
+
+const createWikiPageSchema: JsonSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  required: ['spaceId', 'title'],
+  properties: {
+    spaceId: { type: 'string', minLength: 1 },
+    title: { type: 'string', minLength: 1, maxLength: 255 },
+    parentNodeId: { type: 'string' },
+    icon: { type: 'string' },
+  },
+  additionalProperties: false,
+};
+
+const addTableColumnSchema: JsonSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  required: ['spaceId', 'datasheetId', 'name', 'type'],
+  properties: {
+    spaceId: { type: 'string', minLength: 1 },
+    datasheetId: { type: 'string', minLength: 1 },
+    name: { type: 'string', minLength: 1 },
+    type: { type: 'string', minLength: 1 },
+    property: {
+      type: 'object',
+      additionalProperties: true,
+    },
+  },
+  additionalProperties: false,
+};
+
 const smartImportSchema: JsonSchema = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   type: 'object',
@@ -154,6 +201,30 @@ export const AI_TOOL_DEFINITIONS: FunctionToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'analyze_table_data',
+      description: 'Read rows from MWS datasheet and return a compact Markdown analysis with trends and anomalies',
+      parameters: analyzeTableDataSchema,
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_wiki_page',
+      description: 'Create a new WikiLive page in the workspace',
+      parameters: createWikiPageSchema,
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add_table_column',
+      description: 'Add a new column to an MWS table (datasheet schema mutation)',
+      parameters: addTableColumnSchema,
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'smart_import',
       description: 'Analyze page context and suggest the best MWS table embed candidate',
       parameters: smartImportSchema,
@@ -166,5 +237,8 @@ export const AI_TOOL_SCHEMA_BY_NAME: Record<string, JsonSchema> = {
   patch_records: patchRecordsSchema,
   get_records: getRecordsSchema,
   delete_records: deleteRecordsSchema,
+  analyze_table_data: analyzeTableDataSchema,
+  create_wiki_page: createWikiPageSchema,
+  add_table_column: addTableColumnSchema,
   smart_import: smartImportSchema,
 };
