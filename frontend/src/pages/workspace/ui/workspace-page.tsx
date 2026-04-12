@@ -5,13 +5,13 @@ import {
   ChevronDown,
   ChevronRight,
   Database,
-  Eye,
   FileDown,
+  FileLock2,
+  FilePenLine,
   FileUp,
   FileText,
   Folder,
   History,
-  Lock,
   LogOut,
   MoreHorizontal,
   MessageSquare,
@@ -144,19 +144,43 @@ function getWorkspaceNodeIcon(node: WorkspaceTreeNode) {
     return <Database size={17} strokeWidth={1.8} />;
   }
 
-  if (node.wikiPage?.isLocked) {
-    return <Lock size={17} strokeWidth={1.8} />;
-  }
+  if (node.kind === 'wikiPage') {
+    if (node.wikiPage?.isLocked) {
+      return <FileLock2 size={17} strokeWidth={1.8} />;
+    }
 
-  if (node.wikiPage?.role === 'editor') {
-    return <Pencil size={17} strokeWidth={1.8} />;
-  }
+    if (node.wikiPage?.role === 'editor') {
+      return <FilePenLine size={17} strokeWidth={1.8} />;
+    }
 
-  if (node.wikiPage?.role === 'commentator' || node.wikiPage?.role === 'guest') {
-    return <Eye size={17} strokeWidth={1.8} />;
+    return <FileText size={17} strokeWidth={1.8} />;
   }
 
   return <FileText size={17} strokeWidth={1.8} />;
+}
+
+function WorkspaceTreeSkeleton() {
+  return (
+    <div className="space-y-2 px-2 py-2" aria-hidden="true">
+      <div className="animate-pulse rounded-xl bg-[#eceff3] p-3">
+        <div className="h-4 w-3/5 rounded-full bg-[#dde2e9]" />
+      </div>
+      <div className="space-y-2">
+        {[
+          { width: '78%', indent: 'ml-0' },
+          { width: '64%', indent: 'ml-5' },
+          { width: '72%', indent: 'ml-10' },
+          { width: '58%', indent: 'ml-5' },
+          { width: '86%', indent: 'ml-0' },
+        ].map((item, index) => (
+          <div key={`workspace-skeleton-${index}`} className={`flex items-center gap-2 px-1 ${item.indent}`}>
+            <div className="h-5 w-5 shrink-0 rounded-md bg-[#eceff3] animate-pulse" />
+            <div className="h-8 flex-1 rounded-lg bg-[#eceff3] animate-pulse" style={{ width: item.width }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 type RightPanelMode = 'links' | 'comments' | 'timeMachine';
@@ -564,6 +588,7 @@ export function WorkspacePage() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isEditingDisplayName, setIsEditingDisplayName] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState(displayName);
+  const [isAccessPanelOpen, setIsAccessPanelOpen] = useState(false);
   const [templates, setTemplates] = useState<PageTemplateSummary[]>([]);
   const [templateCategories, setTemplateCategories] = useState<TemplateCategorySummary[]>([]);
   const areTemplateCategoriesLoadedRef = useRef(false);
@@ -1509,30 +1534,33 @@ export function WorkspacePage() {
             {workbenchTab === 'favorite' ? (
               <div className="px-3 py-6 text-sm text-[#969fa8]">Закрепленных страниц пока нет</div>
             ) : (
-              <>
-                {isLoading ? <p className="px-2 py-2 text-sm text-[#969fa8]">Загрузка дерева...</p> : null}
-                {!isLoading && tree.length === 0 ? <p className="px-2 py-2 text-sm text-[#969fa8]">MWS-дерево пустое</p> : null}
-                {!isLoading && hasSearch && visibleTree.length === 0 ? (
-                  <p className="px-2 py-2 text-sm text-[#969fa8]">Ничего не найдено</p>
-                ) : null}
-                <ul role="tree" aria-label="Проводник" className="treeViewRoot space-y-0.5" tabIndex={0}>
-                  {visibleTree.map((node) => (
-                    <WorkspaceTreeItem
-                      key={node.id}
-                      node={node}
-                      depth={0}
-                      activePageId={activePageId}
-                      selectedTableNodeId={selectedTableNode?.id ?? null}
-                      expandedFolderIds={effectiveExpandedFolderIds}
-                      onSelectPage={handleSelectPage}
-                      onSelectMwsTable={handleSelectMwsTable}
-                      onToggleFolder={handleToggleFolder}
-                      onDeletePage={(pageId, title) => void handleDeletePage(pageId, title)}
-                      onCreateTemplateFromPage={(pageId, title) => openCreateTemplateFromPage(pageId, title)}
-                    />
-                  ))}
-                </ul>
-              </>
+              isLoading ? (
+                <WorkspaceTreeSkeleton />
+              ) : (
+                <>
+                  {tree.length === 0 ? <p className="px-2 py-2 text-sm text-[#969fa8]">MWS-дерево пустое</p> : null}
+                  {hasSearch && visibleTree.length === 0 ? (
+                    <p className="px-2 py-2 text-sm text-[#969fa8]">Ничего не найдено</p>
+                  ) : null}
+                  <ul role="tree" aria-label="Проводник" className="treeViewRoot space-y-0.5" tabIndex={0}>
+                    {visibleTree.map((node) => (
+                      <WorkspaceTreeItem
+                        key={node.id}
+                        node={node}
+                        depth={0}
+                        activePageId={activePageId}
+                        selectedTableNodeId={selectedTableNode?.id ?? null}
+                        expandedFolderIds={effectiveExpandedFolderIds}
+                        onSelectPage={handleSelectPage}
+                        onSelectMwsTable={handleSelectMwsTable}
+                        onToggleFolder={handleToggleFolder}
+                        onDeletePage={(pageId, title) => void handleDeletePage(pageId, title)}
+                        onCreateTemplateFromPage={(pageId, title) => openCreateTemplateFromPage(pageId, title)}
+                      />
+                    ))}
+                  </ul>
+                </>
+              )
             )}
           </div>
 
@@ -1761,9 +1789,19 @@ export function WorkspacePage() {
                 ) : null}
                 {canManageAccess && accessDraft ? (
                   <div className="mt-3 rounded-xl border border-editor-border-subtle bg-[#fafbfc] p-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">Доступ</p>
-                    <div className="mt-3 space-y-3">
-                      <label className="block text-xs text-editor-text-secondary">
+                    <button
+                      type="button"
+                      onClick={() => setIsAccessPanelOpen((current) => !current)}
+                      className="flex w-full items-center justify-between gap-3 text-left"
+                      aria-expanded={isAccessPanelOpen}
+                      aria-controls="workspace-access-settings"
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">Доступ</p>
+                      {isAccessPanelOpen ? <ChevronDown size={15} strokeWidth={2.3} /> : <ChevronRight size={15} strokeWidth={2.3} />}
+                    </button>
+                    {isAccessPanelOpen ? (
+                      <div id="workspace-access-settings" className="mt-3 space-y-3">
+                        <label className="block text-xs text-editor-text-secondary">
                         <span className="mb-1 block font-semibold">Кто может просматривать</span>
                         <select
                           value={accessDraft.viewAccess}
@@ -1785,8 +1823,8 @@ export function WorkspacePage() {
                             </option>
                           ))}
                         </select>
-                      </label>
-                      <label className="block text-xs text-editor-text-secondary">
+                        </label>
+                        <label className="block text-xs text-editor-text-secondary">
                         <span className="mb-1 block font-semibold">Кто может комментировать</span>
                         <select
                           value={accessDraft.commentAccess}
@@ -1808,8 +1846,8 @@ export function WorkspacePage() {
                             </option>
                           ))}
                         </select>
-                      </label>
-                      <label className="block text-xs text-editor-text-secondary">
+                        </label>
+                        <label className="block text-xs text-editor-text-secondary">
                         <span className="mb-1 block font-semibold">Кто может редактировать</span>
                         <select
                           value={accessDraft.editAccess}
@@ -1831,8 +1869,8 @@ export function WorkspacePage() {
                             </option>
                           ))}
                         </select>
-                      </label>
-                      <button
+                        </label>
+                        <button
                         type="button"
                         onClick={() => void handleSaveAccessSettings()}
                         disabled={!hasAccessChanges || isUpdatingAccess}
@@ -1840,7 +1878,8 @@ export function WorkspacePage() {
                       >
                         {isUpdatingAccess ? 'Сохраняем доступ...' : 'Сохранить доступ'}
                       </button>
-                    </div>
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
