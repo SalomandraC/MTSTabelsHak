@@ -164,6 +164,9 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     StarterKit.configure({
       document: false,
       codeBlock: false,
+      dropcursor: false,
+      link: false,
+      underline: false,
       horizontalRule: false,
     }),
     Placeholder.configure({

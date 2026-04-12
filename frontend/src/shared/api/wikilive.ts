@@ -581,23 +581,29 @@ async function refreshAccessToken(): Promise<RefreshResponse | null> {
   }
 
   refreshInFlight = (async () => {
-    const response = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
 
-    if (!response.ok) {
+      if (!response.ok) {
+        setAccessToken(null);
+        setActiveUser(null);
+        return null;
+      }
+
+      const payload = (await response.json()) as RefreshResponse;
+      setAccessToken(payload.accessToken);
+      return payload;
+    } catch {
       setAccessToken(null);
       setActiveUser(null);
       return null;
     }
-
-    const payload = (await response.json()) as RefreshResponse;
-    setAccessToken(payload.accessToken);
-    return payload;
   })().finally(() => {
     refreshInFlight = null;
   });

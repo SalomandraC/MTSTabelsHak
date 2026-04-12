@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UserContext } from 'src/auth/user-context';
 import { AuthService } from 'src/auth/auth.service';
@@ -11,6 +11,14 @@ import { CollabPersistenceService } from './collab-persistence.service';
 
 @Injectable()
 export class CollabService {
+  private readonly logger = new Logger(CollabService.name);
+
+  private get userRepository(): {
+    upsert: (args: unknown) => Promise<unknown>;
+  } {
+    return (this.prisma as PrismaService & { user: CollabService['userRepository'] }).user;
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly authService: AuthService,
@@ -27,6 +35,19 @@ export class CollabService {
       throw new NotFoundException('Page not found');
     }
 
+    await this.userRepository.upsert({
+      where: { userId: user.userId },
+      create: {
+        userId: user.userId,
+        clientId: user.clientId ?? null,
+        displayName: user.displayName,
+      },
+      update: {
+        clientId: user.clientId ?? null,
+        displayName: user.displayName,
+      },
+    });
+
     const session = await this.prisma.collabSession.create({
       data: {
         pageId,
@@ -39,6 +60,27 @@ export class CollabService {
     const token = this.authService.issueCollabToken(user, pageId, session.id, dto.client.clientId, access);
     const port = this.configService.get<string>('COLLAB_PORT', '8081');
     const activeUsers = await this.redisService.smembers(this.presenceKey(pageId));
+    const parsedActiveUsers = activeUsers.flatMap((entry, index) => {
+      try {
+        const parsed = JSON.parse(entry) as { userId?: unknown; displayName?: unknown };
+
+        if (typeof parsed.userId !== 'string' || typeof parsed.displayName !== 'string') {
+          this.logger.warn(`Skipping malformed collab presence entry for page ${pageId} at index ${index}`);
+          return [];
+        }
+
+        return [
+          {
+            userId: parsed.userId,
+            displayName: parsed.displayName,
+            color: ['#0EA5E9', '#22C55E', '#F97316', '#A855F7'][index % 4],
+          },
+        ];
+      } catch {
+        this.logger.warn(`Skipping unreadable collab presence entry for page ${pageId} at index ${index}`);
+        return [];
+      }
+    });
 
     return {
       sessionId: session.id,
@@ -50,14 +92,7 @@ export class CollabService {
       },
       documentState: await this.persistenceService.getDocumentState(pageId),
       awareness: {
-        activeUsers: activeUsers.map((entry, index) => {
-          const parsed = JSON.parse(entry) as { userId: string; displayName: string };
-          return {
-            userId: parsed.userId,
-            displayName: parsed.displayName,
-            color: ['#0EA5E9', '#22C55E', '#F97316', '#A855F7'][index % 4],
-          };
-        }),
+        activeUsers: parsedActiveUsers,
       },
       access: {
         role: access.role,
