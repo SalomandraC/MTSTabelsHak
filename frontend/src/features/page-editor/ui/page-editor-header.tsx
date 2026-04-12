@@ -184,7 +184,7 @@ export function PageEditorHeader({
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-editor-text-tertiary justify-end w-full sm:w-auto">
             <PresenceStrip users={activeUsers} />
             {connectionStatus ? (
-              <span className="rounded-full bg-[#111827] px-2 py-1 font-semibold text-white">collab: {connectionStatus}</span>
+              <span className="rounded-lg bg-[#d70032] px-2 py-1 font-semibold text-white">collab: {connectionStatus}</span>
             ) : null}
             {saveStatus ? <span>{saveStatus}</span> : null}
             {recoveryMessage ? (

@@ -739,6 +739,26 @@ export function WorkspacePage() {
   const isTimeMachineEnabled = isPluginEnabled('time-machine');
   const isNavigationEnabled = isWorkspaceSidebarEnabled('navigation');
   const isAiSidebarEnabled = isWorkspaceSidebarEnabled('sidebar');
+  const [isScreenNarrow, setIsScreenNarrow] = useState(false);
+
+  useEffect(() => {
+    const updateRightSidebarVisibility = () => {
+      const narrow = window.innerWidth < 800;
+      setIsScreenNarrow(narrow);
+
+      if (narrow) {
+        rightSidebar.collapse();
+      }
+    };
+
+    updateRightSidebarVisibility();
+    window.addEventListener('resize', updateRightSidebarVisibility);
+
+    return () => {
+      window.removeEventListener('resize', updateRightSidebarVisibility);
+    };
+  }, [rightSidebar]);
+
   const comments = usePageComments({
     pageId: activePageId,
     editor: activeEditor,
@@ -1957,7 +1977,7 @@ export function WorkspacePage() {
             <ChevronRight size={16} strokeWidth={2.2} />
           </button>
         ) : null}
-        {rightSidebar.isCollapsed ? (
+        {rightSidebar.isCollapsed && !isScreenNarrow ? (
           <>
             <button
               type="button"
