@@ -5,6 +5,7 @@ import type { PresenceUser } from '../../../shared/api/wikilive';
 type PageEditorHeaderProps = {
   title: string;
   description: string;
+  editable?: boolean;
   connectionStatus?: string;
   saveStatus?: string;
   recoveryMessage?: string | null;
@@ -40,6 +41,7 @@ function PresenceStrip({ users }: { users: PresenceUser[] }) {
 export function PageEditorHeader({
   title,
   description,
+  editable = true,
   connectionStatus,
   saveStatus,
   recoveryMessage,
@@ -136,6 +138,9 @@ export function PageEditorHeader({
                 className="truncate font-wide text-sm leading-5 text-editor-text-primary cursor-text hover:bg-editor-bg-control/50 rounded px-1 -mx-1 transition-colors"
                 style={boldStyle}
                 onDoubleClick={() => {
+                  if (!editable) {
+                    return;
+                  }
                   setLocalTitle(title);
                   setEditingField('title');
                 }}
@@ -160,6 +165,9 @@ export function PageEditorHeader({
                 className="truncate text-sm leading-5 cursor-text hover:bg-editor-bg-control/50 rounded px-1 -mx-1 transition-colors"
                 style={{ ...fontFamilyStyle, color: 'rgba(150, 159, 168, 1)' }}
                 onDoubleClick={() => {
+                  if (!editable) {
+                    return;
+                  }
                   setLocalDescription(description);
                   setEditingField('description');
                 }}

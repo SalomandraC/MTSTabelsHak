@@ -35,6 +35,12 @@ enum TemplateAccessLevel {
   public
 }
 
+enum DocumentAccessScope {
+  owner_only
+  space_members
+  link_holders
+}
+
 model TemplateCategory {
   id         String        @id @default(uuid())
   title      String        @unique
@@ -92,10 +98,38 @@ model WikiPage {
   lastIndexedAt       DateTime?        @map("last_indexed_at")
   node                WikiNode         @relation(fields: [nodeId], references: [id], onDelete: Cascade)
   document            PageDocument?
+  accessPolicy        PageAccessPolicy?
   checkpoints         PageCheckpoint[]
   updates             PageCrdtUpdate[]
 
   @@map("wiki_pages")
+}
+
+model User {
+  userId      String         @id @map("user_id")
+  clientId    String?        @unique @map("client_id")
+  displayName String         @map("display_name")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  sessions    CollabSession[]
+
+  @@map("users")
+}
+
+model PageAccessPolicy {
+  pageId        String              @id @map("page_id")
+  ownerUserId   String              @map("owner_user_id")
+  viewAccess    DocumentAccessScope @default(space_members) @map("view_access")
+  commentAccess DocumentAccessScope @default(space_members) @map("comment_access")
+  editAccess    DocumentAccessScope @default(space_members) @map("edit_access")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+  page          WikiPage            @relation(fields: [pageId], references: [nodeId], onDelete: Cascade)
+
+  @@index([ownerUserId])
+  @@index([viewAccess])
+  @@index([editAccess])
+  @@map("page_access_policies")
 }
 
 model PageDocument {
@@ -218,12 +252,12 @@ model CollabSession {
   userId         String    @map("user_id")
   clientId       String    @map("client_id")
   deviceId       String    @map("device_id")
-  displayName    String?   @map("display_name")
   connectedAt    DateTime  @default(now()) @map("connected_at")
   lastSeenAt     DateTime? @map("last_seen_at")
   disconnectedAt DateTime? @map("disconnected_at")
   closeReason    String?   @map("close_reason")
   page           WikiNode  @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  user           User      @relation(fields: [userId], references: [userId], onDelete: Cascade)
 
   @@index([pageId, connectedAt])
   @@index([userId, connectedAt])

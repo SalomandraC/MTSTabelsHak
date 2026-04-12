@@ -21,6 +21,7 @@ const redFilter = 'brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(
 
 type FloatingToolbarProps = {
   editor: Editor | null;
+  canEdit?: boolean;
   onOpenLinkModal: () => void;
   onOpenIframeModal: () => void;
   onCreateComment?: (editor: Editor) => void;
@@ -84,6 +85,7 @@ function ToolbarButton({
 
 export function FloatingToolbar({
   editor,
+  canEdit = true,
   onOpenLinkModal,
   onOpenIframeModal,
   onCreateComment,
@@ -155,6 +157,10 @@ export function FloatingToolbar({
     return null;
   }
 
+  if (!canEdit && !onCreateComment) {
+    return null;
+  }
+
   const getEditorMarkdown = () => {
     const markdownStorage = (editor.storage as { markdown?: { getMarkdown?: () => string } }).markdown;
 
@@ -222,7 +228,7 @@ export function FloatingToolbar({
         }
         onClick={() => editor.chain().focus().toggleBold().run()}
         pressed={state.isBold}
-        disabled={!state.canBold}
+        disabled={!canEdit || !state.canBold}
         isFirst={true}
         isLast={false}
         aria-label="Полужирный (Ctrl+B)"
@@ -238,7 +244,7 @@ export function FloatingToolbar({
         }
         onClick={() => editor.chain().focus().toggleItalic().run()}
         pressed={state.isItalic}
-        disabled={!state.canItalic}
+        disabled={!canEdit || !state.canItalic}
         isFirst={false}
         isLast={false}
         aria-label="Курсив (Ctrl+I)"
@@ -254,7 +260,7 @@ export function FloatingToolbar({
         }
         onClick={() => editor.chain().focus().toggleStrike().run()}
         pressed={state.isStrike}
-        disabled={!state.canStrike}
+        disabled={!canEdit || !state.canStrike}
         isFirst={false}
         isLast={false}
         aria-label="Зачёркнутый"
@@ -270,7 +276,7 @@ export function FloatingToolbar({
         }
         onClick={() => editor.chain().focus().toggleUnderline?.().run()}
         pressed={state.isUnderline}
-        disabled={!state.canUnderline}
+        disabled={!canEdit || !state.canUnderline}
         isFirst={false}
         isLast={false}
         aria-label="Подчёркнутый (Ctrl+U)"
@@ -281,110 +287,113 @@ export function FloatingToolbar({
         }
         onClick={() => editor.chain().focus().toggleCode().run()}
         pressed={state.isCode}
-        disabled={!state.canCode}
+        disabled={!canEdit || !state.canCode}
         isFirst={false}
         isLast={true}
         aria-label="Код"
       />
+      {canEdit ? (
+        <>
+          <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
-      <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
-
-      <ToolbarButton
-        icon={
-          <img
-            src={H1}
-            alt="Заголовок 1 уровня"
-            className="h-3.5 w-3.5"
-            style={state.isHeading1 ? { filter: redFilter } : {}}
+          <ToolbarButton
+            icon={
+              <img
+                src={H1}
+                alt="Заголовок 1 уровня"
+                className="h-3.5 w-3.5"
+                style={state.isHeading1 ? { filter: redFilter } : {}}
+              />
+            }
+            onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+            pressed={state.isHeading1}
+            isFirst={true}
+            isLast={false}
+            aria-label="Заголовок 1"
           />
-        }
-        onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-        pressed={state.isHeading1}
-        isFirst={true}
-        isLast={false}
-        aria-label="Заголовок 1"
-      />
-      <ToolbarButton
-        icon={
-          <img
-            src={H2}
-            alt="Заголовок 2 уровня"
-            className="h-3.5 w-3.5"
-            style={state.isHeading2 ? { filter: redFilter } : {}}
+          <ToolbarButton
+            icon={
+              <img
+                src={H2}
+                alt="Заголовок 2 уровня"
+                className="h-3.5 w-3.5"
+                style={state.isHeading2 ? { filter: redFilter } : {}}
+              />
+            }
+            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+            pressed={state.isHeading2}
+            isFirst={false}
+            isLast={false}
+            aria-label="Заголовок 2"
           />
-        }
-        onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-        pressed={state.isHeading2}
-        isFirst={false}
-        isLast={false}
-        aria-label="Заголовок 2"
-      />
-      <ToolbarButton
-        icon={
-          <img
-            src={H3}
-            alt="Заголовок 3 уровня"
-            className="h-3.5 w-3.5"
-            style={state.isHeading3 ? { filter: redFilter } : {}}
+          <ToolbarButton
+            icon={
+              <img
+                src={H3}
+                alt="Заголовок 3 уровня"
+                className="h-3.5 w-3.5"
+                style={state.isHeading3 ? { filter: redFilter } : {}}
+              />
+            }
+            onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+            pressed={state.isHeading3}
+            isFirst={false}
+            isLast={true}
+            aria-label="Заголовок 3"
           />
-        }
-        onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-        pressed={state.isHeading3}
-        isFirst={false}
-        isLast={true}
-        aria-label="Заголовок 3"
-      />
 
-      <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+          <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
-      <ToolbarButton
-        icon={<List className="h-3.5 w-3.5" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
-        onClick={() => handleListAction(editor, 'bulletList')}
-        pressed={state.isBulletList}
-        disabled={!state.canBulletList}
-        isFirst={true}
-        isLast={false}
-        aria-label="Маркированный список"
-      />
-      <ToolbarButton
-        icon={<ListOrdered className="h-3.5 w-3.5" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
-        onClick={() => handleListAction(editor, 'orderedList')}
-        pressed={state.isOrderedList}
-        disabled={!state.canOrderedList}
-        isFirst={false}
-        isLast={false}
-        aria-label="Нумерованный список"
-      />
-      <ToolbarButton
-        icon={<ListChecks className="h-3.5 w-3.5" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
-        onClick={() => handleListAction(editor, 'taskList')}
-        pressed={state.isTaskList}
-        disabled={!state.canTaskList}
-        isFirst={false}
-        isLast={true}
-        aria-label="Чеклист"
-      />
+          <ToolbarButton
+            icon={<List className="h-3.5 w-3.5" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
+            onClick={() => handleListAction(editor, 'bulletList')}
+            pressed={state.isBulletList}
+            disabled={!state.canBulletList}
+            isFirst={true}
+            isLast={false}
+            aria-label="Маркированный список"
+          />
+          <ToolbarButton
+            icon={<ListOrdered className="h-3.5 w-3.5" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
+            onClick={() => handleListAction(editor, 'orderedList')}
+            pressed={state.isOrderedList}
+            disabled={!state.canOrderedList}
+            isFirst={false}
+            isLast={false}
+            aria-label="Нумерованный список"
+          />
+          <ToolbarButton
+            icon={<ListChecks className="h-3.5 w-3.5" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
+            onClick={() => handleListAction(editor, 'taskList')}
+            pressed={state.isTaskList}
+            disabled={!state.canTaskList}
+            isFirst={false}
+            isLast={true}
+            aria-label="Чеклист"
+          />
 
-      <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+          <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
-      <button
-        type="button"
-        onClick={() => {
-          if (state.isLink && state.canUnsetLink) {
-            editor.chain().focus().unsetLink().run();
-          } else {
-            onOpenLinkModal();
-          }
-        }}
-        className={[
-          'inline-flex h-7 min-w-7 shrink-0 items-center justify-center rounded text-xs font-semibold transition-colors',
-          'border border-editor-border-control bg-transparent text-[rgba(80,87,98,1)] hover:bg-[#e8ebf1]',
-          state.isLink ? 'border-red-500 !border-opacity-100 bg-[#f5f7fa]' : '',
-        ].join(' ')}
-        aria-label={state.isLink ? 'Удалить ссылку' : 'Вставить ссылку'}
-      >
-        @
-      </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (state.isLink && state.canUnsetLink) {
+                editor.chain().focus().unsetLink().run();
+              } else {
+                onOpenLinkModal();
+              }
+            }}
+            className={[
+              'inline-flex h-7 min-w-7 shrink-0 items-center justify-center rounded text-xs font-semibold transition-colors',
+              'border border-editor-border-control bg-transparent text-[rgba(80,87,98,1)] hover:bg-[#e8ebf1]',
+              state.isLink ? 'border-red-500 !border-opacity-100 bg-[#f5f7fa]' : '',
+            ].join(' ')}
+            aria-label={state.isLink ? 'Удалить ссылку' : 'Вставить ссылку'}
+          >
+            @
+          </button>
+        </>
+      ) : null}
 
       {onCreateComment ? (
         <ToolbarButton
@@ -418,7 +427,7 @@ export function FloatingToolbar({
 
       <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
-      {isAiTransformEnabled ? (
+      {canEdit && isAiTransformEnabled ? (
         <>
           <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 

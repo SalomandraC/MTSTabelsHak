@@ -32,6 +32,7 @@ const redFilter = 'brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(
 
 type PageEditorToolbarProps = {
   editor: Editor | null;
+  canEdit?: boolean;
   onOpenLinkModal: (position?: { top: number; left: number }) => void;
   onOpenImageModal: () => void;
   onOpenIframeModal: () => void;
@@ -175,6 +176,7 @@ function ToolbarButton({
 
 export function PageEditorToolbar({
   editor,
+  canEdit = true,
   onOpenLinkModal,
   onOpenImageModal,
   onOpenIframeModal,
@@ -238,6 +240,10 @@ export function PageEditorToolbar({
   }
 
   const alignSelection = (align: 'left' | 'center' | 'right') => {
+    if (!canEdit) {
+      return;
+    }
+
     editor.chain().focus().setTextAlign(align).run();
   };
 
@@ -254,7 +260,7 @@ export function PageEditorToolbar({
             />
           } 
           onClick={() => editor.chain().focus().undo().run()} 
-          disabled={!state.canUndo} 
+          disabled={!canEdit || !state.canUndo} 
           noBorder
           aria-label="Отменить (Ctrl+Z)"
         />
@@ -267,7 +273,7 @@ export function PageEditorToolbar({
             />
           } 
           onClick={() => editor.chain().focus().redo().run()} 
-          disabled={!state.canRedo} 
+          disabled={!canEdit || !state.canRedo} 
           noBorder
           aria-label="Повторить (Ctrl+Y)"
         />
@@ -285,7 +291,7 @@ export function PageEditorToolbar({
           }
           onClick={() => editor.chain().focus().toggleBold().run()}
           pressed={state.isBold}
-          disabled={!state.canBold}
+          disabled={!canEdit || !state.canBold}
           noBorder={false}
           isFirst={true}  
           isLast={false}
@@ -303,7 +309,7 @@ export function PageEditorToolbar({
           }
           onClick={() => editor.chain().focus().toggleItalic().run()}
           pressed={state.isItalic}
-          disabled={!state.canItalic}
+          disabled={!canEdit || !state.canItalic}
           noBorder={false}
           isFirst={false}
           isLast={false}
@@ -321,7 +327,7 @@ export function PageEditorToolbar({
           }
           onClick={() => editor.chain().focus().toggleStrike().run()}
           pressed={state.isStrike}
-          disabled={!state.canStrike}
+          disabled={!canEdit || !state.canStrike}
           noBorder={false}
           isFirst={false}
           isLast={false}
@@ -339,7 +345,7 @@ export function PageEditorToolbar({
           }
           onClick={() => editor.chain().focus().toggleUnderline?.().run()}
           pressed={state.isUnderline}
-          disabled={!state.canUnderline}
+          disabled={!canEdit || !state.canUnderline}
           noBorder={false}
           isFirst={false}
           isLast={true}
@@ -360,6 +366,7 @@ export function PageEditorToolbar({
           } 
           onClick={() => editor.chain().focus().setParagraph().run()} 
           pressed={state.isParagraph} 
+          disabled={!canEdit}
           isFirst={true}
           isLast={true}
           isInGroup={true}
@@ -379,6 +386,7 @@ export function PageEditorToolbar({
           } 
           onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
           pressed={state.isHeading1}
+          disabled={!canEdit}
           isFirst={true}
           isLast={false}
           isInGroup={true}
@@ -395,6 +403,7 @@ export function PageEditorToolbar({
           } 
           onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
           pressed={state.isHeading2}
+          disabled={!canEdit}
           isFirst={false}
           isLast={false}
           isInGroup={true}
@@ -411,6 +420,7 @@ export function PageEditorToolbar({
           } 
           onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
           pressed={state.isHeading3}
+          disabled={!canEdit}
           isFirst={false}
           isLast={true}
           isInGroup={true}
@@ -427,6 +437,7 @@ export function PageEditorToolbar({
           }
           onClick={() => alignSelection('left')}
           pressed={state.isAlignLeft}
+          disabled={!canEdit}
           isFirst={true}
           isLast={false}
           isInGroup={true}
@@ -440,6 +451,7 @@ export function PageEditorToolbar({
           }
           onClick={() => alignSelection('center')}
           pressed={state.isAlignCenter}
+          disabled={!canEdit}
           isFirst={false}
           isLast={false}
           isInGroup={true}
@@ -453,6 +465,7 @@ export function PageEditorToolbar({
           }
           onClick={() => alignSelection('right')}
           pressed={state.isAlignRight}
+          disabled={!canEdit}
           isFirst={false}
           isLast={true}
           isInGroup={true}
@@ -472,7 +485,7 @@ export function PageEditorToolbar({
           }
           onClick={() => handleListAction(editor, 'bulletList')}
           pressed={state.isBulletList}
-          disabled={!state.canBulletList}
+          disabled={!canEdit || !state.canBulletList}
           isFirst={true}
           isLast={false}
           isInGroup={true}
@@ -489,7 +502,7 @@ export function PageEditorToolbar({
           }
           onClick={() => handleListAction(editor, 'orderedList')}
           pressed={state.isOrderedList}
-          disabled={!state.canOrderedList}
+          disabled={!canEdit || !state.canOrderedList}
           isFirst={false}
           isLast={false}
           isInGroup={true}
@@ -506,7 +519,7 @@ export function PageEditorToolbar({
           }
           onClick={() => handleListAction(editor, 'taskList')}
           pressed={state.isTaskList}
-          disabled={!state.canTaskList}
+          disabled={!canEdit || !state.canTaskList}
           isFirst={false}
           isLast={true}
           isInGroup={true}
@@ -525,10 +538,14 @@ export function PageEditorToolbar({
             />
           }
           onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
+            if (!canEdit) {
+              return;
+            }
             const rect = event.currentTarget.getBoundingClientRect();
             onOpenLinkModal({ top: rect.bottom + 8, left: rect.left });
           }}
           pressed={state.isLink}
+          disabled={!canEdit}
           isFirst={true}
           isLast={true}
           isInGroup={true}
@@ -555,6 +572,7 @@ export function PageEditorToolbar({
           <ToolbarButton
             icon={<History className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
             onClick={onOpenTimeMachine}
+            disabled={!canEdit}
             isFirst={true}
             isLast={true}
             isInGroup={true}
@@ -575,7 +593,7 @@ export function PageEditorToolbar({
           }
           onClick={() => editor.chain().focus().toggleCodeBlock().run()}
           pressed={state.isCodeBlock}
-          disabled={!state.canCodeBlock}
+          disabled={!canEdit || !state.canCodeBlock}
           isFirst={true}
           isLast={true}
           isInGroup={true}
@@ -595,6 +613,7 @@ export function PageEditorToolbar({
           }
           onClick={() => editor.chain().focus().toggleBlockquote().run()}
           pressed={state.isBlockquote}
+          disabled={!canEdit}
           isFirst={true}
           isLast={true}
           isInGroup={true}
@@ -613,9 +632,11 @@ export function PageEditorToolbar({
           }
           label="Img"
           onClick={() => onOpenImageModal()}
+          disabled={!canEdit}
           isFirst={true}
           isLast={true}
           isInGroup={true}
+          aria-label="Вставить изображение"
         />
 
         {showCanvasButton && (
@@ -678,7 +699,7 @@ export function PageEditorToolbar({
             />
           }
           onClick={() => editor.chain().focus().unsetAllMarks().clearNodes().setParagraph().run()}
-          disabled={!state.canClearFormatting}
+          disabled={!canEdit || !state.canClearFormatting}
           isFirst={true}
           isLast={true}
           isInGroup={true}

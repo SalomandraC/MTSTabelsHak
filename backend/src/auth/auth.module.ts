@@ -6,6 +6,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { PrismaModule } from 'src/infra/prisma/prisma.module';
 import { RedisModule } from 'src/infra/redis/redis.module';
 
 @Global()
@@ -13,6 +14,7 @@ import { RedisModule } from 'src/infra/redis/redis.module';
   imports: [
     ConfigModule,
     HttpModule,
+    PrismaModule,
     RedisModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

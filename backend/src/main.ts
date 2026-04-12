@@ -4,6 +4,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { PrismaService } from './infra/prisma/prisma.service';
+import { RealtimeService } from './realtime/realtime.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
@@ -41,6 +42,7 @@ async function bootstrap() {
 
   const prismaService = app.get(PrismaService);
   await prismaService.enableShutdownHooks(app);
+  app.get(RealtimeService).setup(app.getHttpServer());
 
   const port = Number(process.env.PORT ?? 8080);
   await app.listen(port);

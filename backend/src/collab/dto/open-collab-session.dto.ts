@@ -10,10 +10,6 @@ class ClientDto {
 
   @IsString()
   editorVersion!: string;
-
-  @IsOptional()
-  @IsString()
-  userDisplayName?: string;
 }
 
 export class OpenCollabSessionDto {

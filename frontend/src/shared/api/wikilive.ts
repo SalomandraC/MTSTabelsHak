@@ -17,9 +17,21 @@ export type AuthSessionRefresh = RefreshResponse;
 export type MeResponse = {
   user: {
     userId: string;
+    clientId: string | null;
     displayName: string;
   };
 };
+
+export type LoginResponse =
+  | { status: 'authorized' }
+  | {
+      status: 'display_name_required';
+      profile: {
+        userId: string;
+        clientId: string | null;
+        suggestedDisplayName: string | null;
+      };
+    };
 
 export type PluginPlan = {
   id: 'free' | 'pro' | 'enterprise';
@@ -63,6 +75,7 @@ function getDemoUserFromUrl(): MeResponse['user'] | null {
 
   return {
     userId,
+    clientId: null,
     displayName: displayName ?? `User ${userId.slice(0, 8)}`,
   };
 }
@@ -75,6 +88,10 @@ export type PageSummary = {
   createdAt: string;
   updatedAt: string;
   backlinksCount: number;
+  role?: DocumentRole | null;
+  canView?: boolean;
+  canEdit?: boolean;
+  isLocked?: boolean;
 };
 
 export type TemplateField = {
@@ -194,6 +211,34 @@ export type PageEmbed = {
   displayMode: string | null;
 };
 
+export type DocumentRole = 'owner' | 'editor' | 'commentator' | 'guest';
+
+export type DocumentCapabilities = {
+  canView: boolean;
+  canEdit: boolean;
+  canComment: boolean;
+  canManageAccess: boolean;
+  canDelete: boolean;
+  canUseAi: boolean;
+  canUseAdvancedPlugins: boolean;
+};
+
+export type DocumentAccessPolicy = {
+  ownerUserId: string;
+  viewAccess: 'owner_only' | 'space_members' | 'link_holders';
+  commentAccess: 'owner_only' | 'space_members' | 'link_holders';
+  editAccess: 'owner_only' | 'space_members' | 'link_holders';
+};
+
+export type DocumentAccessSummary = {
+  role: DocumentRole | null;
+  principal: 'authenticated' | 'anonymous';
+  isSpaceMember: boolean;
+  isOwner: boolean;
+  capabilities: DocumentCapabilities;
+  policy: DocumentAccessPolicy;
+};
+
 export type WikiPage = {
   id: string;
   title: string;
@@ -204,6 +249,7 @@ export type WikiPage = {
   plainTextPreview: string | null;
   outgoingLinksCount: number;
   backlinksCount: number;
+  access?: DocumentAccessSummary;
   embeds: PageEmbed[];
   documentState?: PageDocumentState;
 };
@@ -282,10 +328,25 @@ export type CollabSession = {
     heartbeatIntervalSec: number;
   };
   documentState: PageDocumentState;
+  access?: {
+    role: DocumentRole | null;
+    capabilities: DocumentCapabilities;
+  };
   awareness?: {
     activeUsers?: PresenceUser[];
   };
 };
+
+export type WorkspaceRealtimeEvent =
+  | {
+      type: 'connected';
+      spaceId: string;
+    }
+  | {
+      type: 'page_access_updated';
+      spaceId: string;
+      pageId: string;
+    };
 
 export type MwsSpace = {
   id: string;
@@ -620,11 +681,11 @@ async function requestWithAuth<T>(path: string, options: RequestOptions = {}): P
 }
 
 export const wikiliveApi = {
-  async login(apiKey: string) {
-    await request<void>('/api/v1/auth/login', {
+  async login(apiKey: string, displayName?: string) {
+    return request<LoginResponse>('/api/v1/auth/login', {
       method: 'POST',
       authMode: 'none',
-      body: JSON.stringify({ apiKey }),
+      body: JSON.stringify({ apiKey, displayName }),
     });
   },
   async refreshSession() {
@@ -640,6 +701,14 @@ export const wikiliveApi = {
   },
   async getMe() {
     const response = await request<MeResponse>('/api/v1/me');
+    setActiveUser(response.user);
+    return response;
+  },
+  async updateMeDisplayName(displayName: string) {
+    const response = await request<MeResponse>('/api/v1/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ displayName }),
+    });
     setActiveUser(response.user);
     return response;
   },
@@ -802,8 +871,17 @@ export const wikiliveApi = {
       query: { includeDocumentState: true },
     });
   },
+  getPageAccess(pageId: string) {
+    return request<{ access: DocumentAccessSummary }>(`/api/v1/pages/${pageId}/access`);
+  },
   updatePage(pageId: string, payload: { title?: string; icon?: string | null }) {
     return request<{ page: WikiPage }>(`/api/v1/pages/${pageId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+  updatePageAccess(pageId: string, payload: DocumentAccessPolicy) {
+    return request<{ access: DocumentAccessSummary }>(`/api/v1/pages/${pageId}/access`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     });
@@ -856,7 +934,6 @@ export const wikiliveApi = {
   openCollabSession(pageId: string, payload: {
     clientId: string;
     deviceId: string;
-    userDisplayName: string;
     localDraftAvailable: boolean;
     lastCheckpointId?: string | null;
     knownServerVersion?: number | null;
@@ -868,13 +945,40 @@ export const wikiliveApi = {
           clientId: payload.clientId,
           deviceId: payload.deviceId,
           editorVersion: 'wikilive-tiptap-mvp',
-          userDisplayName: payload.userDisplayName,
         },
         localDraftAvailable: payload.localDraftAvailable,
         lastCheckpointId: payload.lastCheckpointId,
         knownServerVersion: payload.knownServerVersion,
       }),
     });
+  },
+  openWorkspaceRealtime(
+    spaceId: string,
+    handlers: {
+      onMessage: (event: WorkspaceRealtimeEvent) => void;
+      onError?: () => void;
+    },
+  ) {
+    const wsBaseUrl = API_BASE_URL.replace(/^http/i, 'ws');
+    const socket = new WebSocket(`${wsBaseUrl}/api/v1/realtime${toQueryString({ spaceId })}`);
+
+    socket.addEventListener('message', (event) => {
+      try {
+        handlers.onMessage(JSON.parse(event.data) as WorkspaceRealtimeEvent);
+      } catch {
+        handlers.onError?.();
+      }
+    });
+
+    socket.addEventListener('error', () => {
+      handlers.onError?.();
+    });
+
+    return {
+      close() {
+        socket.close();
+      },
+    };
   },
   createCheckpoint(
     pageId: string,

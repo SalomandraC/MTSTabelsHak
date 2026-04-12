@@ -2,17 +2,23 @@ import { FormEvent } from 'react';
 
 type AuthLoginCardProps = {
   apiKey: string;
+  displayName: string;
+  shouldAskDisplayName: boolean;
   isSubmitting: boolean;
   errorMessage: string;
   onApiKeyChange: (value: string) => void;
+  onDisplayNameChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
 };
 
 export function AuthLoginCard({
   apiKey,
+  displayName,
+  shouldAskDisplayName,
   isSubmitting,
   errorMessage,
   onApiKeyChange,
+  onDisplayNameChange,
   onSubmit,
 }: AuthLoginCardProps) {
   return (
@@ -21,7 +27,7 @@ export function AuthLoginCard({
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">WikiLive</p>
         <h1 className="mt-2 font-wide text-2xl font-semibold">Вход по API-ключу</h1>
         <p className="mt-2 text-sm text-editor-text-tertiary">
-          Укажите персональный API-ключ MWS Tables. После входа сессия поддерживается автоматически через refresh token.
+          Укажите персональный API-ключ MWS Tables. Для нового пользователя мы попросим задать отображаемое имя один раз.
         </p>
 
         <form className="mt-6 space-y-3" onSubmit={onSubmit}>
@@ -38,6 +44,23 @@ export function AuthLoginCard({
             className="w-full rounded-lg border border-editor-border-subtle px-3 py-2 text-sm outline-none transition-colors focus:border-[#ff0037] focus:ring-2 focus:ring-[#ff003733]"
           />
 
+          {shouldAskDisplayName ? (
+            <>
+              <label className="block pt-2 text-sm font-medium text-editor-text-primary" htmlFor="display-name">
+                Отображаемое имя
+              </label>
+              <input
+                id="display-name"
+                type="text"
+                autoComplete="off"
+                value={displayName}
+                onChange={(event) => onDisplayNameChange(event.target.value)}
+                placeholder="Как вас показывать в WikiLive"
+                className="w-full rounded-lg border border-editor-border-subtle px-3 py-2 text-sm outline-none transition-colors focus:border-[#ff0037] focus:ring-2 focus:ring-[#ff003733]"
+              />
+            </>
+          ) : null}
+
           {errorMessage ? <p className="text-sm text-[#b00025]">{errorMessage}</p> : null}
 
           <button
@@ -45,7 +68,7 @@ export function AuthLoginCard({
             disabled={isSubmitting}
             className="w-full rounded-lg bg-[#ff0037] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#dd0031] disabled:cursor-not-allowed disabled:opacity-70"
           >
-            {isSubmitting ? 'Проверяем ключ...' : 'Войти'}
+            {isSubmitting ? 'Проверяем ключ...' : shouldAskDisplayName ? 'Сохранить имя и войти' : 'Войти'}
           </button>
         </form>
       </section>

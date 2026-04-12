@@ -73,13 +73,17 @@ export function PageEditor({
   commentCount = 0,
 }: PageEditorProps) {
   const { isEditorSlotEnabled } = usePlugins();
-  const isAiSlashEnabled = isEditorSlotEnabled('slash_menu');
-  const isAiToolbarEnabled = isEditorSlotEnabled('toolbar_bubble');
-  const isAiExtensionEnabled = isEditorSlotEnabled('editor_extension');
+  const canEdit = page?.access?.capabilities.canEdit ?? true;
+  const canComment = page?.access?.capabilities.canComment ?? true;
+  const canUseAi = page?.access?.capabilities.canUseAi ?? true;
+  const isAiSlashEnabled = isEditorSlotEnabled('slash_menu') && canUseAi;
+  const isAiToolbarEnabled = isEditorSlotEnabled('toolbar_bubble') && canUseAi;
+  const isAiExtensionEnabled = isEditorSlotEnabled('editor_extension') && canUseAi;
 
   const controller = usePageEditorController({
     spaceId,
     page,
+    canEdit,
     onRenamePage,
     onCheckpoint,
     onOpenCommentThread,
@@ -124,6 +128,7 @@ export function PageEditor({
         <PageEditorHeader
           title={controller.title}
           description={controller.description}
+          editable={canEdit}
           onSave={controller.handleSaveMeta}
           connectionStatus={controller.connectionStatus}
           saveStatus={controller.saveStatus}
@@ -132,11 +137,12 @@ export function PageEditor({
         />
         <PageEditorToolbar
           editor={controller.editor}
+          canEdit={canEdit}
           onOpenLinkModal={controller.openLinkModal}
           onOpenImageModal={controller.openImageModal}
           onOpenIframeModal={controller.openIframeModal}
-          onCreateComment={onCreateComment}
-          onOpenTimeMachine={onOpenTimeMachine}
+          onCreateComment={canComment ? onCreateComment : undefined}
+          onOpenTimeMachine={canEdit ? onOpenTimeMachine : undefined}
           commentCount={commentCount}
         />
 
@@ -154,21 +160,24 @@ export function PageEditor({
           {controller.editor && (
             <FloatingToolbar
               editor={controller.editor}
+              canEdit={canEdit}
               onOpenLinkModal={() => controller.openLinkModal()}
               onOpenIframeModal={controller.openIframeModal}
-              onCreateComment={onCreateComment}
+              onCreateComment={canComment ? onCreateComment : undefined}
               pageTitle={controller.title}
               isAiTransformEnabled={isAiToolbarEnabled}
             />
           )}
-          <SlashMenu
-            isOpen={controller.slashState.isOpen}
-            items={controller.filteredItems}
-            selectedIndex={controller.selectedIndex}
-            position={{ top: controller.slashState.top, left: controller.slashState.left }}
-            onHover={controller.setSelectedIndex}
-            onSelect={controller.applySlashItem}
-          />
+          {canEdit ? (
+            <SlashMenu
+              isOpen={controller.slashState.isOpen}
+              items={controller.filteredItems}
+              selectedIndex={controller.selectedIndex}
+              position={{ top: controller.slashState.top, left: controller.slashState.left }}
+              onHover={controller.setSelectedIndex}
+              onSelect={controller.applySlashItem}
+            />
+          ) : null}
           <PageLinkModal {...controller.linkModal} />
           <PageImageModal {...controller.imageModal} />
           <IframeModal {...controller.iframeModal} />

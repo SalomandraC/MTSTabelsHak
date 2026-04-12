@@ -3,6 +3,7 @@ import { WikiNode, WikiNodeType } from '@prisma/client';
 import { UserContext } from 'src/auth/user-context';
 import { PrismaService } from 'src/infra/prisma/prisma.service';
 import { MwsService, NormalizedMwsNode } from 'src/mws/mws.service';
+import { DocumentRole, PageAccessService } from 'src/page-access/page-access.service';
 
 type WikiPageNode = WikiNode & {
   page: {
@@ -29,6 +30,10 @@ export type WorkspaceTreeNode = {
     createdAt: Date;
     updatedAt: Date;
     backlinksCount: number;
+    role: DocumentRole | null;
+    canView: boolean;
+    canEdit: boolean;
+    isLocked: boolean;
   };
   datasheetId?: string | null;
   linkedPageId?: string | null;
@@ -40,6 +45,7 @@ export class WorkspaceTreeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mwsService: MwsService,
+    private readonly pageAccessService: PageAccessService,
   ) {}
 
   async getTree(spaceId: string, user: UserContext) {
@@ -64,7 +70,7 @@ export class WorkspaceTreeService {
     ]);
 
     return {
-      items: this.overlayWikiPages(spaceId, mwsTree.items, wikiPages),
+      items: await this.overlayWikiPages(spaceId, mwsTree.items, wikiPages, user),
     };
   }
 
@@ -72,7 +78,23 @@ export class WorkspaceTreeService {
     spaceId: string,
     mwsNodes: NormalizedMwsNode[],
     wikiPages: WikiPageNode[],
-  ): WorkspaceTreeNode[] {
+    user: UserContext,
+  ): Promise<WorkspaceTreeNode[]> {
+    return this.overlayWikiPagesInternal(spaceId, mwsNodes, wikiPages, user);
+  }
+
+  private async overlayWikiPagesInternal(
+    spaceId: string,
+    mwsNodes: NormalizedMwsNode[],
+    wikiPages: WikiPageNode[],
+    user: UserContext,
+  ): Promise<WorkspaceTreeNode[]> {
+    const accessByPageId = new Map(
+      await Promise.all(
+        wikiPages.map(async (page) => [page.id, await this.pageAccessService.resolvePageAccess(page.id, user)] as const),
+      ),
+    );
+
     const pagesBySourceNodeId = new Map<string, WikiPageNode[]>();
     const pagesByMwsParentNodeId = new Map<string | null, WikiPageNode[]>();
     const attachedPageIds = new Set<string>();
@@ -102,12 +124,12 @@ export class WorkspaceTreeService {
 
         return [
           childTreeNode,
-          ...tablePages.map((page) => this.toWikiTreeNode(spaceId, page, child.parentId)),
+          ...tablePages.map((page) => this.toWikiTreeNode(spaceId, page, child.parentId, accessByPageId.get(page.id))),
         ];
       });
 
       const parentOnlyPages = pagesByMwsParentNodeId.get(node.id) ?? [];
-      children.push(...parentOnlyPages.map((page) => this.toWikiTreeNode(spaceId, page, node.id)));
+      children.push(...parentOnlyPages.map((page) => this.toWikiTreeNode(spaceId, page, node.id, accessByPageId.get(page.id))));
 
       return {
         id: this.mwsTreeId(node.id),
@@ -128,12 +150,12 @@ export class WorkspaceTreeService {
 
       return [
         treeNode,
-        ...siblingPages.map((page) => this.toWikiTreeNode(spaceId, page, node.parentId)),
+        ...siblingPages.map((page) => this.toWikiTreeNode(spaceId, page, node.parentId, accessByPageId.get(page.id))),
       ];
     });
 
     const unattachedPages = wikiPages.filter((page) => !attachedPageIds.has(page.id));
-    roots.push(...unattachedPages.map((page) => this.toWikiTreeNode(spaceId, page, null)));
+    roots.push(...unattachedPages.map((page) => this.toWikiTreeNode(spaceId, page, null, accessByPageId.get(page.id))));
 
     return roots;
   }
@@ -164,6 +186,7 @@ export class WorkspaceTreeService {
     spaceId: string,
     page: WikiPageNode,
     mwsParentNodeId: string | null,
+    access?: Awaited<ReturnType<PageAccessService['resolvePageAccess']>>,
   ): WorkspaceTreeNode {
     return {
       id: page.id,
@@ -181,6 +204,10 @@ export class WorkspaceTreeService {
         createdAt: page.createdAt,
         updatedAt: page.updatedAt,
         backlinksCount: page.targetLinks.length,
+        role: access?.role ?? null,
+        canView: access?.capabilities.canView ?? false,
+        canEdit: access?.capabilities.canEdit ?? false,
+        isLocked: !(access?.capabilities.canView ?? false),
       },
       datasheetId: page.mwsDatasheetId,
     };
