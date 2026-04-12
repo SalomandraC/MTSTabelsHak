@@ -52,6 +52,7 @@ export type PluginCatalogItem = {
   canToggle: boolean;
   status: 'core' | 'enabled' | 'available' | 'locked' | 'comingSoon';
   lockedReason: string | null;
+  settings?: Record<string, boolean>;
 };
 
 export type PluginCatalogResponse = {
@@ -752,6 +753,12 @@ export const wikiliveApi = {
   deactivatePlugin(pluginId: string) {
     return request<PluginCatalogResponse>(`/api/v1/plugins/${pluginId}/deactivate`, {
       method: 'POST',
+    });
+  },
+  updatePluginSettings(pluginId: string, settings: Record<string, boolean>) {
+    return request<PluginCatalogResponse>(`/api/v1/plugins/${pluginId}/settings`, {
+      method: 'PATCH',
+      body: JSON.stringify({ settings }),
     });
   },
   listPages(spaceId: string, query = '') {

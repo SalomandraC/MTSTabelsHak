@@ -1,10 +1,12 @@
 import type { Editor } from '@tiptap/core';
 import { useEditorState } from '@tiptap/react';
-import { Code2, List, ListOrdered, ListChecks, MessageSquare } from 'lucide-react';
+import { Code2, List, ListOrdered, ListChecks, MessageSquare, MonitorPlay } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { handleListAction } from '../model/list-actions';
 import { menuBarStateSelector } from '../model/menu-state';
+import { getCanvasDrawSettings, getIframeEmbedSettings } from '../../plugins/model/plugin-registry';
+import { usePlugins } from '../../plugins';
 import { wikiliveApi } from '../../../shared/api/wikilive';
 
 import B from '../../../app/images/B.svg';
@@ -21,6 +23,7 @@ type FloatingToolbarProps = {
   editor: Editor | null;
   canEdit?: boolean;
   onOpenLinkModal: () => void;
+  onOpenIframeModal: () => void;
   onCreateComment?: (editor: Editor) => void;
   pageTitle?: string;
   isAiTransformEnabled?: boolean;
@@ -84,10 +87,16 @@ export function FloatingToolbar({
   editor,
   canEdit = true,
   onOpenLinkModal,
+  onOpenIframeModal,
   onCreateComment,
   pageTitle,
   isAiTransformEnabled = true,
 }: FloatingToolbarProps) {
+  const { items: plugins } = usePlugins();
+  const canvasSettings = getCanvasDrawSettings(plugins);
+  const iframeSettings = getIframeEmbedSettings(plugins);
+  const showCanvasButton = plugins.some(p => p.id === 'canvas-draw' && p.enabled) && canvasSettings['floating-toolbar'];
+  const showIframeButton = plugins.some(p => p.id === 'iframe-embed' && p.enabled) && iframeSettings['floating-toolbar'];
   const [visible, setVisible] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -395,6 +404,28 @@ export function FloatingToolbar({
           aria-label="Комментировать выделение"
         />
       ) : null}
+
+      {showCanvasButton && (
+        <ToolbarButton
+          icon={<span className="px-1 text-[11px] font-semibold">🎨</span>}
+          onClick={() => editor.chain().focus().insertCanvasBlock().run()}
+          isFirst={false}
+          isLast={false}
+          aria-label="Вставить блок для рисования"
+        />
+      )}
+
+      {showIframeButton && (
+        <ToolbarButton
+          icon={<MonitorPlay className="h-3.5 w-3.5" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
+          onClick={onOpenIframeModal}
+          isFirst={false}
+          isLast={false}
+          aria-label="Встроить iframe"
+        />
+      )}
+
+      <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
       {canEdit && isAiTransformEnabled ? (
         <>
