@@ -605,7 +605,8 @@ export function AiInlineCopilot({
     await withBusy(async () => {
       const reportText = await createReportText();
       if (editor) {
-        editor.chain().focus().insertContent(`\n\n## AI отчет\n\n${reportText}\n`).run();
+        const endPosition = editor.state.doc.content.size;
+        editor.commands.insertContentAt(endPosition, `\n\n## AI отчет\n\n${reportText}\n`);
       }
       setOutput(reportText);
     });
