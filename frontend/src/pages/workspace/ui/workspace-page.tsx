@@ -219,6 +219,7 @@ function WorkspaceTreeItem({
   onToggleFolder,
   onDeletePage,
   onCreatePage,
+  spaceId,
 }: {
   node: WorkspaceTreeNode;
   depth: number;
@@ -230,6 +231,7 @@ function WorkspaceTreeItem({
   onToggleFolder: (folderId: string) => void;
   onDeletePage: (pageId: string, title: string) => void;
   onCreatePage: (title: string, parentNodeId?: string | null) => Promise<void>;
+  spaceId: string;
 }) {
   const actionsMenuRef = useRef<HTMLDivElement>(null);
   const createInputRef = useRef<HTMLInputElement>(null);
@@ -246,6 +248,7 @@ function WorkspaceTreeItem({
   const isSelectedTable = node.kind === 'mwsTable' && node.id === selectedTableNodeId;
   const canDeletePage = node.wikiPage?.role === 'owner';
   const canOpenActionsMenu = shouldShowWorkspacePageActions(node);
+  const shareUrl = node.kind === 'wikiPage' && node.linkedPageId ? getShareUrl(spaceId, node.linkedPageId) : undefined;
   const itemPadding = 8 + depth * 22;
 
   const closeActionsMenu = useCallback(() => {
@@ -361,6 +364,17 @@ function WorkspaceTreeItem({
 
         <button
           type="button"
+          draggable={Boolean(shareUrl)}
+          onDragStart={(event) => {
+            if (!shareUrl) {
+              return;
+            }
+
+            event.dataTransfer.setData('text/uri-list', shareUrl);
+            event.dataTransfer.setData('text/plain', shareUrl);
+            event.dataTransfer.setData('text/html', `<a href="${shareUrl}">${node.title}</a>`);
+            event.dataTransfer.effectAllowed = 'copyLink';
+          }}
           onClick={() => {
             if (node.kind === 'wikiPage' && node.wikiPage?.isLocked) {
               return;
@@ -467,6 +481,7 @@ function WorkspaceTreeItem({
               onToggleFolder={onToggleFolder}
               onDeletePage={onDeletePage}
               onCreatePage={onCreatePage}
+              spaceId={spaceId}
             />
           ))}
         </ul>
@@ -1928,6 +1943,7 @@ export function WorkspacePage() {
                         onCreatePage={async (title, parentNodeId) => {
                           await handleCreatePage(title, parentNodeId);
                         }}
+                        spaceId={selectedSpaceId}
                       />
                     ))}
                   </ul>
