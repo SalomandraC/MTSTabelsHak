@@ -259,6 +259,7 @@ export class MwsService {
     return {
       items: flatNodes.length,
       syncedAt,
+      nodes: flatNodes,
     };
   }
 
@@ -289,6 +290,34 @@ export class MwsService {
     }
 
     return node;
+  }
+
+  async resolveShadowFolderNode(spaceId: string, sourceNodeId: string, user: UserContext) {
+    const syncResult = await this.syncSpaceNodes(spaceId, user);
+    const upstreamNode = syncResult.nodes.find((node) => node.id === sourceNodeId);
+
+    if (!upstreamNode) {
+      throw new NotFoundException('MWS folder was not found in synchronized tree');
+    }
+
+    if (!this.isFolderNode(upstreamNode)) {
+      throw new BadRequestException('External parent must be an MWS folder');
+    }
+
+    const shadowNode = await this.prisma.wikiNode.findFirst({
+      where: {
+        spaceId,
+        sourceType: NODE_SOURCE_MWS,
+        sourceNodeId,
+        isArchived: false,
+      },
+    });
+
+    if (!shadowNode) {
+      throw new NotFoundException('MWS folder shadow node was not found');
+    }
+
+    return shadowNode;
   }
 
   buildOpenInMwsUrlFromIds(spaceId: string | null, nodeId: string, datasheetId?: string | null) {

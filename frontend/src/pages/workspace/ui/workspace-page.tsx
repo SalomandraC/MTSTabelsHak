@@ -2356,6 +2356,14 @@ export function WorkspacePage() {
                       onCreatePage={async (title, parentNodeId) => {
                         await handleCreatePage(title, parentNodeId);
                       }}
+                      onMoveNode={moveTreeNode}
+                      dragSourceId={dragSourceId}
+                      dragOverNodeId={dragOverNodeId}
+                      dragOverPosition={dragOverPosition}
+                      setDragSourceId={setDragSourceId}
+                      setDragOverNodeId={setDragOverNodeId}
+                      setDragOverPosition={setDragOverPosition}
+                      spaceId={selectedSpaceId}
                       onCreateFolder={async (title, parentNodeId) => {
                         await handleCreateFolder(title, parentNodeId);
                       }}

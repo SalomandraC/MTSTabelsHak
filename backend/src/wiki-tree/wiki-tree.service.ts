@@ -215,10 +215,7 @@ export class WikiTreeService {
       };
     }
 
-    const shadowParent = await this.mwsService.resolveShadowNode(spaceId, externalParentNodeId, user);
-    if (shadowParent.type !== WIKI_NODE_TYPE_MWS_FOLDER) {
-      throw new BadRequestException('External parent must be an MWS folder');
-    }
+    const shadowParent = await this.mwsService.resolveShadowFolderNode(spaceId, externalParentNodeId, user);
 
     return {
       parentId: shadowParent.id,

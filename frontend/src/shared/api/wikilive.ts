@@ -387,7 +387,7 @@ export type MwsNode = {
 
 export type WorkspaceTreeNode = {
   id: string;
-  kind: 'mwsFolder' | 'mwsTable' | 'wikiFolder' | 'wikiPage';
+  kind: 'mwsFolder' | 'mwsTable' | 'mwsNode' | 'wikiFolder' | 'wikiPage';
   title: string;
   spaceId: string;
   parentId: string | null;

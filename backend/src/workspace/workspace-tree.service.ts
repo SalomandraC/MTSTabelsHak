@@ -15,7 +15,7 @@ type TreeRecord = WikiNode & {
   targetLinks: unknown[];
 };
 
-export type WorkspaceTreeNodeKind = 'mwsFolder' | 'mwsTable' | 'wikiFolder' | 'wikiPage';
+export type WorkspaceTreeNodeKind = 'mwsFolder' | 'mwsTable' | 'mwsNode' | 'wikiFolder' | 'wikiPage';
 
 export type WorkspaceTreeNode = {
   id: string;
@@ -63,7 +63,8 @@ export class WorkspaceTreeService {
   ) {}
 
   async getTree(spaceId: string, user: UserContext) {
-    await this.mwsService.syncSpaceNodes(spaceId, user);
+    const syncResult = await this.mwsService.syncSpaceNodes(spaceId, user);
+    const upstreamNodesById = new Map(syncResult.nodes.map((node) => [node.id, node]));
 
     const records = await this.prisma.wikiNode.findMany({
       where: {
@@ -89,13 +90,14 @@ export class WorkspaceTreeService {
     );
 
     return {
-      items: this.buildTree(records, accessByPageId),
+      items: this.buildTree(records, accessByPageId, upstreamNodesById),
     };
   }
 
   private buildTree(
     records: TreeRecord[],
     accessByPageId: Map<string, Awaited<ReturnType<PageAccessService['resolvePageAccess']>>>,
+    upstreamNodesById: Map<string, Awaited<ReturnType<MwsService['syncSpaceNodes']>>['nodes'][number]>,
   ): WorkspaceTreeNode[] {
     const byParentId = new Map<string | null, TreeRecord[]>();
 
@@ -149,16 +151,19 @@ export class WorkspaceTreeService {
       }
 
       const nodeId = record.sourceNodeId ?? record.mwsSourceNodeId ?? record.id;
+      const upstreamNode = record.sourceNodeId ? upstreamNodesById.get(record.sourceNodeId) : undefined;
+      const kind = this.getMwsNodeKind(record, upstreamNode);
       const openInMwsUrl = this.mwsService.buildOpenInMwsUrlFromIds(
         record.mwsSpaceId ?? record.spaceId,
         nodeId,
         record.mwsDatasheetId,
       );
-      const mwsType = record.type === WIKI_NODE_TYPE_MWS_TABLE ? 'table' : 'folder';
+      const mwsType =
+        kind === 'mwsTable' ? 'table' : kind === 'mwsFolder' ? 'folder' : upstreamNode?.type ?? 'node';
 
       return {
         id: record.id,
-        kind: record.type === WIKI_NODE_TYPE_MWS_TABLE ? 'mwsTable' : 'mwsFolder',
+        kind,
         title: record.title,
         spaceId: record.spaceId,
         parentId: record.parentId,
@@ -183,5 +188,21 @@ export class WorkspaceTreeService {
     return (byParentId.get(null) ?? [])
       .map(toNode)
       .sort((left, right) => left.title.localeCompare(right.title, 'ru', { sensitivity: 'base' }));
+  }
+
+  private getMwsNodeKind(
+    record: TreeRecord,
+    upstreamNode?: Awaited<ReturnType<MwsService['syncSpaceNodes']>>['nodes'][number],
+  ): WorkspaceTreeNodeKind {
+    if (record.mwsDatasheetId || record.type === WIKI_NODE_TYPE_MWS_TABLE) {
+      return 'mwsTable';
+    }
+
+    const normalizedType = String(upstreamNode?.type ?? '').toLowerCase();
+    if (normalizedType.includes('folder')) {
+      return 'mwsFolder';
+    }
+
+    return 'mwsNode';
   }
 }

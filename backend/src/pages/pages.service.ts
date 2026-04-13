@@ -284,10 +284,7 @@ export class PagesService {
       };
     }
 
-    const shadowParent = await this.mwsService.resolveShadowNode(dto.spaceId, dto.externalParentNodeId, user);
-    if (shadowParent.type !== WIKI_NODE_TYPE_MWS_FOLDER) {
-      throw new BadRequestException('External parent must be an MWS folder');
-    }
+    const shadowParent = await this.mwsService.resolveShadowFolderNode(dto.spaceId, dto.externalParentNodeId, user);
 
     return {
       parentId: shadowParent.id,
