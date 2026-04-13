@@ -126,6 +126,8 @@ export function TableGridCanvas({
               x >= addColumnStart &&
               x <= addColumnEnd
             ) {
+              event.preventDefault();
+              event.stopPropagation();
               onAddColumn();
               return;
             }
@@ -145,6 +147,8 @@ export function TableGridCanvas({
                 fieldIndex >= 0 &&
                 fieldIndex < controller.visibleFields.length
               ) {
+                event.preventDefault();
+                event.stopPropagation();
                 onOpenFieldMenu({
                   fieldIndex,
                   clientX: event.clientX,
@@ -162,11 +166,15 @@ export function TableGridCanvas({
               y >= addRowStart &&
               y <= addRowEnd
             ) {
+              event.preventDefault();
+              event.stopPropagation();
               onAddRow();
               return;
             }
 
             if (isReadOnly) {
+              event.preventDefault();
+              event.stopPropagation();
               controller.setSelection(null);
               controller.setEditingCell(null);
               controller.setEditingSelectCell(null);
@@ -174,6 +182,8 @@ export function TableGridCanvas({
             }
 
             const nextSelection = controller.hitTest(event);
+            event.preventDefault();
+            event.stopPropagation();
             controller.setSelection(nextSelection);
             controller.setEditingCell(null);
             controller.setEditingSelectCell(null);
@@ -204,6 +214,7 @@ export function TableGridCanvas({
             }
 
             event.preventDefault();
+            event.stopPropagation();
             onOpenFieldMenu({
               fieldIndex,
               clientX: event.clientX,
@@ -212,6 +223,8 @@ export function TableGridCanvas({
           }}
           onDoubleClick={(event) => {
             if (!isReadOnly) {
+              event.preventDefault();
+              event.stopPropagation();
               controller.beginEdit(controller.hitTest(event));
             }
           }}

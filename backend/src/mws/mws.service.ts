@@ -22,6 +22,10 @@ import {
 } from './dto/mws.dto';
 
 type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
+type BackendSortRule = {
+  fieldId: string;
+  desc: boolean;
+};
 
 export type NormalizedMwsNode = {
   id: string;
@@ -132,9 +136,35 @@ export class MwsService {
   async listFields(datasheetId: string, viewId: string | undefined, user: UserContext) {
     const cacheKey = this.userScopedCacheKey(user, `fields:${datasheetId}:${viewId ?? 'default'}`);
     return this.withCache(cacheKey, 300, async () => {
-      const data = await this.request(user, 'GET', `/datasheets/${datasheetId}/fields`, undefined, {
-        viewId,
-      });
+      let data: any;
+
+      try {
+        data = await this.request(user, 'GET', `/datasheets/${datasheetId}/fields`, undefined, {
+          viewId,
+        });
+      } catch (error) {
+        const errorStatus =
+          error instanceof ForbiddenException ||
+          error instanceof NotFoundException ||
+          error instanceof BadRequestException
+            ? error.getStatus()
+            : null;
+        const shouldRetryWithoutView =
+          Boolean(viewId) &&
+          (error instanceof ForbiddenException ||
+            error instanceof NotFoundException ||
+            error instanceof BadRequestException ||
+            errorStatus === 403 ||
+            errorStatus === 404 ||
+            errorStatus === 400);
+
+        if (!shouldRetryWithoutView) {
+          throw error;
+        }
+
+        data = await this.request(user, 'GET', `/datasheets/${datasheetId}/fields`);
+      }
+
       const payload = this.unwrapPayload(data);
       return {
         items: this.readArray(payload, ['fields', 'items']),
@@ -210,14 +240,61 @@ export class MwsService {
       `records:${datasheetId}:${Buffer.from(JSON.stringify(query)).toString('base64')}`,
     );
     return this.withCache(cacheKey, 10, async () => {
-      const data = await this.request(user, 'GET', `/datasheets/${datasheetId}/records`, undefined, this.normalizeRecordsQuery(query));
-      const payload = this.unwrapPayload(data);
-      const nestedRecords = this.readNestedValue(payload, ['records']);
+      const sortRules = this.readBackendSortRules(query.sort);
+      if (sortRules.length === 0) {
+        const data = await this.request(
+          user,
+          'GET',
+          `/datasheets/${datasheetId}/records`,
+          undefined,
+          this.normalizeRecordsQuery(query),
+        );
+        return this.extractRecordList(data, query);
+      }
+
+      const requestedPageNum = this.readPositiveInt(query.pageNum, 1);
+      const requestedPageSize = this.readPositiveInt(query.pageSize, 50);
+      const upstreamBaseQuery = this.normalizeRecordsQuery({
+        ...query,
+        sort: undefined,
+        pageNum: 1,
+        pageSize: 1000,
+      });
+
+      const firstPageData = await this.request(
+        user,
+        'GET',
+        `/datasheets/${datasheetId}/records`,
+        undefined,
+        upstreamBaseQuery,
+      );
+      const firstPage = this.extractRecordList(firstPageData, upstreamBaseQuery);
+      const allItems = [...firstPage.items];
+      const total = firstPage.total;
+      const totalPages = Math.max(1, Math.ceil(total / firstPage.pageSize));
+
+      for (let page = 2; page <= totalPages; page += 1) {
+        const nextPageData = await this.request(
+          user,
+          'GET',
+          `/datasheets/${datasheetId}/records`,
+          undefined,
+          {
+            ...upstreamBaseQuery,
+            pageNum: page,
+          },
+        );
+        const nextPage = this.extractRecordList(nextPageData, upstreamBaseQuery);
+        allItems.push(...nextPage.items);
+      }
+
+      const sortedItems = this.sortMwsRecords(allItems, sortRules);
+      const offset = (requestedPageNum - 1) * requestedPageSize;
       return {
-        items: this.readArray(payload, ['records', 'items']),
-        pageNum: Number(payload.pageNum ?? nestedRecords?.pageNum ?? query.pageNum ?? 1),
-        pageSize: Number(payload.pageSize ?? nestedRecords?.pageSize ?? query.pageSize ?? 50),
-        total: Number(payload.total ?? nestedRecords?.total ?? 0),
+        items: sortedItems.slice(offset, offset + requestedPageSize),
+        pageNum: requestedPageNum,
+        pageSize: requestedPageSize,
+        total: sortedItems.length,
       };
     });
   }
@@ -672,18 +749,166 @@ export class MwsService {
 
   private normalizeRecordsQuery(query: Record<string, unknown>) {
     const sort = query.sort;
-    if (typeof sort !== 'string' || !sort.trim()) {
+    if (!sort) {
+      return query;
+    }
+
+    if (Array.isArray(sort) && sort.length === 0) {
+      return {
+        ...query,
+        sort: undefined,
+      };
+    }
+
+    if (typeof sort === 'string') {
+      if (!sort.trim() || sort.trim() === '[]') {
+        return {
+          ...query,
+          sort: undefined,
+        };
+      }
+
       return query;
     }
 
     try {
       return {
         ...query,
-        sort: JSON.parse(sort),
+        sort: JSON.stringify(sort),
       };
     } catch {
-      return query;
+      return {
+        ...query,
+        sort: undefined,
+      };
     }
+  }
+
+  private extractRecordList(data: any, query: Record<string, unknown>) {
+    const payload = this.unwrapPayload(data);
+    const nestedRecords = this.readNestedValue(payload, ['records']);
+    return {
+      items: this.readArray(payload, ['records', 'items']),
+      pageNum: Number(payload.pageNum ?? nestedRecords?.pageNum ?? query.pageNum ?? 1),
+      pageSize: Number(payload.pageSize ?? nestedRecords?.pageSize ?? query.pageSize ?? 50),
+      total: Number(payload.total ?? nestedRecords?.total ?? 0),
+    };
+  }
+
+  private readBackendSortRules(rawSort: unknown): BackendSortRule[] {
+    const normalized = this.parseJsonIfNeeded(rawSort);
+    if (!Array.isArray(normalized)) {
+      return [];
+    }
+
+    return normalized
+      .map((rule) => {
+        if (!rule || typeof rule !== 'object') {
+          return null;
+        }
+
+        const fieldId = (rule as { fieldId?: unknown }).fieldId;
+        if (typeof fieldId !== 'string' || !fieldId.trim()) {
+          return null;
+        }
+
+        return {
+          fieldId,
+          desc: Boolean((rule as { desc?: unknown }).desc),
+        };
+      })
+      .filter((rule): rule is BackendSortRule => Boolean(rule));
+  }
+
+  private parseJsonIfNeeded(value: unknown): unknown {
+    if (typeof value !== 'string') {
+      return value;
+    }
+
+    if (!value.trim()) {
+      return undefined;
+    }
+
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+
+  private readPositiveInt(value: unknown, fallback: number) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  }
+
+  private sortMwsRecords(records: any[], sortRules: BackendSortRule[]) {
+    if (sortRules.length === 0) {
+      return records;
+    }
+
+    return [...records].sort((left, right) => {
+      for (const rule of sortRules) {
+        const leftValue = this.normalizeRecordSortValue(left?.fields?.[rule.fieldId]);
+        const rightValue = this.normalizeRecordSortValue(right?.fields?.[rule.fieldId]);
+        const result = this.compareRecordSortValues(leftValue, rightValue);
+        if (result !== 0) {
+          return rule.desc ? -result : result;
+        }
+      }
+
+      return 0;
+    });
+  }
+
+  private normalizeRecordSortValue(value: unknown): string | number | null {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+
+    if (typeof value === 'number') {
+      return value;
+    }
+
+    if (typeof value === 'boolean') {
+      return value ? 1 : 0;
+    }
+
+    const rendered = this.stringifyCellValue(value).trim();
+    if (!rendered) {
+      return null;
+    }
+
+    if (/^-?\d+(\.\d+)?$/.test(rendered)) {
+      const numeric = Number(rendered);
+      if (Number.isFinite(numeric)) {
+        return numeric;
+      }
+    }
+
+    return rendered.toLowerCase();
+  }
+
+  private compareRecordSortValues(left: string | number | null, right: string | number | null) {
+    if (left === right) {
+      return 0;
+    }
+
+    if (left === null) {
+      return 1;
+    }
+
+    if (right === null) {
+      return -1;
+    }
+
+    if (typeof left === 'number' && typeof right === 'number') {
+      return left - right;
+    }
+
+    return String(left).localeCompare(String(right), 'ru', {
+      numeric: true,
+      sensitivity: 'base',
+    });
   }
 
   private stringifyCellValue(value: unknown): string {
