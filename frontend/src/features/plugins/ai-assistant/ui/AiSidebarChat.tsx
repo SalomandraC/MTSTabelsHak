@@ -1,5 +1,5 @@
 import type { Editor } from '@tiptap/core';
-import { ChevronDown, Files, Search, SendHorizontal, Trash2, X } from 'lucide-react';
+import { Files, Search, SendHorizontal, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { wikiliveApi } from '../../../../shared/api/wikilive';
@@ -130,6 +130,7 @@ export function AiSidebarChat({
   const [isContextMenuOpen, setIsContextMenuOpen] = useState(false);
   const [contextSearch, setContextSearch] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
+  const contextRowRef = useRef<HTMLDivElement>(null);
   const { handleAiChatResponse } = useAiTableContext();
 
   const contextPages = useMemo(() => {
@@ -186,6 +187,16 @@ export function AiSidebarChat({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [errorMessage, isSending, messages, selectedDocuments.length]);
+
+  useEffect(() => {
+    const row = contextRowRef.current;
+
+    if (!row) {
+      return;
+    }
+
+    row.scrollTo({ left: row.scrollWidth, behavior: 'smooth' });
+  }, [selectedDocuments.length]);
 
   useEffect(() => {
     setSelectedDocuments([]);
@@ -301,25 +312,7 @@ export function AiSidebarChat({
 
       {enabled ? (
         <>
-          <div className="border-b border-editor-border-subtle bg-[#f8fafd] px-4 py-2">
-            <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap">
-              {pageId ? <ContextChip title={pageTitle ?? 'Текущая страница'} /> : null}
-              {selectedDocuments.map((document) => (
-                <ContextChip
-                  key={document.pageId}
-                  title={document.title}
-                  loading={document.isLoading}
-                  removable
-                  onRemove={() => handleRemoveDocument(document.pageId)}
-                />
-              ))}
-              {!pageId && selectedDocuments.length === 0 ? (
-                <span className="text-[11px] text-editor-text-tertiary">Контекст не выбран</span>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-y-auto bg-[#fafbfd] px-4 py-4">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-[#fafbfd] px-4 py-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             <div className="space-y-3">
               {messages.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-editor-border-subtle bg-white px-4 py-6 text-sm text-editor-text-tertiary">
@@ -338,12 +331,33 @@ export function AiSidebarChat({
           {errorMessage ? <div className="border-t border-[#ffd2d9] bg-[#fff1f3] px-6 py-2 text-xs text-[#b00025]">{errorMessage}</div> : null}
 
           <form
-            className="border-t border-editor-border-subtle bg-white p-3"
+            className="border-t border-editor-border-subtle bg-white p-2"
             onSubmit={(event) => {
               event.preventDefault();
               void handleSend();
             }}
           >
+            <div className="mb-1 mt-1 rounded-lg border border-editor-border-subtle bg-[#f8fafd] px-2 py-1.5">
+              <div
+                ref={contextRowRef}
+                className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+              >
+                {pageId ? <ContextChip title={pageTitle ?? 'Текущая страница'} /> : null}
+                {selectedDocuments.map((document) => (
+                  <ContextChip
+                    key={document.pageId}
+                    title={document.title}
+                    loading={document.isLoading}
+                    removable
+                    onRemove={() => handleRemoveDocument(document.pageId)}
+                  />
+                ))}
+                {!pageId && selectedDocuments.length === 0 ? (
+                  <span className="text-[11px] text-editor-text-tertiary">Контекст не выбран</span>
+                ) : null}
+              </div>
+            </div>
+
             <div
               id="ai-chat-context-panel"
               className={[
@@ -355,7 +369,7 @@ export function AiSidebarChat({
                 <div className="space-y-3 p-3">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">Выбранный контекст</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">Добавить в контекст</p>
                       <p className="mt-1 text-xs text-editor-text-tertiary">Текущая страница уже включена. Можно добавить еще документы для сравнения.</p>
                     </div>
                     <button
@@ -365,21 +379,6 @@ export function AiSidebarChat({
                     >
                       Скрыть
                     </button>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    {pageId ? (
-                      <ContextChip title={pageTitle ?? 'Текущая страница'} />
-                    ) : null}
-                    {selectedDocuments.map((document) => (
-                      <ContextChip
-                        key={document.pageId}
-                        title={document.title}
-                        loading={document.isLoading}
-                        removable
-                        onRemove={() => handleRemoveDocument(document.pageId)}
-                      />
-                    ))}
                   </div>
 
                   <div className="rounded-xl border border-editor-border-subtle bg-white shadow-sm">
@@ -394,7 +393,7 @@ export function AiSidebarChat({
                         />
                       </div>
                     </div>
-                    <div className="max-h-44 overflow-y-auto p-1">
+                    <div className="max-h-44 overflow-y-auto p-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                       {filteredContextPages.length > 0 ? (
                         filteredContextPages.map((page) => (
                           <button
@@ -419,7 +418,7 @@ export function AiSidebarChat({
             <label className="sr-only" htmlFor="ai-sidebar-chat-input">
               Сообщение ИИ-ассистенту
             </label>
-            <div className="flex items-end gap-2">
+            <div className="flex items-stretch gap-2">
               <textarea
                 id="ai-sidebar-chat-input"
                 value={draft}
@@ -435,7 +434,7 @@ export function AiSidebarChat({
                 className="min-h-14 max-h-36 flex-1 resize-none rounded-xl border border-editor-border-subtle bg-white px-4 py-3 text-sm outline-none transition-colors focus:border-[#5586ff]"
                 disabled={isSending || !enabled || hasPendingContext}
               />
-              <div className="flex h-14 w-11 shrink-0 flex-col justify-between">
+              <div className="flex w-11 shrink-0 self-stretch flex-col justify-between">
                 <button
                   type="button"
                   onClick={() => setIsContextMenuOpen((value) => !value)}
@@ -446,7 +445,6 @@ export function AiSidebarChat({
                   title={isContextMenuOpen ? 'Скрыть контекст' : 'Добавить контекст'}
                 >
                   <Files size={13} />
-                  <ChevronDown size={10} className={isContextMenuOpen ? 'ml-0.5 rotate-180 transition-transform' : 'ml-0.5 transition-transform'} />
                 </button>
                 <button
                   type="submit"
