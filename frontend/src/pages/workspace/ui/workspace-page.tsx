@@ -856,7 +856,8 @@ export function WorkspacePage() {
       setIsScreenNarrow(narrow);
 
       if (narrow) {
-        closeRightSidebar();
+        setRightPanelMode('toolbar');
+        rightSidebar.collapse();
       }
     };
 
@@ -866,7 +867,7 @@ export function WorkspacePage() {
     return () => {
       window.removeEventListener('resize', updateRightSidebarVisibility);
     };
-  }, [closeRightSidebar]);
+  }, [rightSidebar]);
 
   useEffect(() => {
     if (!WHATS_NEW_BANNER_ENABLED) {
@@ -1049,10 +1050,10 @@ export function WorkspacePage() {
     }
   }, [rightPanelMode]);
 
-  function closeRightSidebar() {
+  const closeRightSidebar = useCallback(() => {
     setRightPanelMode('toolbar');
     rightSidebar.collapse();
-  }
+  }, [rightSidebar]);
 
   useEffect(() => {
     if (!isNavigationEnabled && rightPanelMode === 'navigation') {
@@ -2438,6 +2439,7 @@ export function WorkspacePage() {
                 pageTitle={activePage?.title}
                 editor={activeEditor}
                 enabled={isAiSidebarEnabled}
+                availablePages={flattenWorkspacePages(tree)}
                 onClose={() => setRightPanelMode('toolbar')}
               />
             </div>
