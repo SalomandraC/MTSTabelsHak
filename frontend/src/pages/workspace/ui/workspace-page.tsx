@@ -856,7 +856,7 @@ export function WorkspacePage() {
       setIsScreenNarrow(narrow);
 
       if (narrow) {
-        rightSidebar.collapse();
+        closeRightSidebar();
       }
     };
 
@@ -866,7 +866,7 @@ export function WorkspacePage() {
     return () => {
       window.removeEventListener('resize', updateRightSidebarVisibility);
     };
-  }, [rightSidebar]);
+  }, [closeRightSidebar]);
 
   useEffect(() => {
     if (!WHATS_NEW_BANNER_ENABLED) {
@@ -1048,6 +1048,11 @@ export function WorkspacePage() {
       setHistoryPreviewCheckpoint(null);
     }
   }, [rightPanelMode]);
+
+  function closeRightSidebar() {
+    setRightPanelMode('toolbar');
+    rightSidebar.collapse();
+  }
 
   useEffect(() => {
     if (!isNavigationEnabled && rightPanelMode === 'navigation') {
@@ -1479,7 +1484,6 @@ export function WorkspacePage() {
         return;
       }
 
-      const estimatedWidth = 236;
       const estimatedHeight = 96;
       const left = event.clientX - wrapperRect.left;
       const top = Math.max(
@@ -2342,7 +2346,7 @@ export function WorkspacePage() {
           />
           <button
             type="button"
-            onClick={rightSidebar.collapse}
+            onClick={closeRightSidebar}
             className="absolute -left-5 top-[136px] z-30 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
             aria-label="Скрыть правое меню"
             title="Скрыть правое меню"
@@ -2363,6 +2367,22 @@ export function WorkspacePage() {
               title={rightPanelMode === 'navigation' ? 'Скрыть навигацию по заголовкам' : 'Навигация по заголовкам'}
             >
               <List size={16} strokeWidth={2.2} />
+            </button>
+          ) : null}
+          {isAiSidebarEnabled ? (
+            <button
+              type="button"
+              onClick={() => setRightPanelMode((current) => (current === 'chat' ? 'toolbar' : 'chat'))}
+              className={[
+                'absolute -left-5 top-[216px] z-30 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d70032]/40',
+                rightPanelMode === 'chat'
+                  ? 'border-[#d70032] bg-[#fff1f3] text-[#d70032]'
+                  : 'border-editor-border-subtle bg-white text-editor-text-primary hover:bg-editor-bg-control',
+              ].join(' ')}
+              aria-label={rightPanelMode === 'chat' ? 'Скрыть чат ИИ-ассистента' : 'Показать чат ИИ-ассистента'}
+              title={rightPanelMode === 'chat' ? 'Скрыть чат ИИ-ассистента' : 'Чат ИИ-ассистента'}
+            >
+              <MessageSquare size={16} strokeWidth={2.2} />
             </button>
           ) : null}
 
