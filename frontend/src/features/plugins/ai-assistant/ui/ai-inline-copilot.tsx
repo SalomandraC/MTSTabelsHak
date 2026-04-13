@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Editor } from '@tiptap/core';
 
 import { type MwsField, type MwsRecord, wikiliveApi } from '../../../../shared/api/wikilive';
-import { insertAiTextWithLiveReferences } from '../../../page-editor/model/live-reference-parser';
+import { insertAiTextWithLiveReferences, parseMarkdownReportWithLiveReferences } from '../../../page-editor/model/live-reference-parser';
 import { getEditorMarkdown } from '../model/editor-markdown';
 import { useAiTableContext } from '../model/use-ai-table-context';
 
@@ -400,6 +400,57 @@ function findAnchorPosition(editor: Editor, anchor: string): number | null {
   });
 
   return foundPos;
+}
+
+function findTableRootBlockInsertPos(editor: Editor, datasheetId?: string | null): number | null {
+  if (!datasheetId) {
+    return null;
+  }
+
+  let tablePos: number | null = null;
+  let tableRootBlockDepth: number | null = null;
+
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name !== 'mwsTableEmbed') {
+      return true;
+    }
+
+    if (String(node.attrs?.datasheetId ?? '') !== datasheetId) {
+      return true;
+    }
+
+    const resolved = editor.state.doc.resolve(pos);
+    for (let depth = resolved.depth; depth >= 0; depth -= 1) {
+      if (resolved.node(depth).type.name === 'rootblock') {
+        tablePos = pos;
+        tableRootBlockDepth = depth;
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  if (tablePos === null || tableRootBlockDepth === null) {
+    return null;
+  }
+
+  const resolved = editor.state.doc.resolve(tablePos);
+  return resolved.after(tableRootBlockDepth);
+}
+
+function buildReportRootBlock(reportText: string, spaceId: string) {
+  return {
+    type: 'rootblock',
+    content: [
+      {
+        type: 'heading',
+        attrs: { level: 2 },
+        content: [{ type: 'text', text: 'AI отчет' }],
+      },
+      ...parseMarkdownReportWithLiveReferences(reportText, { spaceId }),
+    ],
+  };
 }
 
 export function AiInlineCopilot({
@@ -897,10 +948,13 @@ export function AiInlineCopilot({
       });
       const response = await wikiliveApi.aiChat({
         question: [
-          'Ты анализируешь конкретную таблицу MWS.',
+          'Ты анализируешь конкретную таблицу MWS и пишешь отчет на основе ее данных.',
           `Вот ее данные JSON: ${JSON.stringify({ fields: context.fields, records: context.records.map((record) => ({ recordId: record.recordId, fields: record.fields })), total: context.total })}`,
           'Если данных таблицы недостаточно, первым делом вызови инструмент get_records.',
-          'Сгенерируй отчет в markdown формате.',
+          'Сгенерируй отчет в markdown формате, но без markdown-таблиц.',
+          'Используй только текст, заголовки, абзацы и маркированные списки.',
+          'Когда в отчете упоминаешь конкретную ячейку таблицы, обязательно вставляй живую переменную в формате [Ref:datasheetId:recordId:fieldId].',
+          'Используй живые переменные для ключевых метрик, статусов, дат и значений, которые должны обновляться вместе с таблицей.',
         ].join('\n'),
         pageId: pageId ?? undefined,
         datasheetId: activeContext.datasheetId,
@@ -959,8 +1013,17 @@ export function AiInlineCopilot({
     await withBusy(async () => {
       const reportText = await createReportText();
       if (editor) {
-        const endPosition = editor.state.doc.content.size;
-        editor.commands.insertContentAt(endPosition, `\n\n## AI отчет\n\n${reportText}\n`);
+        const reportRootBlock = buildReportRootBlock(reportText, spaceId);
+        const insertPos = activeContext.kind === 'table' && activeContext.datasheetId
+          ? findTableRootBlockInsertPos(editor, activeContext.datasheetId)
+          : null;
+
+        if (insertPos !== null) {
+          editor.chain().focus().insertContentAt(insertPos, reportRootBlock).run();
+        } else {
+          const endPosition = editor.state.doc.content.size;
+          editor.chain().focus().insertContentAt(endPosition, reportRootBlock).run();
+        }
       }
       setOutput(reportText);
     });
