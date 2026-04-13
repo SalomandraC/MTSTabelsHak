@@ -15,6 +15,11 @@ type AIGhostTextStorage = {
 
 const ghostTextPluginKey = new PluginKey<DecorationSet>('aiGhostTextPlugin');
 
+function isTypingSlashCommand(textBeforeCursor: string): boolean {
+  // Slash command pattern: whitespace/start + slash + token without spaces.
+  return /(?:^|\s)\/[\p{L}\p{N}_-]*$/u.test(textBeforeCursor);
+}
+
 function buildDecorations(editor: any, suggestion: string): DecorationSet {
   const state = editor.state;
   const selection = state.selection;
@@ -152,6 +157,18 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
     }
 
     const currentText = this.editor.state.doc.textBetween(Math.max(0, selection.to - 1200), selection.to, '\n', ' ');
+
+    if (isTypingSlashCommand(currentText)) {
+      if (this.storage.suggestion) {
+        this.storage.suggestion = '';
+        this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
+      }
+
+      // Invalidate pending debounced and in-flight requests while slash menu is active.
+      this.storage.requestId += 1;
+      window.clearTimeout((this as unknown as { __aiGhostTimer?: number }).__aiGhostTimer);
+      return;
+    }
 
     if (currentText.trim().length < this.options.minChars) {
       if (this.storage.suggestion) {
