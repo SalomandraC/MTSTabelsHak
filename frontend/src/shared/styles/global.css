@@ -182,7 +182,7 @@
   [data-heading-numbering-enabled='true'] .tiptap h3.page-editor-heading::before {
     display: inline;
     margin-right: 0.35em;
-    color: var(--editor-text-tertiary);
+    color: inherit;
     font-variant-numeric: tabular-nums;
     font-weight: 600;
   }
