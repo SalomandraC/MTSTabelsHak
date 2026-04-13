@@ -247,6 +247,7 @@ export type WikiPage = {
   createdAt: string;
   updatedAt: string;
   plainTextPreview: string | null;
+  headingNumberingEnabled: boolean;
   outgoingLinksCount: number;
   backlinksCount: number;
   access?: DocumentAccessSummary;
@@ -294,6 +295,7 @@ export type PresenceUser = {
 };
 
 export type CommentThreadStatus = 'open' | 'resolved';
+export type CommentResolveReason = 'manual' | 'anchor_removed_by_restore';
 
 export type PageCommentMessage = {
   id: string;
@@ -314,6 +316,7 @@ export type PageCommentThread = {
   createdByName: string;
   resolvedBy: string | null;
   resolvedAt: string | null;
+  resolvedReason: CommentResolveReason | null;
   createdAt: string;
   updatedAt: string;
   messages: PageCommentMessage[];
@@ -344,6 +347,11 @@ export type WorkspaceRealtimeEvent =
     }
   | {
       type: 'page_access_updated';
+      spaceId: string;
+      pageId: string;
+    }
+  | {
+      type: 'page_updated';
       spaceId: string;
       pageId: string;
     };
@@ -436,6 +444,17 @@ export type MwsRecordList = {
   total: number;
 };
 
+export type MwsCellValue = {
+  cell: {
+    datasheetId: string;
+    recordId: string;
+    fieldId: string;
+    value: unknown;
+    displayValue: string;
+    updatedAt?: string | null;
+  };
+};
+
 export type CreateMwsRecordsPayload = {
   fieldKey: 'id' | 'name';
   records: Array<{ fields: Record<string, unknown> }>;
@@ -482,6 +501,7 @@ export type ResolveTableEmbedResponse = {
 };
 
 export type AiTransformType = 'professional' | 'shorten' | 'expand' | 'fix_grammar';
+export type AiTransformStyleId = 'standard' | 'business' | 'military' | 'medieval' | 'church' | 'fix' | 'expand';
 
 export type AiAutocompletePayload = {
   currentText: string;
@@ -498,6 +518,7 @@ export type AiGeneratePayload = {
 export type AiTransformPayload = {
   text: string;
   transformation: AiTransformType;
+  styleId?: AiTransformStyleId;
   pageTitle?: string;
   pageSnapshot?: Record<string, unknown>;
 };
@@ -965,7 +986,10 @@ export const wikiliveApi = {
   getPageAccess(pageId: string) {
     return request<{ access: DocumentAccessSummary }>(`/api/v1/pages/${pageId}/access`);
   },
-  updatePage(pageId: string, payload: { title?: string; icon?: string | null }) {
+  updatePage(
+    pageId: string,
+    payload: { title?: string; icon?: string | null; headingNumberingEnabled?: boolean },
+  ) {
     return request<{ page: WikiPage }>(`/api/v1/pages/${pageId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
@@ -1162,6 +1186,9 @@ export const wikiliveApi = {
         sort: query.sort ? JSON.stringify(query.sort) : undefined,
       },
     });
+  },
+  getMwsCellValue(datasheetId: string, recordId: string, fieldId: string) {
+    return request<MwsCellValue>(`/api/v1/mws/datasheets/${datasheetId}/records/${recordId}/fields/${fieldId}`);
   },
   createMwsRecords(datasheetId: string, payload: CreateMwsRecordsPayload) {
     return request<{ items: MwsRecord[] }>(`/api/v1/mws/datasheets/${datasheetId}/records`, {

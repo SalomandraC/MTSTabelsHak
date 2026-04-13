@@ -3,6 +3,7 @@ import { AiProviderClientService, AiChatMessage } from './ai-provider-client.ser
 import {
   PageContextInput,
   ProseMirrorDocument,
+  TextStyleId,
   TextTransformationType,
 } from './ai-assistant.types';
 
@@ -13,8 +14,25 @@ const TRANSFORM_SYSTEM_PROMPTS: Record<TextTransformationType, string> = {
   fix_grammar: 'Fix grammar, punctuation, spelling, and style while preserving the original meaning and tone.',
 };
 
+const STYLE_SYSTEM_PROMPTS: Record<TextStyleId, string> = {
+  standard: 'Improve the text to be clear, natural, and coherent while preserving meaning and factual content.',
+  business: 'Rewrite the text in a concise business style suitable for enterprise communication with clear structure.',
+  military: 'Rewrite the text in a precise military operational style: concise commands, unambiguous wording, discipline-focused tone, no slang, preserving all facts.',
+  medieval: 'Rewrite the text in a restrained medieval literary style while keeping facts and meaning accurate.',
+  church: 'Rewrite the text in a respectful church-slavonic inspired style with biblical cadence. Use occasional scriptural framing and short quote-like constructions such as "ибо сказано" or "да будет", while preserving meaning, readability, and factual accuracy. Do not fabricate real scripture references.',
+  fix: 'Fix grammar, punctuation, spelling, and syntax issues while keeping tone and meaning unchanged.',
+  expand: 'Expand the text with clarifying detail, smoother transitions, and explicit structure while preserving intent.',
+};
+
 const SAME_LANGUAGE_RULE =
   'Always answer in the same language as the input text. If the input text is Russian, the output must be only in Russian.';
+
+const TRANSFORM_OUTPUT_RULES = [
+  'Return only the transformed selected fragment text, without comments or explanations.',
+  'Do not output labels or metadata like "Page title", "Transformation", "Context snapshot", "Wiki", "Исходный текст", or "Переработанный вариант".',
+  'Do not add markdown tables, separators, or horizontal rules unless they are already present in the selected fragment.',
+  'Preserve the selected fragment structure: keep paragraph boundaries and line breaks semantically close to the input.',
+].join(' ');
 
 @Injectable()
 export class AiAssistantService {
@@ -51,9 +69,10 @@ export class AiAssistantService {
   async transformText(
     text: string,
     transformation: TextTransformationType,
+    styleId: TextStyleId | undefined = undefined,
     context: PageContextInput = {},
   ): Promise<{ text: string }> {
-    const messages = this.buildTransformMessages(text, transformation, context);
+    const messages = this.buildTransformMessages(text, transformation, styleId, context);
     const response = await this.aiProviderClientService.complete({
       messages,
       temperature: transformation === 'shorten' ? 0.15 : 0.25,
@@ -61,8 +80,9 @@ export class AiAssistantService {
     });
 
     const output = this.extractText(response);
-    this.assertNonEmptyText(output, 'transform');
-    return { text: output.trim() };
+    const sanitizedOutput = this.sanitizeTransformOutput(output, text);
+    this.assertNonEmptyText(sanitizedOutput, 'transform');
+    return { text: sanitizedOutput.trim() };
   }
 
   async planTableMutation(input: {
@@ -639,6 +659,7 @@ export class AiAssistantService {
           'Return only valid JSON.',
           'The document must have type "doc" and a content array.',
           'Use only paragraph, heading, bulletList, orderedList, listItem, blockquote, and text nodes unless the context requires another common ProseMirror node.',
+          'If user asks to reference a live MWS cell, insert token [Ref:tableId:rowId:colId] directly in text, without extra markup.',
         ].join(' '),
       },
       {
@@ -655,18 +676,21 @@ export class AiAssistantService {
   buildTransformMessages(
     text: string,
     transformation: TextTransformationType,
+    styleId: TextStyleId | undefined = undefined,
     context: PageContextInput = {},
   ): AiChatMessage[] {
+    const prompt = styleId ? STYLE_SYSTEM_PROMPTS[styleId] : TRANSFORM_SYSTEM_PROMPTS[transformation];
+
     return [
       {
         role: 'system',
-        content: `${TRANSFORM_SYSTEM_PROMPTS[transformation]} ${SAME_LANGUAGE_RULE}`,
+        content: `${prompt} ${SAME_LANGUAGE_RULE} ${TRANSFORM_OUTPUT_RULES}`,
       },
       {
         role: 'user',
         content: this.renderPromptBlock({
           title: context.pageTitle,
-          heading: `Transformation: ${transformation}`,
+          heading: `Transformation: ${transformation}${styleId ? ` (style: ${styleId})` : ''}`,
           body: text,
         }) + this.renderContextSnapshot(context.pageSnapshot),
       },
@@ -798,6 +822,37 @@ export class AiAssistantService {
 
     const markdown = typeof snapshot === 'string' ? snapshot : this.proseMirrorToMarkdown(snapshot);
     return `\n\nContext snapshot:\n${markdown}`;
+  }
+
+  private sanitizeTransformOutput(rawOutput: string, sourceText: string): string {
+    let value = String(rawOutput ?? '').trim();
+    if (!value) {
+      return value;
+    }
+
+    const lines = value.split(/\r?\n/);
+    const filteredLines = lines.filter((line) => {
+      const normalized = line.trim().toLowerCase();
+
+      if (/^(page\s+title|transformation|context\s+snapshot)\s*:/i.test(normalized)) {
+        return false;
+      }
+
+      if (/^(wiki\s*:|исходный\s+текст|переработанный\s+вариант)/i.test(normalized)) {
+        return false;
+      }
+
+      return true;
+    });
+
+    value = filteredLines.join('\n').trim();
+
+    const sourceHasHorizontalRules = /(^|\n)\s*---+\s*(\n|$)/.test(sourceText);
+    if (!sourceHasHorizontalRules) {
+      value = value.replace(/(^|\n)\s*---+\s*(?=\n|$)/g, '$1').replace(/\n{3,}/g, '\n\n').trim();
+    }
+
+    return value;
   }
 
   private proseMirrorToMarkdown(snapshot: Record<string, unknown>): string {

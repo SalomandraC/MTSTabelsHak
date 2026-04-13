@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Editor } from '@tiptap/core';
 import {
   ChevronLeft,
@@ -12,6 +13,7 @@ import {
   MessageSquare,
   Pencil,
   Plus,
+  List,
   Search,
   Sparkles,
   Trash2,
@@ -26,8 +28,9 @@ import { usePageHistory } from '../../../features/page-editor/model/use-page-his
 import { CommentsPanel } from '../../../features/page-editor/ui/comments-panel';
 import { TimeMachinePanel } from '../../../features/page-editor/ui/time-machine-panel';
 import { AiChatSidebar } from '../../../features/plugins/ai-assistant';
-import { PluginsModal, usePlugins } from '../../../features/plugins';
+import { NavigationSidebar, PluginsModal, usePlugins } from '../../../features/plugins';
 import { ScrollArea } from '../../../shared/ui';
+import workspaceLogo from '../../../app/images/logo.svg';
 import {
   DEFAULT_WIKILIVE_SPACE_ID,
   type Backlink,
@@ -61,6 +64,9 @@ import {
 
 const SELECTED_SPACE_STORAGE_KEY = 'wikilive:selected-space-id';
 const DEFAULT_TEMPLATE_PAGE_SIZE = 20;
+const WHATS_NEW_BANNER_DURATION_SEC = 30;
+const WHATS_NEW_BANNER_STORAGE_KEY = 'wikilive:disable-whats-new-banner';
+const WHATS_NEW_BANNER_ENABLED = (import.meta.env.VITE_ENABLE_WHATS_NEW_BANNER ?? 'true') !== 'false';
 
 function getShareUrl(spaceId: string, pageId: string | null) {
   const url = new URL(window.location.href);
@@ -111,21 +117,40 @@ function filterWorkspaceTree(nodes: WorkspaceTreeNode[], query: string): Workspa
     .filter((node): node is WorkspaceTreeNode => Boolean(node));
 }
 
+function findPinnedPages(nodes: WorkspaceTreeNode[], pinnedPageIds: Set<string>): WorkspaceTreeNode[] {
+  return nodes.flatMap((node) => [
+    ...(node.kind === 'wikiPage' && node.linkedPageId && pinnedPageIds.has(node.linkedPageId)
+      ? [{ ...node, children: [] }]
+      : []),
+    ...findPinnedPages(node.children ?? [], pinnedPageIds),
+  ]);
+}
+
+function removePinnedPages(nodes: WorkspaceTreeNode[], pinnedPageIds: Set<string>): WorkspaceTreeNode[] {
+  return nodes
+    .map((node) => {
+      if (node.kind === 'wikiPage' && node.linkedPageId && pinnedPageIds.has(node.linkedPageId)) {
+        return null;
+      }
+
+      const children = removePinnedPages(node.children ?? [], pinnedPageIds);
+
+      if (node.children.length > 0 && children.length === 0 && node.kind !== 'wikiPage') {
+        return null;
+      }
+
+      return {
+        ...node,
+        children,
+      };
+    })
+    .filter((node): node is WorkspaceTreeNode => Boolean(node));
+}
+
 function WorkspaceLogo() {
   return (
-    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] bg-[#f8c58b] text-[#9a5a1e] shadow-sm">
-      <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true" className="drop-shadow-sm">
-        <path
-          d="M20 42h24v10.2c0 .8-.5 1.5-1.2 1.8l-10 4.6a2 2 0 0 1-1.6 0l-10-4.6A2 2 0 0 1 20 52.2V42Z"
-          fill="#d89548"
-        />
-        <circle cx="32" cy="25" r="22" fill="#f8c58b" />
-        <circle cx="32" cy="25" r="18.75" fill="none" stroke="#df9b50" strokeWidth="1.5" />
-        <path
-          d="M31.4 37.9c.2.5.9.5 1.2 0l11-21.9a.7.7 0 0 0-.6-1h-6.7c-.2 0-.5.1-.6.3l-3.1 6c-.2.5-.9.5-1.1 0l-2.8-5.9a.7.7 0 0 0-.6-.4H21c-.5 0-.8.5-.6.9l11 22Z"
-          fill="#e09847"
-        />
-      </svg>
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[8px] shadow-sm">
+      <img src={workspaceLogo} alt="Логотип WikiLive" className="h-full w-full object-cover" />
     </div>
   );
 }
@@ -154,7 +179,46 @@ function WorkspaceTreeSkeleton() {
   );
 }
 
-type RightPanelMode = 'links' | 'comments' | 'timeMachine';
+type RightPanelMode = 'links' | 'comments' | 'timeMachine' | 'navigation';
+
+function BlankAreaMenuItem({
+  icon,
+  label,
+  shortcut,
+  disabled = false,
+  destructive = false,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  shortcut?: string;
+  disabled?: boolean;
+  destructive?: boolean;
+  onClick?: () => void;
+}) {
+  const toneClass = disabled
+    ? 'cursor-default text-[#a4acb7]'
+    : destructive
+      ? 'text-[#d70032] hover:bg-[#fff1f3]'
+      : 'text-[#1f1f1f] hover:bg-[#f5f7fa]';
+
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      disabled={disabled}
+      className={[
+        'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[15px] transition-colors',
+        toneClass,
+      ].join(' ')}
+    >
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {shortcut ? <span className="shrink-0 text-[13px] text-[#9aa3af]">{shortcut}</span> : null}
+    </button>
+  );
+}
 
 const ACCESS_SCOPE_OPTIONS: Array<{
   value: DocumentAccessPolicy['viewAccess'];
@@ -171,6 +235,8 @@ function WorkspaceTreeItem({
   activePageId,
   selectedTableNodeId,
   expandedFolderIds,
+  pinnedPageIds,
+  onTogglePinnedPage,
   onSelectPage,
   onSelectMwsTable,
   onToggleFolder,
@@ -182,6 +248,8 @@ function WorkspaceTreeItem({
   activePageId: string | null;
   selectedTableNodeId: string | null;
   expandedFolderIds: Set<string>;
+  pinnedPageIds: Set<string>;
+  onTogglePinnedPage: (pageId: string) => void;
   onSelectPage: (pageId: string) => void;
   onSelectMwsTable: (node: WorkspaceTreeNode) => void;
   onToggleFolder: (folderId: string) => void;
@@ -201,6 +269,7 @@ function WorkspaceTreeItem({
   const isExpanded = isExpandable ? expandedFolderIds.has(node.id) : false;
   const isActivePage = node.linkedPageId === activePageId;
   const isSelectedTable = node.kind === 'mwsTable' && node.id === selectedTableNodeId;
+  const isPinnedPage = node.kind === 'wikiPage' && Boolean(node.linkedPageId && pinnedPageIds.has(node.linkedPageId));
   const canDeletePage = node.wikiPage?.role === 'owner';
   const canOpenActionsMenu = shouldShowWorkspacePageActions(node);
   const itemPadding = 8 + depth * 22;
@@ -354,7 +423,10 @@ function WorkspaceTreeItem({
           >
             {getWorkspaceNodeIcon(node)}
           </span>
-          <span className="truncate">{node.title}</span>
+          <span className="flex min-w-0 items-center gap-1 truncate">
+            {isPinnedPage ? <span className="shrink-0 text-[#d70032]">★</span> : null}
+            <span className="truncate">{node.title}</span>
+          </span>
         </button>
 
         {canOpenActionsMenu ? (
@@ -394,6 +466,12 @@ function WorkspaceTreeItem({
               createError={createError}
               contextMenuPosition={contextMenuPosition}
               createInputRef={createInputRef}
+              isPinned={Boolean(node.linkedPageId && pinnedPageIds.has(node.linkedPageId))}
+              onTogglePinned={() => {
+                if (node.linkedPageId) {
+                  onTogglePinnedPage(node.linkedPageId);
+                }
+              }}
               onCloseActionsMenu={closeActionsMenu}
               onOpenCreateMode={openCreateMode}
               onCreatePageTitleChange={setCreatePageTitle}
@@ -419,6 +497,8 @@ function WorkspaceTreeItem({
               activePageId={activePageId}
               selectedTableNodeId={selectedTableNodeId}
               expandedFolderIds={expandedFolderIds}
+              pinnedPageIds={pinnedPageIds}
+              onTogglePinnedPage={onTogglePinnedPage}
               onSelectPage={onSelectPage}
               onSelectMwsTable={onSelectMwsTable}
               onToggleFolder={onToggleFolder}
@@ -453,9 +533,9 @@ function MwsTableActionModal({
     return null;
   }
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/30 p-4"
       role="dialog"
       aria-modal="true"
       aria-label={`Действия с таблицей ${node.title}`}
@@ -511,7 +591,7 @@ function MwsTableActionModal({
         </div>
       </div>
     </div>
-  );
+  , document.body);
 }
 
 function LogoutConfirmModal({
@@ -526,7 +606,7 @@ function LogoutConfirmModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[101] flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
       <section
         className="w-full max-w-xl overflow-hidden rounded-2xl border border-editor-border-subtle bg-white shadow-[0_20px_60px_rgba(15,23,42,0.25)]"
         role="dialog"
@@ -599,9 +679,38 @@ export function WorkspacePage() {
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [workbenchTab, setWorkbenchTab] = useState<'catalog' | 'favorite'>('catalog');
+  const workbenchTreeWrapperRef = useRef<HTMLDivElement>(null);
+  const spaceSelectMenuRef = useRef<HTMLDivElement>(null);
+  const blankAreaCreateRef = useRef<HTMLDivElement>(null);
+  const blankAreaCreateInputRef = useRef<HTMLInputElement>(null);
   const [activePageId, setActivePageId] = useState<string | null>(null);
   const [selectedTableNode, setSelectedTableNode] = useState<WorkspaceTreeNode | null>(null);
+  const [pinnedPageIds, setPinnedPageIds] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') {
+      return new Set();
+    }
+
+    try {
+      const raw = window.localStorage.getItem('wikilive:pinned-pages');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      return new Set();
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem('wikilive:pinned-pages', JSON.stringify(Array.from(pinnedPageIds)));
+    } catch {
+      // ignore storage errors
+    }
+  }, [pinnedPageIds]);
+
   const [activePage, setActivePage] = useState<WikiPage | null>(null);
   const [isPageLoading, setIsPageLoading] = useState(false);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
@@ -611,17 +720,25 @@ export function WorkspacePage() {
   const [isCreatingTablePage, setIsCreatingTablePage] = useState(false);
   const [isDeletingTable, setIsDeletingTable] = useState(false);
   const [isDeletingPage, setIsDeletingPage] = useState(false);
+  const [isBlankAreaCreateOpen, setIsBlankAreaCreateOpen] = useState(false);
+  const [isBlankAreaCreateMode, setIsBlankAreaCreateMode] = useState(false);
+  const [isBlankAreaCreatingPage, setIsBlankAreaCreatingPage] = useState(false);
+  const [blankAreaCreateTitle, setBlankAreaCreateTitle] = useState('');
+  const [blankAreaCreateError, setBlankAreaCreateError] = useState('');
+  const [blankAreaCreatePosition, setBlankAreaCreatePosition] = useState<{ left: number; top: number } | null>(null);
   const [statusMessage, setStatusMessage] = useState('Загружаем wiki workspace');
   const [errorMessage, setErrorMessage] = useState('');
   const [shareStatus, setShareStatus] = useState('');
   const [isPluginsModalOpen, setIsPluginsModalOpen] = useState(false);
   const [activeEditor, setActiveEditor] = useState<Editor | null>(null);
   const [documentStateEncoder, setDocumentStateEncoder] = useState<(() => string | null) | null>(null);
+  const [documentStateRestorer, setDocumentStateRestorer] = useState<((value: string) => boolean) | null>(null);
   const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>('links');
   const [historyPreviewCheckpoint, setHistoryPreviewCheckpoint] = useState<PageHistoryCheckpoint | null>(null);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isEditingDisplayName, setIsEditingDisplayName] = useState(false);
+  const [isSpaceMenuOpen, setIsSpaceMenuOpen] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState(displayName);
   const [isAccessPanelOpen, setIsAccessPanelOpen] = useState(false);
   const [templates, setTemplates] = useState<PageTemplateSummary[]>([]);
@@ -671,7 +788,16 @@ export function WorkspacePage() {
   });
 
   const visibleTree = useMemo(() => filterWorkspaceTree(tree, searchQuery), [searchQuery, tree]);
+  const pinnedPages = useMemo(() => findPinnedPages(visibleTree, pinnedPageIds), [visibleTree, pinnedPageIds]);
+  const treeWithoutPinnedPages = useMemo(
+    () => removePinnedPages(visibleTree, pinnedPageIds),
+    [visibleTree, pinnedPageIds],
+  );
   const hasSearch = searchQuery.trim().length > 0;
+  const longestSpaceNameChars = useMemo(
+    () => Math.max(12, ...spaces.map((space) => space.name.length)),
+    [spaces],
+  );
   const canManageAccess = activePage?.access?.capabilities.canManageAccess ?? false;
   const canEditActivePage = activePage?.access?.capabilities.canEdit ?? true;
   const isHistoryPreviewActive = Boolean(historyPreviewCheckpoint);
@@ -687,7 +813,98 @@ export function WorkspacePage() {
   const isDocumentGraphEnabled = isWorkspaceSidebarEnabled('document-graph');
   const isCommentsEnabled = isPluginEnabled('comments');
   const isTimeMachineEnabled = isPluginEnabled('time-machine');
+  const isNavigationEnabled = isWorkspaceSidebarEnabled('navigation');
   const isAiSidebarEnabled = isWorkspaceSidebarEnabled('sidebar');
+  const [isScreenNarrow, setIsScreenNarrow] = useState(false);
+  const [isWhatsNewBannerVisible, setIsWhatsNewBannerVisible] = useState(false);
+  const [whatsNewBannerSecondsLeft, setWhatsNewBannerSecondsLeft] = useState(WHATS_NEW_BANNER_DURATION_SEC);
+
+  const closeWhatsNewBanner = useCallback(() => {
+    setIsWhatsNewBannerVisible(false);
+  }, []);
+
+  const disableWhatsNewBanner = useCallback(() => {
+    try {
+      window.localStorage.setItem(WHATS_NEW_BANNER_STORAGE_KEY, '1');
+    } catch {
+      // Ignore localStorage errors and just hide the banner for this runtime session.
+    }
+
+    setIsWhatsNewBannerVisible(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isSpaceMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (spaceSelectMenuRef.current && !spaceSelectMenuRef.current.contains(event.target as Node)) {
+        setIsSpaceMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+    };
+  }, [isSpaceMenuOpen]);
+
+  useEffect(() => {
+    const updateRightSidebarVisibility = () => {
+      const narrow = window.innerWidth < 800;
+      setIsScreenNarrow(narrow);
+
+      if (narrow) {
+        rightSidebar.collapse();
+      }
+    };
+
+    updateRightSidebarVisibility();
+    window.addEventListener('resize', updateRightSidebarVisibility);
+
+    return () => {
+      window.removeEventListener('resize', updateRightSidebarVisibility);
+    };
+  }, [rightSidebar]);
+
+  useEffect(() => {
+    if (!WHATS_NEW_BANNER_ENABLED) {
+      return;
+    }
+
+    try {
+      if (window.localStorage.getItem(WHATS_NEW_BANNER_STORAGE_KEY) === '1') {
+        return;
+      }
+    } catch {
+      // Ignore localStorage read errors and show banner by default.
+    }
+
+    setWhatsNewBannerSecondsLeft(WHATS_NEW_BANNER_DURATION_SEC);
+    setIsWhatsNewBannerVisible(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isWhatsNewBannerVisible) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setWhatsNewBannerSecondsLeft((previous) => {
+        if (previous <= 1) {
+          window.clearInterval(timer);
+          setIsWhatsNewBannerVisible(false);
+          return 0;
+        }
+
+        return previous - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [isWhatsNewBannerVisible]);
+
   const comments = usePageComments({
     pageId: activePageId,
     editor: activeEditor,
@@ -794,15 +1011,34 @@ export function WorkspacePage() {
     [activePageId, refreshTree, selectedSpaceId],
   );
 
+  const applyPageUpdate = useCallback(
+    async (pageId: string) => {
+      await refreshTree(selectedSpaceId, activePageId);
+
+      if (activePageId === pageId) {
+        try {
+          await refreshActivePage(pageId);
+        } catch (error) {
+          setErrorMessage(error instanceof Error ? error.message : 'Не удалось обновить настройки документа');
+        }
+      }
+    },
+    [activePageId, refreshTree, selectedSpaceId],
+  );
+
   const history = usePageHistory({
     pageId: activePageId,
-    editor: activeEditor,
     enabled: isTimeMachineEnabled && Boolean(activePage) && rightPanelMode === 'timeMachine',
     getDocumentStateValue: documentStateEncoder,
+    applyDocumentStateValue: documentStateRestorer,
     onRestored: async () => {
       setHistoryPreviewCheckpoint(null);
       if (activePageId) {
-        await Promise.all([refreshActivePage(activePageId), refreshTree(selectedSpaceId, activePageId)]);
+        await Promise.all([
+          refreshActivePage(activePageId),
+          refreshTree(selectedSpaceId, activePageId),
+          isCommentsEnabled ? comments.refreshComments(true) : Promise.resolve(),
+        ]);
       }
     },
   });
@@ -812,6 +1048,12 @@ export function WorkspacePage() {
       setHistoryPreviewCheckpoint(null);
     }
   }, [rightPanelMode]);
+
+  useEffect(() => {
+    if (!isNavigationEnabled && rightPanelMode === 'navigation') {
+      setRightPanelMode('links');
+    }
+  }, [isNavigationEnabled, rightPanelMode]);
 
   useEffect(() => {
     setHistoryPreviewCheckpoint(null);
@@ -1014,13 +1256,17 @@ export function WorkspacePage() {
         if (event.type === 'page_access_updated') {
           void applyPageAccessUpdate(event.pageId);
         }
+
+        if (event.type === 'page_updated') {
+          void applyPageUpdate(event.pageId);
+        }
       },
     });
 
     return () => {
       channel.close();
     };
-  }, [applyPageAccessUpdate, selectedSpaceId]);
+  }, [applyPageAccessUpdate, applyPageUpdate, selectedSpaceId]);
 
   useEffect(() => {
     if (!selectedSpaceId) {
@@ -1072,15 +1318,34 @@ export function WorkspacePage() {
   }, [activePageId]);
 
   const handleSelectPage = (pageId: string) => {
+    if (pageId === activePageId && !selectedTableNode) {
+      return;
+    }
+
     setSelectedTableNode(null);
     setActivePage(null);
     setActivePageId(pageId);
     writeWorkspaceRoute(selectedSpaceId, pageId, 'push');
   };
 
+  const handleTogglePinnedPage = useCallback((pageId: string) => {
+    setPinnedPageIds((previous) => {
+      const next = new Set(previous);
+
+      if (next.has(pageId)) {
+        next.delete(pageId);
+      } else {
+        next.add(pageId);
+      }
+
+      return next;
+    });
+  }, []);
+
   const handleSelectSpace = (spaceId: string) => {
     pendingRoutePageIdRef.current = null;
     setSelectedSpaceId(spaceId);
+    setIsSpaceMenuOpen(false);
     writeWorkspaceRoute(spaceId, null, 'push');
   };
 
@@ -1115,6 +1380,24 @@ export function WorkspacePage() {
     setSelectedTableNode(node);
   };
 
+  const closeBlankAreaCreate = useCallback(() => {
+    setIsBlankAreaCreateOpen(false);
+    setIsBlankAreaCreateMode(false);
+    setIsBlankAreaCreatingPage(false);
+    setBlankAreaCreateTitle('');
+    setBlankAreaCreateError('');
+    setBlankAreaCreatePosition(null);
+  }, []);
+
+  const openTemplateMarketplace = useCallback(() => {
+    setIsTemplateModalOpen(true);
+    void ensureTemplateCategoriesLoaded().catch((error) => {
+      setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить категории шаблонов');
+    });
+    void refreshTemplates(selectedSpaceId, { page: 1 });
+    closeBlankAreaCreate();
+  }, [closeBlankAreaCreate, ensureTemplateCategoriesLoaded, refreshTemplates, selectedSpaceId]);
+
   const handleCreatePage = async (title?: string, parentNodeId?: string | null) => {
     const normalizedTitle = title?.trim();
     const resolvedTitle =
@@ -1128,12 +1411,122 @@ export function WorkspacePage() {
       await refreshTree(selectedSpaceId, created.page.id);
       setActivePageId(created.page.id);
       writeWorkspaceRoute(selectedSpaceId, created.page.id, 'push');
+      return { ok: true as const, error: null };
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Не удалось создать страницу');
+      const message = error instanceof Error ? error.message : 'Не удалось создать страницу';
+      setErrorMessage(message);
+      return { ok: false as const, error: message };
     } finally {
       setStatusMessage('');
     }
   };
+
+  const handleBlankAreaCreateSubmit = useCallback(async () => {
+    const normalizedTitle = blankAreaCreateTitle.trim();
+
+    if (!normalizedTitle) {
+      setBlankAreaCreateError('Введите название страницы');
+      return;
+    }
+
+    setBlankAreaCreateError('');
+    setIsBlankAreaCreatingPage(true);
+
+    const result = await handleCreatePage(normalizedTitle, null);
+
+    if (result.ok) {
+      closeBlankAreaCreate();
+      return;
+    }
+
+    setBlankAreaCreateError(result.error || 'Не удалось создать страницу');
+    setIsBlankAreaCreatingPage(false);
+  }, [blankAreaCreateTitle, closeBlankAreaCreate, handleCreatePage]);
+
+  const openBlankAreaCreateMode = useCallback(() => {
+    setBlankAreaCreateTitle('');
+    setBlankAreaCreateError('');
+    setIsBlankAreaCreateMode(true);
+  }, []);
+
+  const handleWorkbenchBlankAreaContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      if (isLoading) {
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+
+      if (
+        target?.closest('[data-test-id="workspaceTreeNodeItem"]') ||
+        target?.closest('[data-workspace-inline-create="true"]')
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+
+      const wrapperRect = workbenchTreeWrapperRef.current?.getBoundingClientRect();
+      const sidebarRect = workbenchTreeWrapperRef.current?.closest('aside')?.getBoundingClientRect();
+
+      if (!wrapperRect) {
+        return;
+      }
+
+      const estimatedWidth = 236;
+      const estimatedHeight = 96;
+      const left = event.clientX - wrapperRect.left;
+      const top = Math.max(
+        8,
+        Math.min(
+          event.clientY - wrapperRect.top,
+          Math.max(8, (sidebarRect?.height ?? wrapperRect.height) - estimatedHeight - 8),
+        ),
+      );
+
+      setBlankAreaCreateTitle('');
+      setBlankAreaCreateError('');
+      setBlankAreaCreatePosition({ left, top });
+      setIsBlankAreaCreateOpen(true);
+      setIsBlankAreaCreateMode(false);
+    },
+    [isLoading],
+  );
+
+  useEffect(() => {
+    if (!isBlankAreaCreateOpen || !isBlankAreaCreateMode) {
+      return;
+    }
+
+    blankAreaCreateInputRef.current?.focus();
+    blankAreaCreateInputRef.current?.select();
+  }, [isBlankAreaCreateMode, isBlankAreaCreateOpen]);
+
+  useEffect(() => {
+    if (!isBlankAreaCreateOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (blankAreaCreateRef.current && !blankAreaCreateRef.current.contains(event.target as Node)) {
+        closeBlankAreaCreate();
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeBlankAreaCreate();
+      }
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleEscape);
+
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [closeBlankAreaCreate, isBlankAreaCreateOpen]);
 
   const handleInstantiateTemplate = async (payload: {
     templateId: string;
@@ -1344,6 +1737,16 @@ export function WorkspacePage() {
     await refreshTree(selectedSpaceId, activePageId);
   };
 
+  const handleToggleHeadingNumbering = async (headingNumberingEnabled: boolean) => {
+    if (!activePageId) {
+      return;
+    }
+
+    const response = await wikiliveApi.updatePage(activePageId, { headingNumberingEnabled });
+    setActivePage(response.page);
+    await refreshTree(selectedSpaceId, activePageId);
+  };
+
   const handleSaveAccessSettings = async () => {
     if (!activePageId || !accessDraft || !canManageAccess) {
       return;
@@ -1419,6 +1822,10 @@ export function WorkspacePage() {
     setDocumentStateEncoder(() => encoder);
   }, []);
 
+  const handleDocumentStateRestorerChange = useCallback((restorer: ((value: string) => boolean) | null) => {
+    setDocumentStateRestorer(() => restorer);
+  }, []);
+
   const handleConfirmLogout = async () => {
     setIsLoggingOut(true);
 
@@ -1441,9 +1848,58 @@ export function WorkspacePage() {
 
   return (
     <main className="flex h-screen overflow-hidden bg-[#f2f5fb] text-editor-text-primary">
+      {isWhatsNewBannerVisible ? (
+        <div className="pointer-events-none fixed left-1/2 top-4 z-[150] w-full max-w-3xl -translate-x-1/2 px-4">
+          <div className="pointer-events-auto overflow-hidden rounded-2xl border border-[#f8d7df] bg-gradient-to-r from-[#fff6f8] via-white to-[#f4f8ff] shadow-[0_16px_40px_rgba(15,23,42,0.14)]">
+            <div
+              className="h-1 bg-[#d70032] transition-all duration-1000"
+              style={{ width: `${Math.max(0, (whatsNewBannerSecondsLeft / WHATS_NEW_BANNER_DURATION_SEC) * 100)}%` }}
+            />
+            <div className="flex items-start gap-3 px-4 py-3 sm:px-5">
+              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#ffe1e7] text-[#d70032]">
+                <Sparkles size={16} strokeWidth={2.3} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-[#1f1f1f]">Обновление редактора</p>
+                <p className="mt-0.5 text-xs text-[#4b5563]">
+                  Добавили стили для AI-улучшения текста: Обычный, Деловой, Военный, Средневековый, Церковнославянский,
+                  Исправить ошибки и Дополнить. Также улучшили ghost-подсказки: стабильнее у курсора, аккуратные пробелы
+                  при принятии, скрытие при открытии inline-копилота. Протестите ребят.
+                </p>
+                <p className="mt-1 text-xs text-[#4b5563]">
+                  Еще добавили Live переменные из таблиц: можно вставлять значение ячейки в текст, открывать подсказку по hover
+                  и собирать AI-отчеты по таблице прямо под ней без markdown-таблиц.
+                </p>
+                <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7b8390]">
+                  Окно закроется через {whatsNewBannerSecondsLeft} сек
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={disableWhatsNewBanner}
+                  className="rounded-lg border border-editor-border-subtle bg-white px-2.5 py-1 text-[11px] font-semibold text-[#556070] transition-colors hover:bg-[#f7f8fa]"
+                  title="Больше не показывать"
+                >
+                  Не показывать
+                </button>
+                <button
+                  type="button"
+                  onClick={closeWhatsNewBanner}
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-[#7b8390] transition-colors hover:bg-[#f2f4f8] hover:text-[#1f2937]"
+                  aria-label="Закрыть уведомление"
+                  title="Закрыть"
+                >
+                  <X size={15} strokeWidth={2.2} />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {!leftSidebar.isCollapsed ? (
         <aside
-          className="relative flex h-full shrink-0 flex-col border-r border-[#e5e6eb] bg-white"
+          className="relative z-[90] flex h-full shrink-0 flex-col border-r border-[#e5e6eb] bg-white"
           style={{ width: `${leftSidebar.width}px` }}
         >
           <div className="flex h-16 items-center justify-between px-4">
@@ -1484,22 +1940,47 @@ export function WorkspacePage() {
                     <Pencil size={14} strokeWidth={2.2} />
                   </button>
                 </div>
-                <label className="sr-only" htmlFor="workspace-space-select">
-                  Пространство
-                </label>
-                <select
-                  id="workspace-space-select"
-                  value={selectedSpaceId}
-                  onChange={(event) => handleSelectSpace(event.target.value)}
-                  className="mt-0.5 h-6 max-w-[170px] rounded border-0 bg-transparent px-0 text-xs font-semibold text-[#767676] outline-none hover:text-[#333]"
-                  title="Пространство"
-                >
-                  {spaces.map((space) => (
-                    <option key={space.id} value={space.id}>
-                      {space.name}
-                    </option>
-                  ))}
-                </select>
+                <div ref={spaceSelectMenuRef} className="relative mt-0.5">
+                  <button
+                    id="workspace-space-select"
+                    type="button"
+                    onClick={() => setIsSpaceMenuOpen((value) => !value)}
+                    className="flex h-7 w-full items-center justify-between gap-2 rounded-md border border-[#ffd9e1] bg-white px-2 text-xs font-semibold text-[#d70032] outline-none transition-colors hover:bg-[#fff1f3] focus-visible:ring-2 focus-visible:ring-[#d70032]/25"
+                    style={{
+                      minWidth: `${Math.min(longestSpaceNameChars + 6, 30)}ch`,
+                      maxWidth: '300px',
+                    }}
+                    aria-haspopup="menu"
+                    aria-expanded={isSpaceMenuOpen}
+                    title="Пространство"
+                  >
+                    <span className="truncate">{spaces.find((space) => space.id === selectedSpaceId)?.name ?? 'Пространство'}</span>
+                    <ChevronDown size={13} strokeWidth={2.2} className={isSpaceMenuOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                  </button>
+                  {isSpaceMenuOpen ? (
+                    <div className="absolute left-0 top-8 z-[120] w-full rounded-lg border border-[#ffd9e1] bg-white p-1 shadow-[0_10px_30px_rgba(215,0,50,0.15)]">
+                      <ul className="space-y-1">
+                        {spaces.map((space) => {
+                          const isSelected = space.id === selectedSpaceId;
+                          return (
+                            <li key={space.id}>
+                              <button
+                                type="button"
+                                onClick={() => handleSelectSpace(space.id)}
+                                className={[
+                                  'flex w-full items-center rounded-lg px-2 py-1.5 text-left text-xs font-semibold transition-colors',
+                                  isSelected ? 'bg-[#d70032] text-white' : 'bg-white text-[#d70032] hover:bg-[#d70032] hover:text-white',
+                                ].join(' ')}
+                              >
+                                <span className="truncate">{space.name}</span>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
             <button
@@ -1520,35 +2001,10 @@ export function WorkspacePage() {
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Найти MWS таблицу, папку или wiki-страницу"
-                className="h-9 w-full rounded-md border border-[#dfe2e7] bg-[#fafafa] px-3 text-sm outline-none focus:border-[#5586ff]"
+                className="h-9 w-full rounded-md border border-[#dfe2e7] bg-[#fafafa] px-3 text-sm outline-none focus:border-[#d70032]"
               />
             </div>
           ) : null}
-
-          <div className="px-3">
-            <div className="flex rounded-md bg-[#f1f2f4] p-0.5">
-              <button
-                type="button"
-                onClick={() => setWorkbenchTab('catalog')}
-                className={[
-                  'h-8 flex-1 rounded-[5px] text-sm font-semibold transition-colors',
-                  workbenchTab === 'catalog' ? 'bg-white text-[#1f1f1f] shadow-sm' : 'text-[#777] hover:text-[#333]',
-                ].join(' ')}
-              >
-                Проводник
-              </button>
-              <button
-                type="button"
-                onClick={() => setWorkbenchTab('favorite')}
-                className={[
-                  'h-8 flex-1 rounded-[5px] text-sm font-semibold transition-colors',
-                  workbenchTab === 'favorite' ? 'bg-white text-[#1f1f1f] shadow-sm' : 'text-[#777] hover:text-[#333]',
-                ].join(' ')}
-              >
-                Закрепить
-              </button>
-            </div>
-          </div>
 
           <div className="mt-3 px-3">
             <button
@@ -1564,13 +2020,7 @@ export function WorkspacePage() {
           <div className="mt-2 px-3">
             <button
               type="button"
-              onClick={() => {
-                setIsTemplateModalOpen(true);
-                void ensureTemplateCategoriesLoaded().catch((error) => {
-                  setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить категории шаблонов');
-                });
-                void refreshTemplates(selectedSpaceId, { page: 1 });
-              }}
+              onClick={openTemplateMarketplace}
               disabled={isTemplatesLoading}
               className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-editor-border-subtle bg-white px-3 text-sm font-semibold text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa] disabled:cursor-wait disabled:opacity-60"
             >
@@ -1579,20 +2029,43 @@ export function WorkspacePage() {
             </button>
           </div>
 
-          <div className="mt-2 min-h-0 flex-1 overflow-y-auto px-2 pb-2" id="WORKBENCH_SIDE_NODE_WRAPPER">
-            {workbenchTab === 'favorite' ? (
-              <div className="px-3 py-6 text-sm text-[#969fa8]">Закрепленных страниц пока нет</div>
+          <div
+            ref={workbenchTreeWrapperRef}
+            className="relative mt-2 min-h-0 flex-1 overflow-y-auto px-2 pb-2"
+            id="WORKBENCH_SIDE_NODE_WRAPPER"
+            onContextMenu={handleWorkbenchBlankAreaContextMenu}
+          >
+            {isLoading ? (
+              <WorkspaceTreeSkeleton />
             ) : (
-              isLoading ? (
-                <WorkspaceTreeSkeleton />
-              ) : (
-                <>
-                  {tree.length === 0 ? <p className="px-2 py-2 text-sm text-[#969fa8]">MWS-дерево пустое</p> : null}
-                  {hasSearch && visibleTree.length === 0 ? (
-                    <p className="px-2 py-2 text-sm text-[#969fa8]">Ничего не найдено</p>
-                  ) : null}
-                  <ul role="tree" aria-label="Проводник" className="treeViewRoot space-y-0.5" tabIndex={0}>
-                    {visibleTree.map((node) => (
+              <>
+                {pinnedPages.length === 0 && treeWithoutPinnedPages.length === 0 ? (
+                  <p className="px-2 py-2 text-sm text-[#969fa8]">MWS-дерево пустое</p>
+                ) : null}
+                {hasSearch && pinnedPages.length === 0 && treeWithoutPinnedPages.length === 0 ? (
+                  <p className="px-2 py-2 text-sm text-[#969fa8]">Ничего не найдено</p>
+                ) : null}
+                <ul role="tree" aria-label="Проводник" className="treeViewRoot space-y-0.5" tabIndex={0}>
+                  {pinnedPages.map((node) => (
+                    <WorkspaceTreeItem
+                      key={node.id}
+                      node={node}
+                      depth={0}
+                      activePageId={activePageId}
+                      selectedTableNodeId={selectedTableNode?.id ?? null}
+                      expandedFolderIds={effectiveExpandedFolderIds}
+                      pinnedPageIds={pinnedPageIds}
+                      onTogglePinnedPage={handleTogglePinnedPage}
+                      onSelectPage={handleSelectPage}
+                      onSelectMwsTable={handleSelectMwsTable}
+                      onToggleFolder={handleToggleFolder}
+                      onDeletePage={(pageId, title) => void handleDeletePage(pageId, title)}
+                      onCreatePage={async (title, parentNodeId) => {
+                        await handleCreatePage(title, parentNodeId);
+                      }}
+                    />
+                  ))}
+                  {treeWithoutPinnedPages.map((node) => (
                       <WorkspaceTreeItem
                         key={node.id}
                         node={node}
@@ -1600,17 +2073,100 @@ export function WorkspacePage() {
                         activePageId={activePageId}
                         selectedTableNodeId={selectedTableNode?.id ?? null}
                         expandedFolderIds={effectiveExpandedFolderIds}
+                        pinnedPageIds={pinnedPageIds}
+                        onTogglePinnedPage={handleTogglePinnedPage}
                         onSelectPage={handleSelectPage}
                         onSelectMwsTable={handleSelectMwsTable}
                         onToggleFolder={handleToggleFolder}
                         onDeletePage={(pageId, title) => void handleDeletePage(pageId, title)}
-                        onCreatePage={(title, parentNodeId) => handleCreatePage(title, parentNodeId)}
+                        onCreatePage={async (title, parentNodeId) => {
+                          await handleCreatePage(title, parentNodeId);
+                        }}
                       />
                     ))}
                   </ul>
+                  {isBlankAreaCreateOpen && blankAreaCreatePosition ? (
+                    <div
+                      ref={blankAreaCreateRef}
+                      data-workspace-inline-create="true"
+                      role="menu"
+                      aria-label="Действия в пустой области проводника"
+                      className="absolute z-[120] w-[236px] rounded-xl border border-editor-border-subtle bg-white p-2 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
+                      style={{
+                        left: blankAreaCreatePosition.left,
+                        top: blankAreaCreatePosition.top,
+                      }}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      {isBlankAreaCreateMode ? (
+                        <div className="space-y-2 p-1">
+                          <p className="px-2 pt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b94a3]">Новая страница</p>
+                          <input
+                            ref={blankAreaCreateInputRef}
+                            value={blankAreaCreateTitle}
+                            onChange={(event) => {
+                              setBlankAreaCreateTitle(event.target.value);
+                              if (blankAreaCreateError) {
+                                setBlankAreaCreateError('');
+                              }
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault();
+                                void handleBlankAreaCreateSubmit();
+                              }
+
+                              if (event.key === 'Escape') {
+                                event.preventDefault();
+                                setIsBlankAreaCreateMode(false);
+                                setBlankAreaCreateError('');
+                              }
+                            }}
+                            placeholder="Введите название страницы"
+                            disabled={isBlankAreaCreatingPage}
+                            className="h-10 w-full rounded-lg border border-editor-border-subtle bg-white px-3 text-sm text-[#1f1f1f] outline-none transition-colors focus:border-[#5586ff]"
+                          />
+                          {blankAreaCreateError ? <p className="px-1 text-xs text-[#d70032]">{blankAreaCreateError}</p> : null}
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsBlankAreaCreateMode(false);
+                                setBlankAreaCreateError('');
+                              }}
+                              className="flex-1 rounded-lg border border-editor-border-subtle px-3 py-2 text-xs font-semibold text-[#4b5563] transition-colors hover:bg-[#f7f8fa]"
+                            >
+                              Назад
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleBlankAreaCreateSubmit()}
+                              disabled={isBlankAreaCreatingPage}
+                              className="flex-1 rounded-lg bg-[#d70032] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#b8002b] disabled:cursor-wait disabled:opacity-70"
+                            >
+                              {isBlankAreaCreatingPage ? 'Создаем...' : 'Создать'}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <BlankAreaMenuItem
+                            icon={<Pencil size={15} strokeWidth={2.1} />}
+                            label="Новая страница"
+                            onClick={openBlankAreaCreateMode}
+                          />
+                          <BlankAreaMenuItem
+                            icon={<FileDown size={16} strokeWidth={2.2} />}
+                            label="Создать из шаблона"
+                            onClick={openTemplateMarketplace}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
                 </>
               )
-            )}
+            }
           </div>
 
           <div className="flex h-12 items-center justify-center gap-4 border-t border-[#e5e6eb]">
@@ -1680,16 +2236,35 @@ export function WorkspacePage() {
             <ChevronRight size={16} strokeWidth={2.2} />
           </button>
         ) : null}
-        {rightSidebar.isCollapsed ? (
-          <button
-            type="button"
-            onClick={rightSidebar.expand}
-            className="absolute right-3 top-[136px] z-40 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
-            aria-label="Показать правое меню"
-            title="Показать правое меню"
-          >
-            <ChevronLeft size={16} strokeWidth={2.2} />
-          </button>
+        {rightSidebar.isCollapsed && !isScreenNarrow ? (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setRightPanelMode('links');
+                rightSidebar.expand();
+              }}
+              className="absolute right-3 top-[136px] z-40 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
+              aria-label="Показать правое меню"
+              title="Показать правое меню"
+            >
+              <ChevronLeft size={16} strokeWidth={2.2} />
+            </button>
+            {isNavigationEnabled ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setRightPanelMode('navigation');
+                  rightSidebar.expand();
+                }}
+                className="absolute right-3 top-[176px] z-40 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
+                aria-label="Показать навигацию по заголовкам"
+                title="Навигация по заголовкам"
+              >
+                <List size={16} strokeWidth={2.2} />
+              </button>
+            ) : null}
+          </>
         ) : null}
         {errorMessage ? (
           <div className="border-b border-[#ffd2d9] bg-[#fff1f3] px-4 py-2 text-sm text-[#b00025]">{errorMessage}</div>
@@ -1706,9 +2281,11 @@ export function WorkspacePage() {
             page={isPageLoading ? null : activePage}
             isLoading={isPageLoading}
             onRenamePage={handleRenamePage}
+            onToggleHeadingNumbering={handleToggleHeadingNumbering}
             onCheckpoint={handleCheckpoint}
             onEditorChange={setActiveEditor}
             onDocumentStateEncoderChange={handleDocumentStateEncoderChange}
+            onDocumentStateRestorerChange={handleDocumentStateRestorerChange}
             onCreateComment={isCommentsEnabled && !isHistoryPreviewActive ? handleCreateComment : undefined}
             onOpenCommentThread={isCommentsEnabled && !isHistoryPreviewActive ? handleOpenCommentThread : undefined}
             onOpenTimeMachine={isTimeMachineEnabled && !isHistoryPreviewActive ? handleOpenTimeMachine : undefined}
@@ -1722,7 +2299,7 @@ export function WorkspacePage() {
 
       {!rightSidebar.isCollapsed ? (
         <aside
-          className="relative h-full shrink-0 flex flex-col border-l border-editor-border-subtle bg-white/95"
+          className="relative z-[90] h-full shrink-0 flex flex-col border-l border-editor-border-subtle bg-white/95"
           style={{ width: `${rightSidebar.width}px` }}
         >
           <div
@@ -1736,12 +2313,28 @@ export function WorkspacePage() {
           <button
             type="button"
             onClick={rightSidebar.collapse}
-            className="absolute -left-4 top-24 z-30 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
+            className="absolute -left-5 top-[136px] z-30 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
             aria-label="Скрыть правое меню"
             title="Скрыть правое меню"
           >
             <ChevronRight size={16} strokeWidth={2.2} />
           </button>
+          {isNavigationEnabled ? (
+            <button
+              type="button"
+              onClick={() => setRightPanelMode((current) => (current === 'navigation' ? 'links' : 'navigation'))}
+              className={[
+                'absolute -left-5 top-[176px] z-30 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d70032]/40',
+                rightPanelMode === 'navigation'
+                  ? 'border-[#d70032] bg-[#fff1f3] text-[#d70032]'
+                  : 'border-editor-border-subtle bg-white text-editor-text-primary hover:bg-editor-bg-control',
+              ].join(' ')}
+              aria-label={rightPanelMode === 'navigation' ? 'Скрыть навигацию по заголовкам' : 'Показать навигацию по заголовкам'}
+              title={rightPanelMode === 'navigation' ? 'Скрыть навигацию по заголовкам' : 'Навигация по заголовкам'}
+            >
+              <List size={16} strokeWidth={2.2} />
+            </button>
+          ) : null}
 
           {isCommentsEnabled && rightPanelMode === 'comments' ? (
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -1774,7 +2367,17 @@ export function WorkspacePage() {
                 onShowCurrentVersion={handleShowCurrentVersion}
                 onShowSelectedVersion={handleShowSelectedVersion}
                 onRestoreCheckpoint={history.restoreCheckpoint}
+                canRestore={canEditActivePage}
+                restoreDisabledReason="У вас недостаточно прав для восстановления версии"
                 onRetry={() => void history.refreshHistory()}
+                onClose={() => setRightPanelMode('links')}
+              />
+            </div>
+          ) : isNavigationEnabled && rightPanelMode === 'navigation' ? (
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+              <NavigationSidebar
+                editor={activeEditor}
+                enabled={isNavigationEnabled}
                 onClose={() => setRightPanelMode('links')}
               />
             </div>

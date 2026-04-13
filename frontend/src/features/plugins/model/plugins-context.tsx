@@ -20,7 +20,7 @@ import {
   type WorkspaceSidebarSlot,
 } from './plugin-registry';
 
-export type AiAssistantFeatureSlot = 'ghost_text' | 'inline_chat' | 'text_transform';
+export type AiAssistantFeatureSlot = 'ghost_text' | 'inline_chat' | 'text_transform' | 'document_structure';
 
 const AI_ASSISTANT_FEATURES_STORAGE_KEY = 'wikilive.ai-assistant.features.v1';
 
@@ -28,6 +28,7 @@ const AI_ASSISTANT_FEATURE_DEFAULTS: Record<AiAssistantFeatureSlot, boolean> = {
   ghost_text: true,
   inline_chat: true,
   text_transform: true,
+  document_structure: true,
 };
 
 type PluginsContextValue = {

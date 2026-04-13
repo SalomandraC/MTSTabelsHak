@@ -3,8 +3,9 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Editor } from '@tiptap/core';
 
 import { type MwsField, type MwsRecord, wikiliveApi } from '../../../../shared/api/wikilive';
-import { AiOutputView } from '../model/ai-output-renderer';
+import { insertAiTextWithLiveReferences, parseMarkdownReportWithLiveReferences } from '../../../page-editor/model/live-reference-parser';
 import { getEditorMarkdown } from '../model/editor-markdown';
+import { AiOutputView } from '../model/ai-output-renderer';
 import { useAiTableContext } from '../model/use-ai-table-context';
 
 type CopilotTarget = 'table' | 'text';
@@ -13,6 +14,7 @@ type Anchor = {
   x: number;
   y: number;
   surfaceWidth?: number;
+  surfaceHeight?: number;
   target: CopilotTarget;
   datasheetId?: string | null;
   viewId?: string | null;
@@ -78,6 +80,12 @@ type WorkflowPlan = {
   >;
 };
 
+type StructureInstruction = {
+  anchor: string;
+  title: string;
+  level: 1 | 2 | 3;
+};
+
 function dispatchTableMutation(detail: {
   datasheetId: string;
   op: 'create_records' | 'add_table_column' | 'refresh';
@@ -139,7 +147,7 @@ function getStoredTableSnapshot(datasheetId?: string | null): TableSnapshot | nu
 }
 
 function collectTableOptions(editor: Editor | null): ContextOption[] {
-  if (!editor) {
+  if (!editor?.state?.doc?.descendants) {
     return [];
   }
 
@@ -269,6 +277,184 @@ function buildFieldLookup(fields: MwsField[]) {
   return { byId, byName };
 }
 
+function stripMarkdownFence(value: string): string {
+  const trimmed = value.trim();
+  const fenced = trimmed.match(/^```(?:json|markdown)?\s*([\s\S]*?)\s*```$/i);
+
+  if (fenced?.[1]) {
+    return fenced[1].trim();
+  }
+
+  return trimmed;
+}
+
+function stripLeadingHeadingNumbers(markdown: string): string {
+  return markdown
+    .replace(/^(#{1,6}\s+)(?:\d+(?:\.\d+)*[.)]?\s+)(.+)$/gm, '$1$2')
+    .replace(/^(#{1,6}\s+)(?:\d+[.)]?\s+)(.+)$/gm, '$1$2');
+}
+
+function normalizeSearchText(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[“”"'«»,.!?;:()[\]{}]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function collectStructureSourceBlocks(editor: Editor | null, limit = 40): Array<{ pos: number; text: string }> {
+  if (!editor) {
+    return [];
+  }
+
+  const { from, to, empty } = editor.state.selection;
+
+  if (!empty) {
+    const text = editor.state.doc.textBetween(from, to, '\n', '\n').trim();
+    return text ? [{ pos: from, text }] : [];
+  }
+
+  const blocks: Array<{ pos: number; text: string }> = [];
+
+  editor.state.doc.descendants((node, pos) => {
+    if (blocks.length >= limit) {
+      return false;
+    }
+
+    if (!node.isTextblock || node.type.name === 'heading') {
+      return true;
+    }
+
+    const text = node.textContent.trim();
+    if (!text) {
+      return true;
+    }
+
+    blocks.push({ pos, text });
+    return true;
+  });
+
+  return blocks;
+}
+
+function parseStructureInstructions(answer: string): StructureInstruction[] {
+  const candidate = stripMarkdownFence(answer);
+
+  try {
+    const parsed = JSON.parse(candidate) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .map((item) => {
+        if (!item || typeof item !== 'object') {
+          return null;
+        }
+
+        const record = item as Record<string, unknown>;
+        const anchor = typeof record.anchor === 'string' ? record.anchor.trim() : '';
+        const title = typeof record.title === 'string' ? record.title.trim() : '';
+        const level = Number(record.level);
+
+        if (!anchor || !title || ![1, 2, 3].includes(level)) {
+          return null;
+        }
+
+        return {
+          anchor,
+          title,
+          level: level as 1 | 2 | 3,
+        } satisfies StructureInstruction;
+      })
+      .filter((item): item is StructureInstruction => Boolean(item));
+  } catch {
+    return [];
+  }
+}
+
+function findAnchorPosition(editor: Editor, anchor: string): number | null {
+  const normalizedAnchor = normalizeSearchText(anchor);
+  if (!normalizedAnchor) {
+    return null;
+  }
+
+  const anchorPrefix = normalizedAnchor.split(' ').slice(0, 7).join(' ');
+  let foundPos: number | null = null;
+
+  editor.state.doc.descendants((node, pos) => {
+    if (!node.isTextblock || node.type.name === 'heading') {
+      return true;
+    }
+
+    const normalizedText = normalizeSearchText(node.textContent);
+    if (!normalizedText) {
+      return true;
+    }
+
+    if (normalizedText.startsWith(anchorPrefix) || normalizedText.includes(normalizedAnchor)) {
+      foundPos = pos;
+      return false;
+    }
+
+    return true;
+  });
+
+  return foundPos;
+}
+
+function findTableRootBlockInsertPos(editor: Editor, datasheetId?: string | null): number | null {
+  if (!datasheetId) {
+    return null;
+  }
+
+  let tablePos: number | null = null;
+  let tableRootBlockDepth: number | null = null;
+
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name !== 'mwsTableEmbed') {
+      return true;
+    }
+
+    if (String(node.attrs?.datasheetId ?? '') !== datasheetId) {
+      return true;
+    }
+
+    const resolved = editor.state.doc.resolve(pos);
+    for (let depth = resolved.depth; depth >= 0; depth -= 1) {
+      if (resolved.node(depth).type.name === 'rootblock') {
+        tablePos = pos;
+        tableRootBlockDepth = depth;
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  if (tablePos === null || tableRootBlockDepth === null) {
+    return null;
+  }
+
+  const resolved = editor.state.doc.resolve(tablePos);
+  return resolved.after(tableRootBlockDepth);
+}
+
+function buildReportRootBlock(reportText: string, spaceId: string) {
+  return {
+    type: 'rootblock',
+    content: [
+      {
+        type: 'heading',
+        attrs: { level: 2 },
+        content: [{ type: 'text', text: 'AI отчет' }],
+      },
+      ...parseMarkdownReportWithLiveReferences(reportText, { spaceId }),
+    ],
+  };
+}
+
 export function AiInlineCopilot({
   enabled,
   isOpen,
@@ -277,6 +463,8 @@ export function AiInlineCopilot({
   spaceId,
   pageId,
   pageTitle,
+  isPageNavigationEnabled,
+  isDocumentStructureEnabled,
   onClose,
 }: {
   enabled: boolean;
@@ -286,10 +474,13 @@ export function AiInlineCopilot({
   spaceId: string;
   pageId: string | null;
   pageTitle?: string;
+  isPageNavigationEnabled: boolean;
+  isDocumentStructureEnabled: boolean;
   onClose: () => void;
 }) {
   const [prompt, setPrompt] = useState('');
   const [output, setOutput] = useState('');
+  const [structurePlan, setStructurePlan] = useState<StructureInstruction[]>([]);
   const [status, setStatus] = useState('');
   const [isBusy, setIsBusy] = useState(false);
   const [showReportMenu, setShowReportMenu] = useState(false);
@@ -302,6 +493,7 @@ export function AiInlineCopilot({
     if (!isOpen) {
       setPrompt('');
       setOutput('');
+      setStructurePlan([]);
       setStatus('');
       setShowReportMenu(false);
       setShowContextMenu(false);
@@ -382,9 +574,11 @@ export function AiInlineCopilot({
     }
 
     const panelWidth = 560;
+    const panelHeight = 360;
     const gap = 8;
     const margin = 8;
     const surfaceWidth = anchor.surfaceWidth ?? 1200;
+    const surfaceHeight = anchor.surfaceHeight ?? window.innerHeight;
 
     const preferRight = anchor.x + gap;
     const preferLeft = anchor.x - panelWidth - gap;
@@ -398,9 +592,11 @@ export function AiInlineCopilot({
       left = Math.min(Math.max(anchor.x + gap, margin), Math.max(margin, surfaceWidth - panelWidth - margin));
     }
 
+    const top = anchor.y + gap;
+
     return {
       left,
-      top: Math.max(8, anchor.y + 8),
+      top,
     };
   }, [anchor]);
 
@@ -758,10 +954,13 @@ export function AiInlineCopilot({
       });
       const response = await wikiliveApi.aiChat({
         question: [
-          'Ты анализируешь конкретную таблицу MWS.',
+          'Ты анализируешь конкретную таблицу MWS и пишешь отчет на основе ее данных.',
           `Вот ее данные JSON: ${JSON.stringify({ fields: context.fields, records: context.records.map((record) => ({ recordId: record.recordId, fields: record.fields })), total: context.total })}`,
           'Если данных таблицы недостаточно, первым делом вызови инструмент get_records.',
-          'Сгенерируй отчет в markdown формате.',
+          'Сгенерируй отчет в markdown формате, но без markdown-таблиц.',
+          'Используй только текст, заголовки, абзацы и маркированные списки.',
+          'Когда в отчете упоминаешь конкретную ячейку таблицы, обязательно вставляй живую переменную в формате [Ref:datasheetId:recordId:fieldId].',
+          'Используй живые переменные для ключевых метрик, статусов, дат и значений, которые должны обновляться вместе с таблицей.',
         ].join('\n'),
         pageId: pageId ?? undefined,
         datasheetId: activeContext.datasheetId,
@@ -820,8 +1019,17 @@ export function AiInlineCopilot({
     await withBusy(async () => {
       const reportText = await createReportText();
       if (editor) {
-        const endPosition = editor.state.doc.content.size;
-        editor.commands.insertContentAt(endPosition, `\n\n## AI отчет\n\n${reportText}\n`);
+        const reportRootBlock = buildReportRootBlock(reportText, spaceId);
+        const insertPos = activeContext.kind === 'table' && activeContext.datasheetId
+          ? findTableRootBlockInsertPos(editor, activeContext.datasheetId)
+          : null;
+
+        if (insertPos !== null) {
+          editor.chain().focus().insertContentAt(insertPos, reportRootBlock).run();
+        } else {
+          const endPosition = editor.state.doc.content.size;
+          editor.chain().focus().insertContentAt(endPosition, reportRootBlock).run();
+        }
       }
       setOutput(reportText);
     });
@@ -883,6 +1091,7 @@ export function AiInlineCopilot({
           'Ты помощник по тексту.',
           `Вот содержание документа: ${markdown}`,
           `Запрос пользователя: ${trimmed}`,
+          'Если нужно сослаться на конкретную ячейку MWS, используй токен в формате [Ref:tableId:rowId:colId].',
           'Верни только текст, который можно вставить в документ.',
         ].join('\n'),
         pageId: pageId ?? undefined,
@@ -891,13 +1100,90 @@ export function AiInlineCopilot({
       });
 
       if (editor) {
-        editor.commands.insertContent(response.answer);
+        insertAiTextWithLiveReferences(editor, response.answer);
       }
 
       handleAiChatResponse(response);
 
       setOutput(response.answer);
     });
+  };
+
+  const handleStructureDocument = async () => {
+    await withBusy(async () => {
+      const sourceBlocks = collectStructureSourceBlocks(editor);
+      const sourceText = sourceBlocks.map((block) => block.text).join('\n\n') || getEditorMarkdown(editor);
+      const request = prompt.trim();
+      const wantsNoNumbers = /(без\s+нумерац|without\s+number)/i.test(request);
+      const response = await wikiliveApi.aiChat({
+        question: [
+          'Ты — аналитик структуры документа. Твоя задача — изучить текст и составить список мест, где нужно вставить заголовки.',
+          'НЕ ВОЗВРАЩАЙ ВЕСЬ ТЕКСТ ДОКУМЕНТА.',
+          'Верни ответ ТОЛЬКО в формате JSON-массива объектов:',
+          '[{"anchor": "фраза из начала абзаца", "title": "Текст заголовка", "level": 1|2|3}]',
+          'Правила:',
+          'anchor — это первые 5-7 слов абзаца, перед которым нужно поставить заголовок.',
+          'title — это текст заголовка, который ты придумал. НЕ добавляй в него цифры (1., 1.1.), система сделает это сама.',
+          'Плотность заголовков может отличаться по частям документа.',
+          'Если пользователь просит для одной части редкую структуру, а для другой частую, следуй этому буквально:',
+          '- редкая: только крупные разделы;',
+          '- частая: более детальные подзаголовки и дробление больших блоков.',
+          wantsNoNumbers
+            ? 'Если пользователь просит без нумерации, просто делай заголовки.'
+            : 'По умолчанию используй заголовки без цифр. Нумерация, если она нужна, будет добавлена системой автоматически.',
+          'Если в тексте уже есть заголовки, возвращай только новые места для вставки.',
+          request ? `Дополнительный запрос пользователя: ${request}` : '',
+          sourceBlocks.length > 0
+            ? `Абзацы для анализа:\n${sourceBlocks
+                .map((block, index) => `${index + 1}. ${block.text.slice(0, 220)}`)
+                .join('\n\n')}`
+            : `Текст для анализа:\n${sourceText}`,
+        ].join('\n'),
+        pageId: pageId ?? undefined,
+        pageTitle,
+        pageSnapshot: { markdown: sourceText },
+      });
+
+      handleAiChatResponse(response);
+
+      if (editor) {
+        const plan = parseStructureInstructions(response.answer);
+        setStructurePlan(plan);
+        setOutput(JSON.stringify(plan, null, 2));
+        return;
+      }
+
+      const plan = parseStructureInstructions(response.answer);
+      setStructurePlan(plan);
+      setOutput(JSON.stringify(plan, null, 2));
+    });
+  };
+
+  const handleApplyStructureDraft = () => {
+    if (!editor || structurePlan.length === 0) {
+      return;
+    }
+
+    const insertions = structurePlan
+      .map((instruction, index) => ({
+        instruction,
+        index,
+        pos: findAnchorPosition(editor, instruction.anchor),
+      }))
+      .filter((item): item is { instruction: StructureInstruction; index: number; pos: number } => typeof item.pos === 'number')
+      .sort((left, right) => right.pos - left.pos || left.index - right.index);
+
+    for (const item of insertions) {
+      editor.commands.insertContentAt(item.pos, {
+        type: 'heading',
+        attrs: { level: item.instruction.level },
+        content: [{ type: 'text', text: stripLeadingHeadingNumbers(item.instruction.title) }],
+      });
+    }
+
+    editor.view.dispatch(editor.state.tr);
+    setStatus(`Вставлено заголовков: ${insertions.length}`);
+    setStructurePlan([]);
   };
 
   return (
@@ -994,6 +1280,20 @@ export function AiInlineCopilot({
           Анализ
         </button>
 
+        {isDocumentStructureEnabled ? (
+          <button
+            type="button"
+            className="rounded-md border border-editor-border-subtle bg-white px-2 py-1 text-xs hover:bg-editor-bg-control disabled:opacity-50"
+            onClick={() => {
+              setStructurePlan([]);
+              void handleStructureDocument();
+            }}
+            disabled={isBusy}
+          >
+            Структурировать
+          </button>
+        ) : null}
+
         <div className="relative">
           <button
             type="button"
@@ -1034,7 +1334,32 @@ export function AiInlineCopilot({
       {status ? <p className="mb-2 text-xs text-editor-text-tertiary">{status}</p> : null}
 
       <div className="max-h-44 overflow-auto rounded-md border border-editor-border-subtle bg-[#fafbfd] p-2 text-xs text-editor-text-primary">
-        {output ? <AiOutputView text={output} /> : <p>Ответ AI или статус выполнения появится здесь.</p>}
+        {structurePlan.length > 0 ? (
+          <div className="space-y-2">
+            <p className="font-semibold">Я расставлю {structurePlan.length} заголовков:</p>
+            <ol className="space-y-2 pl-4">
+              {structurePlan.map((item, index) => (
+                <li key={`${item.anchor}-${index}`} className="list-decimal">
+                  <span className="font-semibold">[{item.title}]</span>{' '}
+                  перед текстом &quot;{item.anchor.slice(0, 72)}{item.anchor.length > 72 ? '…' : ''}&quot;
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : output ? (
+          <AiOutputView text={output} />
+        ) : (
+          <p>Ответ AI или статус выполнения появится здесь.</p>
+        )}
+        {structurePlan.length > 0 ? (
+          <button
+            type="button"
+            onClick={handleApplyStructureDraft}
+            className="mt-3 w-full rounded-md border border-[#ffd7a8] bg-[#fff5e8] px-3 py-2 text-sm font-semibold text-[#7d4a00] transition-colors hover:bg-[#ffebd1]"
+          >
+            ⚡️ Применить
+          </button>
+        ) : null}
         {createdPage ? (
           <p className="mt-2">
             Создана страница:{' '}

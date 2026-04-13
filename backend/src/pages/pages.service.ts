@@ -77,6 +77,7 @@ export class PagesService {
     await db.wikiPage.create({
       data: {
         nodeId: node.id,
+        headingNumberingEnabled: false,
         lastSnapshotVersion: 0,
       },
     });
@@ -135,6 +136,7 @@ export class PagesService {
         createdAt: page.createdAt,
         updatedAt: page.updatedAt,
         plainTextPreview: page.page?.plainTextPreview ?? null,
+        headingNumberingEnabled: page.page?.headingNumberingEnabled ?? false,
         outgoingLinksCount: page.sourceLinks.length,
         backlinksCount: page.targetLinks.length,
         access,
@@ -182,7 +184,18 @@ export class PagesService {
       },
     });
 
-    return this.getPage(pageId, true, user);
+    if (dto.headingNumberingEnabled !== undefined) {
+      await this.prisma.wikiPage.update({
+        where: { nodeId: pageId },
+        data: {
+          headingNumberingEnabled: dto.headingNumberingEnabled,
+        },
+      });
+    }
+
+    const response = await this.getPage(pageId, true, user);
+    this.realtimeService.broadcastPageUpdated(page.spaceId, pageId);
+    return response;
   }
 
   async updatePageAccess(pageId: string, dto: UpdatePageAccessDto, user: UserContext) {

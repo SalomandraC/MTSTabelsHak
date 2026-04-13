@@ -1,6 +1,6 @@
 import type { Content, Editor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 
 import { SlashMenu } from '../../slash-menu';
 import { AiInlineCopilot } from '../../plugins/ai-assistant';
@@ -20,15 +20,25 @@ import { PagePickerModal } from './page-picker-modal';
 import { TemplateVariableModal } from './template-variable-modal';
 import { IframeModal } from './iframe-modal';
 import { CreateBookmarkModal, collectBookmarks, BookmarkPickerModal } from './bookmark-modal';
+import { LiveReferencePickerModal } from './live-reference-picker-modal';
+import {
+  clampPageIndent,
+  DEFAULT_PAGE_EDITOR_VIEW_PREFERENCES,
+  readPageEditorViewPreferences,
+  type PageEditorViewMode,
+  writePageEditorViewPreferences,
+} from '../model/editor-view-preferences';
 
 type PageEditorProps = {
   spaceId: string;
   page: WikiPage | null;
   isLoading?: boolean;
   onRenamePage: (title: string) => Promise<void>;
+  onToggleHeadingNumbering: (enabled: boolean) => Promise<void>;
   onCheckpoint: () => Promise<void>;
   onEditorChange?: (editor: Editor | null) => void;
   onDocumentStateEncoderChange?: (encoder: (() => string | null) | null) => void;
+  onDocumentStateRestorerChange?: (restorer: ((value: string) => boolean) | null) => void;
   onCreateComment?: (editor: Editor) => void;
   onOpenCommentThread?: (threadId: string) => void;
   onOpenTimeMachine?: () => void;
@@ -42,6 +52,7 @@ type CopilotAnchor = {
   x: number;
   y: number;
   surfaceWidth?: number;
+  surfaceHeight?: number;
   target: 'table' | 'text';
   datasheetId?: string | null;
   viewId?: string | null;
@@ -120,11 +131,9 @@ function formatHistoryPreviewDate(value: string) {
   }).format(new Date(value));
 }
 
-function ReadOnlyPreviewEditor({
-  page,
+function ReadOnlyPreviewOverlay({
   checkpoint,
 }: {
-  page: WikiPage;
   checkpoint: PageHistoryCheckpoint;
 }) {
   const editor = useEditor({
@@ -157,27 +166,17 @@ function ReadOnlyPreviewEditor({
   }, [checkpoint, editor]);
 
   return (
-    <main className="flex h-full min-h-0 flex-col bg-editor-bg-page px-0 py-0">
-      <section className="flex min-h-0 w-full flex-1 flex-col bg-editor-bg-page">
-        <PageEditorHeader
-          title={page.title}
-          description={`Версия от ${formatHistoryPreviewDate(checkpoint.checkpoint.createdAt)}`}
-          editable={false}
-          saveStatus="Read-only preview"
-          recoveryMessage="Редактирование и синхронизация отключены для сохраненной версии"
-          activeUsers={[]}
-        />
-        <div className="border-b border-editor-border-subtle bg-[#fff7e8] px-4 py-3 text-sm text-[#8a5a00]">
-          Открыт предпросмотр сохраненной версии. Вернитесь к текущей версии, чтобы продолжить редактирование.
-        </div>
-        <div
-          className="relative mx-auto w-full max-w-4xl flex-1 px-2 pb-4 pt-4 sm:px-6 sm:pb-10 sm:pt-5"
-          data-page-editor-surface
-        >
-          <EditorContent editor={editor} />
-        </div>
-      </section>
-    </main>
+    <div className="absolute inset-0 z-20 flex min-h-0 flex-col bg-editor-bg-page">
+      <div className="border-b border-editor-border-subtle bg-[#fff7e8] px-4 py-3 text-sm text-[#8a5a00]">
+        Открыт предпросмотр версии от {formatHistoryPreviewDate(checkpoint.checkpoint.createdAt)}. Живой документ остается подключенным, поэтому восстановление сразу синхронизируется для всех участников.
+      </div>
+      <div
+        className="relative mx-auto w-full max-w-4xl flex-1 px-2 pb-4 pt-4 sm:px-6 sm:pb-10 sm:pt-5"
+        data-page-editor-history-preview
+      >
+        <EditorContent editor={editor} />
+      </div>
+    </div>
   );
 }
 
@@ -204,14 +203,129 @@ function PageEditorLoadingSkeleton() {
   );
 }
 
+function useCompactEditorViewport() {
+  const getIsCompact = () => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return false;
+    }
+
+    return window.matchMedia('(max-width: 767px)').matches;
+  };
+
+  const [isCompact, setIsCompact] = useState(getIsCompact);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return undefined;
+    }
+
+    const mediaQuery = window.matchMedia('(max-width: 767px)');
+    const handleChange = () => {
+      setIsCompact(mediaQuery.matches);
+    };
+
+    setIsCompact(mediaQuery.matches);
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
+    }
+
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
+  }, []);
+
+  return isCompact;
+}
+
+function PagedLayoutControls({
+  leftIndent,
+  rightIndent,
+  onChangeLeftIndent,
+  onChangeRightIndent,
+  onReset,
+}: {
+  leftIndent: number;
+  rightIndent: number;
+  onChangeLeftIndent: (value: number) => void;
+  onChangeRightIndent: (value: number) => void;
+  onReset: () => void;
+}) {
+  const handleNumericInput =
+    (applyValue: (value: number) => void) => (event: ChangeEvent<HTMLInputElement>) => {
+      const rawValue = Number(event.target.value.replace(',', '.'));
+      if (Number.isFinite(rawValue)) {
+        applyValue(clampPageIndent(rawValue));
+      }
+    };
+
+  return (
+    <div className="border-t border-editor-border-subtle bg-[rgba(245,247,250,1)] px-2 py-2 sm:px-4">
+      <div className="flex items-center gap-0 overflow-x-auto whitespace-nowrap pb-0.5" role="toolbar" aria-label="Панель макета страницы">
+        <span className="inline-flex h-8 items-center px-2 text-xs font-semibold uppercase tracking-[0.12em] text-editor-text-tertiary">
+          A4
+        </span>
+
+        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
+        <label className="inline-flex h-8 shrink-0 items-center gap-2 rounded-md border border-editor-border-control bg-white px-2 text-sm text-editor-text-primary">
+          <span className="text-xs font-semibold text-editor-text-secondary">Левое</span>
+          <input
+            type="number"
+            min="0.5"
+            max="6.5"
+            step="0.1"
+            inputMode="decimal"
+            value={leftIndent.toFixed(1)}
+            onChange={handleNumericInput(onChangeLeftIndent)}
+            className="w-16 border-0 bg-transparent text-right text-sm font-semibold outline-none"
+            aria-label="Левое поле страницы в сантиметрах"
+          />
+          <span className="text-xs text-editor-text-tertiary">см</span>
+        </label>
+
+        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
+        <label className="inline-flex h-8 shrink-0 items-center gap-2 rounded-md border border-editor-border-control bg-white px-2 text-sm text-editor-text-primary">
+          <span className="text-xs font-semibold text-editor-text-secondary">Правое</span>
+          <input
+            type="number"
+            min="0.5"
+            max="6.5"
+            step="0.1"
+            inputMode="decimal"
+            value={rightIndent.toFixed(1)}
+            onChange={handleNumericInput(onChangeRightIndent)}
+            className="w-16 border-0 bg-transparent text-right text-sm font-semibold outline-none"
+            aria-label="Правое поле страницы в сантиметрах"
+          />
+          <span className="text-xs text-editor-text-tertiary">см</span>
+        </label>
+
+        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
+        <button
+          type="button"
+          onClick={onReset}
+          className="inline-flex h-8 shrink-0 items-center rounded-md border border-editor-border-control bg-white px-3 text-xs font-semibold text-editor-text-primary transition-colors hover:bg-[#e8ebf1]"
+        >
+          Сбросить поля
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function PageEditor({
   spaceId,
   page,
   isLoading = false,
   onRenamePage,
+  onToggleHeadingNumbering,
   onCheckpoint,
   onEditorChange,
   onDocumentStateEncoderChange,
+  onDocumentStateRestorerChange,
   onCreateComment,
   onOpenCommentThread,
   onOpenTimeMachine,
@@ -235,24 +349,23 @@ export function PageEditor({
     );
   }
 
-  if (historyPreview) {
-    return <ReadOnlyPreviewEditor page={page} checkpoint={historyPreview} />;
-  }
-
   return (
     <LivePageEditor
       spaceId={spaceId}
       page={page}
       onRenamePage={onRenamePage}
+      onToggleHeadingNumbering={onToggleHeadingNumbering}
       onCheckpoint={onCheckpoint}
       onEditorChange={onEditorChange}
       onDocumentStateEncoderChange={onDocumentStateEncoderChange}
+      onDocumentStateRestorerChange={onDocumentStateRestorerChange}
       onCreateComment={onCreateComment}
       onOpenCommentThread={onOpenCommentThread}
       onOpenTimeMachine={onOpenTimeMachine}
       commentThreads={commentThreads}
       activeCommentThreadId={activeCommentThreadId}
       commentCount={commentCount}
+      historyPreview={historyPreview}
     />
   );
 }
@@ -261,33 +374,110 @@ function LivePageEditor({
   spaceId,
   page,
   onRenamePage,
+  onToggleHeadingNumbering,
   onCheckpoint,
   onEditorChange,
   onDocumentStateEncoderChange,
+  onDocumentStateRestorerChange,
   onCreateComment,
   onOpenCommentThread,
   onOpenTimeMachine,
   commentThreads = [],
   activeCommentThreadId = null,
   commentCount = 0,
-}: Omit<PageEditorProps, 'isLoading' | 'historyPreview'> & { page: WikiPage }) {
-  const { isEditorSlotEnabled, isAiAssistantFeatureEnabled } = usePlugins();
+  historyPreview = null,
+}: Omit<PageEditorProps, 'isLoading'> & { page: WikiPage }) {
+  const { isEditorSlotEnabled, isAiAssistantFeatureEnabled, isPluginEnabled, isLoading: isPluginsLoading } = usePlugins();
+  const isCompactViewport = useCompactEditorViewport();
   const canEdit = page.access?.capabilities.canEdit ?? true;
   const canComment = page.access?.capabilities.canComment ?? true;
   const canUseAi = page.access?.capabilities.canUseAi ?? true;
-  const isAiSlashEnabled = isEditorSlotEnabled('slash_menu') && canUseAi;
-  const isAiToolbarEnabled = isEditorSlotEnabled('toolbar_bubble') && canUseAi;
-  const isAiGhostEnabled = isAiAssistantFeatureEnabled('ghost_text') && canUseAi;
-  const isAiInlineChatEnabled = isAiAssistantFeatureEnabled('inline_chat') && canUseAi;
+  const isAiPluginEnabled = isPluginsLoading ? true : isPluginEnabled('ai-assistant');
+  const isHistoryPreviewActive = Boolean(historyPreview);
+  const effectiveCanEdit = canEdit && !isHistoryPreviewActive;
+  const effectiveCanComment = canComment && !isHistoryPreviewActive;
+  const isAiSlashEnabled = isAiPluginEnabled && isEditorSlotEnabled('slash_menu') && canUseAi;
+  const isAiToolbarEnabled = isAiPluginEnabled && isEditorSlotEnabled('toolbar_bubble') && canUseAi;
+  const isAiGhostEnabled = isAiPluginEnabled && isAiAssistantFeatureEnabled('ghost_text') && canUseAi;
+  const isAiInlineChatEnabled = isAiPluginEnabled && isAiAssistantFeatureEnabled('inline_chat') && canUseAi;
+  const isPageNavigationEnabled = isPluginEnabled('page-navigation');
+  const isDocumentStructureEnabled = isAiPluginEnabled && isAiAssistantFeatureEnabled('document_structure') && canUseAi;
   const [copilotAnchor, setCopilotAnchor] = useState<CopilotAnchor | null>(null);
   const isCopilotOpen = Boolean(copilotAnchor);
   const editorSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const [viewPreferences, setViewPreferences] = useState(() => readPageEditorViewPreferences());
+  const effectiveViewMode: PageEditorViewMode = isCompactViewport ? 'standard' : viewPreferences.mode;
+
+  useEffect(() => {
+    writePageEditorViewPreferences(viewPreferences);
+  }, [viewPreferences]);
+
+  const handleChangeViewMode = useCallback((mode: PageEditorViewMode) => {
+    setViewPreferences((current) => ({ ...current, mode }));
+  }, []);
+
+  const handleChangeLeftIndent = useCallback((value: number) => {
+    setViewPreferences((current) => ({ ...current, leftIndent: clampPageIndent(value) }));
+  }, []);
+
+  const handleChangeRightIndent = useCallback((value: number) => {
+    setViewPreferences((current) => ({ ...current, rightIndent: clampPageIndent(value) }));
+  }, []);
+
+  const handleResetIndents = useCallback(() => {
+    setViewPreferences((current) => ({
+      ...current,
+      leftIndent: DEFAULT_PAGE_EDITOR_VIEW_PREFERENCES.leftIndent,
+      rightIndent: DEFAULT_PAGE_EDITOR_VIEW_PREFERENCES.rightIndent,
+    }));
+  }, []);
+
+  const reserveInlineCopilotBottomSpace = useCallback(
+    (coords: { bottom: number }, surfaceRect?: DOMRect | null) => {
+      const panelHeight = 360;
+      const gap = 8;
+      const margin = 8;
+      const requiredBelow = panelHeight + gap + margin;
+
+      const availableBelow = surfaceRect
+        ? surfaceRect.bottom - coords.bottom - margin
+        : window.innerHeight - coords.bottom - margin;
+
+      const deficit = Math.ceil(requiredBelow - availableBelow);
+      if (deficit <= 0) {
+        return;
+      }
+
+      const surface = editorSurfaceRef.current;
+      const canScrollSurface =
+        Boolean(surfaceRect) &&
+        Boolean(surface) &&
+        surface!.scrollHeight > surface!.clientHeight &&
+        surface!.scrollTop < surface!.scrollHeight - surface!.clientHeight;
+
+      if (canScrollSurface && surface) {
+        const surfaceSpaceLeft = Math.max(0, surface.scrollHeight - surface.clientHeight - surface.scrollTop);
+        const surfaceDelta = Math.min(deficit, surfaceSpaceLeft);
+        surface.scrollTop += surfaceDelta;
+
+        const remaining = deficit - surfaceDelta;
+        if (remaining > 0) {
+          window.scrollBy({ top: remaining, left: 0, behavior: 'auto' });
+        }
+        return;
+      }
+
+      window.scrollBy({ top: deficit, left: 0, behavior: 'auto' });
+    },
+    [],
+  );
 
   const controller = usePageEditorController({
     spaceId,
     page,
     canEdit,
     onRenamePage,
+    onToggleHeadingNumbering,
     onCheckpoint,
     onOpenCommentThread,
     isAiSlashEnabled,
@@ -322,6 +512,18 @@ function LivePageEditor({
   }, [controller.getCurrentDocumentStateValue, onDocumentStateEncoderChange]);
 
   useEffect(() => {
+    onDocumentStateRestorerChange?.(controller.applyDocumentStateValue);
+
+    return () => {
+      onDocumentStateRestorerChange?.(null);
+    };
+  }, [controller.applyDocumentStateValue, onDocumentStateRestorerChange]);
+
+  useEffect(() => {
+    controller.editor?.setEditable(effectiveCanEdit);
+  }, [controller.editor, effectiveCanEdit]);
+
+  useEffect(() => {
     if (!isAiInlineChatEnabled) {
       return;
     }
@@ -342,10 +544,15 @@ function LivePageEditor({
       const tableContext = getTableContextBySelection(controller.editor);
       const surfaceRect = editorSurfaceRef.current?.getBoundingClientRect();
 
+      reserveInlineCopilotBottomSpace(coords, surfaceRect);
+      const nextCoords = controller.editor.view.coordsAtPos(controller.editor.state.selection.from);
+      const nextSurfaceRect = editorSurfaceRef.current?.getBoundingClientRect();
+
       setCopilotAnchor({
-        x: coords.left - (surfaceRect?.left ?? 0),
-        y: coords.bottom - (surfaceRect?.top ?? 0),
-        surfaceWidth: surfaceRect?.width,
+        x: nextCoords.left - (nextSurfaceRect?.left ?? 0),
+        y: nextCoords.bottom - (nextSurfaceRect?.top ?? 0),
+        surfaceWidth: nextSurfaceRect?.width,
+        surfaceHeight: nextSurfaceRect?.height,
         target: tableContext?.datasheetId ? 'table' : 'text',
         datasheetId: tableContext?.datasheetId,
         viewId: tableContext?.viewId,
@@ -357,7 +564,41 @@ function LivePageEditor({
     return () => {
       window.removeEventListener('keydown', handleHotkey);
     };
-  }, [controller.editor, isAiInlineChatEnabled]);
+  }, [controller.editor, isAiInlineChatEnabled, reserveInlineCopilotBottomSpace]);
+
+  useEffect(() => {
+    const handleUndoRedoHotkeys = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest('.ProseMirror')) {
+        return;
+      }
+
+      const isUndo = (event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'z';
+      const isRedo =
+        (event.metaKey || event.ctrlKey) && ((event.shiftKey && event.key.toLowerCase() === 'z') || event.key.toLowerCase() === 'y');
+
+      if (!isUndo && !isRedo) {
+        return;
+      }
+
+      if (!controller.editor || !controller.editor.isFocused) {
+        return;
+      }
+
+      const executed = isUndo
+        ? controller.editor.chain().focus().undo().run()
+        : controller.editor.chain().focus().redo().run();
+
+      if (executed) {
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener('keydown', handleUndoRedoHotkeys, true);
+    return () => {
+      window.removeEventListener('keydown', handleUndoRedoHotkeys, true);
+    };
+  }, [controller.editor]);
 
   return (
     <main className="flex h-full min-h-0 flex-col bg-editor-bg-page px-0 py-0">
@@ -365,8 +606,11 @@ function LivePageEditor({
         <PageEditorHeader
           title={controller.title}
           description={controller.description}
-          editable={canEdit}
+          editable={effectiveCanEdit}
+          viewMode={effectiveViewMode}
+          showViewModeControls={!isCompactViewport}
           onSave={controller.handleSaveMeta}
+          onViewModeChange={handleChangeViewMode}
           connectionStatus={controller.connectionStatus}
           saveStatus={controller.saveStatus}
           recoveryMessage={controller.recoveryMessage}
@@ -374,19 +618,36 @@ function LivePageEditor({
         />
         <PageEditorToolbar
           editor={controller.editor}
-          canEdit={canEdit}
+          canEdit={effectiveCanEdit}
+          headingNumberingEnabled={page?.headingNumberingEnabled ?? false}
+          onToggleHeadingNumbering={controller.handleToggleHeadingNumbering}
           onOpenLinkModal={controller.openLinkModal}
           onOpenImageModal={controller.openImageModal}
           onOpenIframeModal={controller.openIframeModal}
-          onCreateComment={canComment ? onCreateComment : undefined}
+          onCreateComment={effectiveCanComment ? onCreateComment : undefined}
           onOpenTimeMachine={canEdit ? onOpenTimeMachine : undefined}
           commentCount={commentCount}
         />
+        {effectiveViewMode === 'paged' ? (
+          <PagedLayoutControls
+            leftIndent={viewPreferences.leftIndent}
+            rightIndent={viewPreferences.rightIndent}
+            onChangeLeftIndent={handleChangeLeftIndent}
+            onChangeRightIndent={handleChangeRightIndent}
+            onReset={handleResetIndents}
+          />
+        ) : null}
 
         <div
           ref={editorSurfaceRef}
-          className="relative mx-auto w-full max-w-4xl flex-1 px-2 pb-4 pt-1 sm:px-6 sm:pb-10 sm:pt-5"
+          className={[
+            'relative z-[10] w-full flex-1',
+            effectiveViewMode === 'paged'
+              ? 'overflow-x-auto bg-[#eef2f7] px-3 pb-8 pt-4 sm:px-6 sm:pb-12 sm:pt-6'
+              : 'px-2 pb-4 pt-1 sm:px-6 sm:pb-10 sm:pt-5',
+          ].join(' ')}
           data-page-editor-surface
+          data-editor-view-mode={effectiveViewMode}
           onContextMenu={(event) => {
             if (!isAiInlineChatEnabled || !controller.editor) {
               return;
@@ -396,10 +657,14 @@ function LivePageEditor({
             const tableContext = getTableContextByDomTarget(event.target) ?? getTableContextBySelection(controller.editor);
             const surfaceRect = editorSurfaceRef.current?.getBoundingClientRect();
 
+            reserveInlineCopilotBottomSpace({ bottom: event.clientY }, surfaceRect);
+            const nextSurfaceRect = editorSurfaceRef.current?.getBoundingClientRect();
+
             setCopilotAnchor({
-              x: event.clientX - (surfaceRect?.left ?? 0),
-              y: event.clientY - (surfaceRect?.top ?? 0),
-              surfaceWidth: surfaceRect?.width,
+              x: event.clientX - (nextSurfaceRect?.left ?? 0),
+              y: event.clientY - (nextSurfaceRect?.top ?? 0),
+              surfaceWidth: nextSurfaceRect?.width,
+              surfaceHeight: nextSurfaceRect?.height,
               target: tableContext?.datasheetId ? 'table' : 'text',
               datasheetId: tableContext?.datasheetId,
               viewId: tableContext?.viewId,
@@ -407,7 +672,42 @@ function LivePageEditor({
             });
           }}
         >
-          <EditorContent editor={controller.editor} />
+          <div
+            className={[
+              'relative',
+              effectiveViewMode === 'paged'
+                ? 'mx-auto rounded-[28px] border border-[#dde3eb] bg-white shadow-[0_22px_70px_rgba(15,23,42,0.14)]'
+                : 'mx-auto w-full max-w-4xl',
+            ].join(' ')}
+            data-page-editor-frame
+            data-editor-view-mode={effectiveViewMode}
+            style={
+              effectiveViewMode === 'paged'
+                ? {
+                    width: '21cm',
+                    minHeight: '29.7cm',
+                  }
+                : undefined
+            }
+          >
+            <div
+              data-heading-numbering-enabled={page?.headingNumberingEnabled ? 'true' : 'false'}
+              className={effectiveViewMode === 'paged' ? 'px-0' : ''}
+              style={
+                effectiveViewMode === 'paged'
+                  ? {
+                      minHeight: '29.7cm',
+                      paddingTop: '2.54cm',
+                      paddingBottom: '2.54cm',
+                      paddingLeft: `${viewPreferences.leftIndent}cm`,
+                      paddingRight: `${viewPreferences.rightIndent}cm`,
+                    }
+                  : undefined
+              }
+            >
+              <EditorContent editor={controller.editor} />
+            </div>
+          </div>
           <CommentAnchorOverlay
             editor={controller.editor}
             threads={commentThreads}
@@ -417,15 +717,15 @@ function LivePageEditor({
           {controller.editor && (
             <FloatingToolbar
               editor={controller.editor}
-              canEdit={canEdit}
+              canEdit={effectiveCanEdit}
               onOpenLinkModal={() => controller.openLinkModal()}
               onOpenIframeModal={controller.openIframeModal}
-              onCreateComment={canComment ? onCreateComment : undefined}
+              onCreateComment={effectiveCanComment ? onCreateComment : undefined}
               pageTitle={controller.title}
               isAiTransformEnabled={isAiToolbarEnabled}
             />
           )}
-          {canEdit ? (
+          {effectiveCanEdit ? (
             <SlashMenu
               isOpen={controller.slashState.isOpen}
               items={controller.filteredItems}
@@ -440,6 +740,7 @@ function LivePageEditor({
           <IframeModal {...controller.iframeModal} />
           <PagePickerModal {...controller.pagePicker} />
           <TemplateVariableModal {...controller.templateVariableModal} />
+          <LiveReferencePickerModal {...controller.liveReferencePicker} />
           <WikiTablePickerModal {...controller.tablePicker} />
           <CreateBookmarkModal
             isOpen={controller.bookmarkModal.isOpen}
@@ -447,16 +748,22 @@ function LivePageEditor({
             onConfirm={controller.bookmarkModal.onConfirm}
             onClose={controller.bookmarkModal.onClose}
           />
-          <AiInlineCopilot
-            enabled={isAiInlineChatEnabled}
-            isOpen={isCopilotOpen}
-            anchor={copilotAnchor}
-            editor={controller.editor}
-            spaceId={spaceId}
-            pageId={page.id}
-            pageTitle={controller.title}
-            onClose={() => setCopilotAnchor(null)}
-          />
+          {historyPreview ? (
+            <ReadOnlyPreviewOverlay checkpoint={historyPreview} />
+          ) : (
+            <AiInlineCopilot
+              enabled={isAiInlineChatEnabled}
+              isOpen={isCopilotOpen}
+              anchor={copilotAnchor}
+              editor={controller.editor}
+              spaceId={spaceId}
+              pageId={page.id}
+              pageTitle={controller.title}
+              isPageNavigationEnabled={isPageNavigationEnabled}
+              isDocumentStructureEnabled={isDocumentStructureEnabled}
+              onClose={() => setCopilotAnchor(null)}
+            />
+          )}
         </div>
       </section>
     </main>

@@ -75,11 +75,11 @@
   #root {
     min-height: 100%;
     margin: 0;
+    font-family: 'MTSWide', var(--editor-font-sans);
   }
 
   body {
     min-height: 100vh;
-    font-family: var(--editor-font-sans);
     background-color: var(--editor-bg-page);
     color: var(--editor-text-primary);
   }
@@ -162,6 +162,55 @@
   .tiptap h3 {
     font-size: clamp(1.2rem, 2.2vw, 1.55rem);
     font-weight: 550;
+  }
+
+  [data-heading-numbering-enabled='true'] .tiptap {
+    counter-reset: heading-h1 heading-h2 heading-h3;
+  }
+
+  .tiptap h1.page-editor-heading,
+  .tiptap h2.page-editor-heading,
+  .tiptap h3.page-editor-heading {
+    display: block;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  [data-heading-numbering-enabled='true'] .tiptap h1.page-editor-heading::before,
+  [data-heading-numbering-enabled='true'] .tiptap h2.page-editor-heading::before,
+  [data-heading-numbering-enabled='true'] .tiptap h3.page-editor-heading::before {
+    display: inline;
+    margin-right: 0.35em;
+    color: inherit;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+
+  [data-heading-numbering-enabled='true'] .tiptap h1.page-editor-heading {
+    counter-increment: heading-h1;
+    counter-reset: heading-h2 heading-h3;
+  }
+
+  [data-heading-numbering-enabled='true'] .tiptap h1.page-editor-heading::before {
+    content: counter(heading-h1) '. ';
+  }
+
+  [data-heading-numbering-enabled='true'] .tiptap h2.page-editor-heading {
+    counter-increment: heading-h2;
+    counter-reset: heading-h3;
+  }
+
+  [data-heading-numbering-enabled='true'] .tiptap h2.page-editor-heading::before {
+    content: counter(heading-h1) '.' counter(heading-h2) ' ';
+  }
+
+  [data-heading-numbering-enabled='true'] .tiptap h3.page-editor-heading {
+    counter-increment: heading-h3;
+  }
+
+  [data-heading-numbering-enabled='true'] .tiptap h3.page-editor-heading::before {
+    content: counter(heading-h1) '.' counter(heading-h2) '.' counter(heading-h3) ' ';
   }
 
   .tiptap ul,
@@ -320,10 +369,75 @@
     opacity: 0.75;
   }
 
+  @keyframes live-reference-flash {
+    0% {
+      background: #fff6dd;
+      border-color: #ffd77d;
+    }
+
+    100% {
+      background: #f5f8ff;
+      border-color: #cddcff;
+    }
+  }
+
+  .tiptap .live-reference-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    max-width: min(34rem, 100%);
+    border: 1px solid #cddcff;
+    border-radius: 0.55rem;
+    background: #f5f8ff;
+    color: #244584;
+    font-size: 0.88em;
+    font-weight: 650;
+    line-height: 1.35;
+    padding: 0.08rem 0.45rem;
+    vertical-align: baseline;
+    white-space: nowrap;
+  }
+
+  .tiptap .live-reference-chip.is-loading {
+    opacity: 0.7;
+  }
+
+  .tiptap .live-reference-chip.is-error {
+    border-color: #f0a1b2;
+    background: #fff2f6;
+    color: #a60027;
+  }
+
+  .tiptap .live-reference-chip.is-changed {
+    animation: live-reference-flash 1.2s ease-out;
+  }
+
+  .tiptap .live-reference-chip__label {
+    max-width: 20rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tiptap .live-reference-chip__separator {
+    opacity: 0.7;
+  }
+
+  .tiptap .live-reference-chip__value {
+    max-width: 11rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 700;
+  }
+
+  .tiptap .live-reference-chip.ProseMirror-selectednode {
+    outline: 2px solid #537edc;
+    outline-offset: 2px;
+  }
+
   .tiptap .comment-anchor {
     border-radius: 0.2rem;
-    background: color-mix(in srgb, #907ff0 13%, transparent);
-    box-shadow: inset 0 -2px 0 #d8d2fc;
+    background: color-mix(in srgb, #ff8b8b 13%, transparent);
+    box-shadow: inset 0 -2px 0 #ff4444;
     cursor: pointer;
     transition:
       background-color 120ms ease,
@@ -331,8 +445,8 @@
   }
 
   .tiptap .comment-anchor:hover {
-    background: color-mix(in srgb, #907ff0 22%, transparent);
-    box-shadow: inset 0 -2px 0 #907ff0;
+    background: color-mix(in srgb, #ff6f6f 22%, transparent);
+    box-shadow: inset 0 -2px 0 #ff1e1e;
   }
 
   .tiptap img {
@@ -465,6 +579,64 @@
     border-radius: 0.2rem;
     background: color-mix(in srgb, var(--collab-user-color, #ff0037) 18%, transparent);
     box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--collab-user-color, #ff0037) 42%, transparent);
+  }
+
+  [data-page-editor-surface][data-editor-view-mode='paged'] {
+    background-image:
+      radial-gradient(circle at top, rgba(255, 255, 255, 0.92) 0, rgba(255, 255, 255, 0.72) 18%, transparent 52%),
+      linear-gradient(180deg, #eef2f7 0%, #e9eef5 100%);
+  }
+
+  [data-page-editor-frame][data-editor-view-mode='paged'] {
+    position: relative;
+    overflow: hidden;
+  }
+
+  [data-page-editor-frame][data-editor-view-mode='paged']::before {
+    --editor-sheet-height: 29.7cm;
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent calc(var(--editor-sheet-height) - 22px),
+        rgba(229, 234, 241, 0.96) calc(var(--editor-sheet-height) - 22px),
+        rgba(229, 234, 241, 0.96) calc(var(--editor-sheet-height) - 6px),
+        transparent calc(var(--editor-sheet-height) - 6px),
+        transparent var(--editor-sheet-height)
+      );
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  [data-page-editor-frame][data-editor-view-mode='paged'] > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  [data-page-editor-frame][data-editor-view-mode='paged'] .tiptap {
+    min-height: calc(29.7cm - 5.08cm);
+  }
+
+  [data-page-editor-frame][data-editor-view-mode='paged'] .tiptap img,
+  [data-page-editor-frame][data-editor-view-mode='paged'] .tiptap iframe,
+  [data-page-editor-frame][data-editor-view-mode='paged'] [data-type='mws-table-embed'] {
+    max-width: 100%;
+  }
+
+  [data-page-editor-frame][data-editor-view-mode='paged'] .tiptap img,
+  [data-page-editor-frame][data-editor-view-mode='paged'] [data-type='mws-table-embed'],
+  [data-page-editor-frame][data-editor-view-mode='paged'] [data-type='iframe-block'],
+  [data-page-editor-frame][data-editor-view-mode='paged'] [data-type='canvasblock'] {
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+  }
+
+  [data-page-editor-frame][data-editor-view-mode='paged'] [data-type='mws-table-embed'] {
+    width: 100%;
+    overflow: hidden;
   }
 }
 
@@ -624,3 +796,4 @@
 .time-machine-panel * {
   font-family: 'MTSWide', var(--editor-font-sans);
 }
+

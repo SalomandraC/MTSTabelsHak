@@ -46,6 +46,7 @@ import { CommentAnchor } from './comment-anchor';
 import { ImageBlock } from './image-block';
 import { PageLink } from './page-link';
 import { RootBlock } from './root-block';
+import { LiveReference } from './live-reference';
 import { TemplateVariable } from './template-variable';
 import { Bookmark, BookmarkLink } from './bookmark';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
@@ -179,6 +180,7 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     RootBlock,
     ImageBlock,
     TemplateVariable,
+    LiveReference,
     PageLink,
     CommentAnchor.configure({
       onOpenThread: options.onOpenCommentThread,
@@ -212,6 +214,11 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
       link: false,
       underline: false,
       horizontalRule: false,
+      heading: {
+        HTMLAttributes: {
+          class: 'page-editor-heading',
+        },
+      },
     }),
     Placeholder.configure({
       emptyEditorClass: 'is-editor-empty',

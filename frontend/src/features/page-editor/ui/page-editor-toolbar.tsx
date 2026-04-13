@@ -36,6 +36,8 @@ const redFilter = 'brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(
 type PageEditorToolbarProps = {
   editor: Editor | null;
   canEdit?: boolean;
+  headingNumberingEnabled?: boolean;
+  onToggleHeadingNumbering: (enabled: boolean) => void;
   onOpenLinkModal: (position?: { top: number; left: number }) => void;
   onOpenImageModal: () => void;
   onOpenIframeModal: () => void;
@@ -175,6 +177,7 @@ function ToolbarButton({
       disabled={disabled} 
       className={className}
       aria-label={ariaLabel}
+      title={ariaLabel}
     >
       {icon || label}
     </button>
@@ -184,6 +187,8 @@ function ToolbarButton({
 export function PageEditorToolbar({
   editor,
   canEdit = true,
+  headingNumberingEnabled = false,
+  onToggleHeadingNumbering,
   onOpenLinkModal,
   onOpenImageModal,
   onOpenIframeModal,
@@ -464,7 +469,38 @@ export function PageEditorToolbar({
           isInGroup={true}
           aria-label="Заголовок 3"
         />
-
+        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+        <ToolbarButton
+          icon={(
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.25"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4 w-4"
+            >
+              <path d="M5 5.66H21" />
+              <path d="M10 11.66H21" />
+              <path d="M15 17.66H21" />
+              <text x="1" y="7" fontSize="4.5" fill="currentColor" stroke="none" fontFamily="monospace">1</text>
+              <text x="1" y="13" fontSize="4.5" fill="currentColor" stroke="none" fontFamily="monospace">1.1</text>
+              <text x="1" y="19" fontSize="4.5" fill="currentColor" stroke="none" fontFamily="monospace">1.1.1</text>
+            </svg>
+          )}
+          onClick={() => onToggleHeadingNumbering(!headingNumberingEnabled)}
+          pressed={headingNumberingEnabled}
+          disabled={!canEdit}
+          noBorder={false}
+          isFirst={true}
+          isLast={true}
+          isInGroup={true}
+          aria-label="Автонумерация заголовков"
+        />
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
         <ToolbarButton

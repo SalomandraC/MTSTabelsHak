@@ -38,6 +38,10 @@ export class TransformRequestDto {
   transformation!: 'professional' | 'shorten' | 'expand' | 'fix_grammar';
 
   @IsOptional()
+  @IsIn(['standard', 'business', 'military', 'medieval', 'church', 'fix', 'expand'])
+  styleId?: 'standard' | 'business' | 'military' | 'medieval' | 'church' | 'fix' | 'expand';
+
+  @IsOptional()
   @IsString()
   pageTitle?: string;
 

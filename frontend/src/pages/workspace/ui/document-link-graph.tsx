@@ -428,7 +428,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
       const layout = cy.layout({
         ...layoutOptions,
         fit: true,
-      });
+      } as ColaLayoutOptions);
       layout.on('layoutstop', () => {
         updateSelection(cy, activePageId, edges);
         if (cy.elements().nonempty()) {
@@ -586,7 +586,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
               <div className="fixed inset-0 z-45">
                 <div className="absolute inset-0 bg-black/30" onClick={() => setIsModalOpen(false)} />
                 <div
-                  className="absolute z-50 flex h-[min(76vh,640px)] w-[min(84vw,820px)] flex-col overflow-hidden rounded-3xl bg-white shadow-[0_30px_80px_rgba(17,25,40,0.25)]"
+                  className="absolute z-[101] flex h-[min(76vh,640px)] w-[min(84vw,820px)] flex-col overflow-hidden rounded-3xl bg-white shadow-[0_30px_80px_rgba(17,25,40,0.25)]"
                   style={{ left: modalOffset.x, top: modalOffset.y }}
                 >
                   <div

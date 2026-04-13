@@ -115,7 +115,7 @@ export function CommentAnchorOverlay({ editor, threads, activeThreadId, onOpenTh
           type="button"
           onClick={() => onOpenThread(badge.threadId)}
           className={[
-            'pointer-events-auto absolute inline-flex h-[22px] min-w-[42px] items-center justify-center gap-1 rounded bg-[#907ff0] px-1.5 text-[10px] font-semibold text-white shadow-sm transition-colors hover:bg-[#7b67ee]',
+            'pointer-events-auto absolute inline-flex h-[22px] min-w-[42px] items-center justify-center gap-1 rounded bg-[#d70032] px-1.5 text-[10px] font-semibold text-white shadow-sm transition-colors hover:bg-[#d732df]',
             activeThreadId === badge.threadId ? 'ring-2 ring-[#d8d2fc]' : '',
           ].join(' ')}
           style={{ top: badge.top, left: badge.left }}

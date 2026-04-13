@@ -22,6 +22,7 @@ const AI_ASSISTANT_FEATURE_LABELS: Array<{ slot: AiAssistantFeatureSlot; label: 
   { slot: 'ghost_text', label: 'Подсказки при наборе (ghost)' },
   { slot: 'inline_chat', label: 'Inline chat' },
   { slot: 'text_transform', label: 'Сократить и улучшить' },
+  { slot: 'document_structure', label: 'Автоструктурирование документа' },
 ];
 
 function getStatusLabel(item: PluginCatalogItem) {
@@ -201,7 +202,7 @@ export function PluginsModal({
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgba(17,24,39,0.38)] p-3 sm:p-6"
+      className="fixed inset-0 z-[101] flex items-center justify-center bg-[rgba(17,24,39,0.38)] p-3 sm:p-6"
       onClick={onClose}
     >
       <div
@@ -320,7 +321,7 @@ export function PluginsModal({
                             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-editor-text-tertiary">
                               Функции модуля
                             </p>
-                            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                            <div className="mt-2 grid gap-2">
                               {AI_ASSISTANT_FEATURE_LABELS.map((feature) => {
                                 const enabled = aiAssistantFeatures[feature.slot];
                                 const disabled = !item.enabled || !item.canToggle || isPending;
@@ -332,7 +333,7 @@ export function PluginsModal({
                                     disabled={disabled}
                                     onClick={() => onToggleAiAssistantFeature(feature.slot, !enabled)}
                                     className={[
-                                      'flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition-colors',
+                                      'flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition-colors',
                                       enabled
                                         ? 'border-[#d6f1e5] bg-[#edf9f2] text-[#1f8056]'
                                         : 'border-editor-border-subtle bg-white text-editor-text-secondary',
@@ -349,7 +350,7 @@ export function PluginsModal({
                                     >
                                       ✓
                                     </span>
-                                    <span>{feature.label}</span>
+                                    <span className="min-w-0 whitespace-normal break-words">{feature.label}</span>
                                   </button>
                                 );
                               })}

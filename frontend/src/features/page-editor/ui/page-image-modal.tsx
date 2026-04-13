@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { useId, useRef } from 'react';
 import { ModalActionButton } from '../../../shared/ui';
 
@@ -33,8 +34,8 @@ export function PageImageModal({
 
   const hasPreview = Boolean(previewSrc);
 
-  return (
-    <div className="fixed inset-0 z-[85] bg-black/45" onMouseDown={onClose}>
+  return createPortal(
+    <div className="fixed inset-0 z-[220] bg-black/45" onMouseDown={onClose}>
       <div
         className="mx-auto flex w-[min(44rem,calc(100vw-1.5rem))] max-w-[calc(100%-24px)] flex-col gap-3 rounded-[14px] bg-white p-6 shadow-[0px_4px_24px_rgba(0,0,0,0.12),0px_8px_16px_rgba(0,0,0,0.08)] fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
         role="dialog"
@@ -119,6 +120,7 @@ export function PageImageModal({
           </ModalActionButton>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

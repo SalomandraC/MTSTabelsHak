@@ -128,6 +128,16 @@ export class MwsController {
     return this.mwsService.listRecords(datasheetId, query, user);
   }
 
+  @Get('datasheets/:datasheetId/records/:recordId/fields/:fieldId')
+  async getCellValue(
+    @Param('datasheetId') datasheetId: string,
+    @Param('recordId') recordId: string,
+    @Param('fieldId') fieldId: string,
+    @CurrentUser() user: UserContext,
+  ) {
+    return this.mwsService.getCellValue(datasheetId, recordId, fieldId, user);
+  }
+
   @Post('datasheets/:datasheetId/records')
   async createRecords(
     @Param('datasheetId') datasheetId: string,

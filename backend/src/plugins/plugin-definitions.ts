@@ -19,7 +19,7 @@ export const pluginPlans = {
   free: {
     id: 'free',
     title: 'Базовый',
-    description: 'Обязательный контур wiki с редактором, ссылками, таблицами и синхронизацией.',
+    description: 'Обязательный контур wiki с редактором, ссылками, таблицами, live переменными и синхронизацией.',
   },
   pro: {
     id: 'pro',
@@ -63,6 +63,16 @@ export const pluginDefinitions: PluginDefinition[] = [
     defaultEnabled: true,
     implemented: true,
     placement: ['Команды редактора'],
+  },
+  {
+    id: 'live-variables',
+    title: 'Live переменные',
+    description: 'Живые inline-ссылки на ячейки таблиц с hover-подсказкой, редактированием и AI-отчетами на основе таблиц.',
+    category: 'core',
+    kind: 'core',
+    defaultEnabled: true,
+    implemented: true,
+    placement: ['Редактор', 'AI отчеты', 'Контент страницы'],
   },
   {
     id: 'autosave-sync',
@@ -116,6 +126,16 @@ export const pluginDefinitions: PluginDefinition[] = [
     implemented: true,
     requiredPlans: ['pro', 'enterprise'],
     placement: ['Правая панель'],
+  },
+  {
+    id: 'page-navigation',
+    title: 'Навигация и структура',
+    description: 'Автоматическое оглавление документа и умная нумерация заголовков',
+    category: 'insights',
+    kind: 'optional',
+    defaultEnabled: true,
+    implemented: true,
+    placement: ['Правая панель', 'Редактор'],
   },
   {
     id: 'ai-assistant',

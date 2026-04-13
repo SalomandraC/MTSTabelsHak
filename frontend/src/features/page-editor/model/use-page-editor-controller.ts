@@ -16,6 +16,8 @@ import { createWikiTableEmbed, createWikiTableEmbedNode, type WikiTableSelection
 import type { SlashMenuItem } from '../../slash-menu';
 import { createPageEditorExtensions, initialContent } from './editor-config';
 import { formatFileSize, readFileAsDataUrl, validateImageFile } from './image-utils';
+import type { LiveReferenceSelection } from './live-reference';
+import { insertAiTextWithLiveReferences } from './live-reference-parser';
 import type { PageEditorSlashCommandItem } from './slash-command-items';
 import { getSlashCommandItems } from './slash-command-items';
 import { base64ToBytes, bytesToBase64, readStoredDraft, writeStoredDraft } from './yjs-utils';
@@ -35,6 +37,12 @@ type ModalPosition = {
   left: number;
 };
 
+type LiveReferenceEditTarget = {
+  pos: number;
+  nodeSize: number;
+  selection: LiveReferenceSelection;
+};
+
 type CollabState = {
   pageId: string;
   ydoc: Y.Doc;
@@ -49,6 +57,7 @@ type UsePageEditorControllerOptions = {
   page: WikiPage | null;
   canEdit: boolean;
   onRenamePage: (title: string) => Promise<void>;
+  onToggleHeadingNumbering: (enabled: boolean) => Promise<void>;
   onCheckpoint: () => Promise<void>;
   onOpenCommentThread?: (threadId: string) => void;
   isAiSlashEnabled: boolean;
@@ -148,6 +157,7 @@ export function usePageEditorController({
   page,
   canEdit,
   onRenamePage,
+  onToggleHeadingNumbering,
   onCheckpoint,
   onOpenCommentThread,
   isAiSlashEnabled,
@@ -160,6 +170,7 @@ export function usePageEditorController({
   const [connectionStatus, setConnectionStatus] = useState('offline');
   const [recoveryMessage, setRecoveryMessage] = useState('');
   const [activeUsers, setActiveUsers] = useState<PresenceUser[]>([]);
+  const [manualDescription, setManualDescription] = useState('');
 
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
   const [linkText, setLinkText] = useState('');
@@ -179,6 +190,8 @@ export function usePageEditorController({
 
   const [isPagePickerOpen, setIsPagePickerOpen] = useState(false);
   const [isTablePickerOpen, setIsTablePickerOpen] = useState(false);
+  const [isLiveReferencePickerOpen, setIsLiveReferencePickerOpen] = useState(false);
+  const [liveReferenceEditTarget, setLiveReferenceEditTarget] = useState<LiveReferenceEditTarget | null>(null);
   const [isTemplateVariableModalOpen, setIsTemplateVariableModalOpen] = useState(false);
   const [templateVariableLabel, setTemplateVariableLabel] = useState('');
   const [templateVariableDescription, setTemplateVariableDescription] = useState('');
@@ -192,6 +205,20 @@ export function usePageEditorController({
   const userDisplayName = currentUser?.displayName ?? 'WikiLive User';
   const userId = currentUser?.userId ?? userDisplayName;
   const userColor = getCollaborationColor(userId);
+
+  useEffect(() => {
+    if (!page?.id) {
+      setManualDescription('');
+      return;
+    }
+
+    try {
+      const stored = localStorage.getItem(`wikilive:page-description:${page.id}`);
+      setManualDescription(stored ?? '');
+    } catch {
+      setManualDescription('');
+    }
+  }, [page?.id]);
 
   useEffect(() => {
     if (!page) {
@@ -384,6 +411,35 @@ export function usePageEditorController({
     return bytesToBase64(Y.encodeStateAsUpdate(collabState.ydoc));
   }, [collabState]);
 
+  const applyDocumentStateValue = useCallback((value: string) => {
+    if (!collabState) {
+      return false;
+    }
+
+    const nextDocument = new Y.Doc();
+    Y.applyUpdate(nextDocument, base64ToBytes(value));
+
+    const currentFragment = collabState.ydoc.getXmlFragment('default');
+    const nextFragment = nextDocument.getXmlFragment('default');
+    const clonedChildren = nextFragment
+      .toArray()
+      .filter((child): child is Y.XmlElement | Y.XmlText => child instanceof Y.XmlElement || child instanceof Y.XmlText)
+      .map((child) => child.clone());
+
+    collabState.ydoc.transact(() => {
+      if (currentFragment.length > 0) {
+        currentFragment.delete(0, currentFragment.length);
+      }
+
+      if (clonedChildren.length > 0) {
+        currentFragment.insert(0, clonedChildren);
+      }
+    }, 'history-restore');
+
+    nextDocument.destroy();
+    return true;
+  }, [collabState]);
+
   const editor = useEditor(
     {
       extensions,
@@ -493,10 +549,44 @@ export function usePageEditorController({
 
         const start = from - query.length - 1;
         const coords = currentEditor.view.coordsAtPos(from);
+        const surface = document.querySelector('[data-page-editor-surface]') as HTMLElement | null;
+        const surfaceRect = surface?.getBoundingClientRect();
+        const surfaceScrollLeft = surface?.scrollLeft ?? 0;
+        const surfaceScrollTop = surface?.scrollTop ?? 0;
         const menuWidth = 304;
         const menuHeight = 288;
-        const left = Math.min(coords.left, Math.max(12, window.innerWidth - menuWidth - 12));
-        const top = Math.min(coords.bottom + 8, Math.max(12, window.innerHeight - menuHeight - 12));
+        const verticalGap = 8;
+        const horizontalPadding = 12;
+        const verticalPadding = 12;
+        const left = surfaceRect
+          ? Math.min(
+              coords.left - surfaceRect.left + surfaceScrollLeft,
+              Math.max(horizontalPadding, surfaceRect.width - menuWidth - horizontalPadding),
+            )
+          : Math.min(coords.left, Math.max(horizontalPadding, window.innerWidth - menuWidth - horizontalPadding));
+
+        let top: number;
+
+        if (surfaceRect) {
+          const caretBottom = coords.bottom - surfaceRect.top + surfaceScrollTop;
+          const caretTop = coords.top - surfaceRect.top + surfaceScrollTop;
+          const availableBelow = surfaceRect.bottom - coords.bottom - verticalPadding;
+          const availableAbove = coords.top - surfaceRect.top - verticalPadding;
+          const shouldOpenAbove = availableBelow < menuHeight && availableAbove > availableBelow;
+
+          top = shouldOpenAbove ? caretTop - menuHeight - verticalGap : caretBottom + verticalGap;
+          top = Math.max(
+            verticalPadding,
+            Math.min(top, surfaceScrollTop + surfaceRect.height - menuHeight - verticalPadding),
+          );
+        } else {
+          const availableBelow = window.innerHeight - coords.bottom - verticalPadding;
+          const availableAbove = coords.top - verticalPadding;
+          const shouldOpenAbove = availableBelow < menuHeight && availableAbove > availableBelow;
+
+          top = shouldOpenAbove ? coords.top - menuHeight - verticalGap : coords.bottom + verticalGap;
+          top = Math.max(verticalPadding, Math.min(top, window.innerHeight - menuHeight - verticalPadding));
+        }
 
         setSlashState({
           isOpen: true,
@@ -560,14 +650,43 @@ export function usePageEditorController({
     };
   }, [canEdit, collabState, onCheckpoint, page?.documentState?.checkpointId, page?.documentState?.serverVersion]);
 
-  const handleSaveMeta = (newTitle: string) => {
+  const handleSaveMeta = (newTitle: string, newDescription: string) => {
     if (!canEdit) {
       return;
+    }
+
+    if (page?.id) {
+      const normalizedDescription = newDescription.trim();
+      setManualDescription(normalizedDescription);
+      try {
+        if (normalizedDescription) {
+          localStorage.setItem(`wikilive:page-description:${page.id}`, normalizedDescription);
+        } else {
+          localStorage.removeItem(`wikilive:page-description:${page.id}`);
+        }
+      } catch {
+        // ignore localStorage errors
+      }
     }
 
     void onRenamePage(newTitle).catch((error) => {
       setSaveStatus(error instanceof Error ? error.message : 'Не удалось переименовать страницу');
     });
+  };
+
+  const handleToggleHeadingNumbering = (enabled: boolean) => {
+    if (!canEdit) {
+      return;
+    }
+
+    setSaveStatus('Сохраняем настройки документа');
+    void onToggleHeadingNumbering(enabled)
+      .then(() => {
+        setSaveStatus('Настройки документа сохранены');
+      })
+      .catch((error) => {
+        setSaveStatus(error instanceof Error ? error.message : 'Не удалось обновить автонумерацию заголовков');
+      });
   };
 
   const slashItems = useMemo(() => getSlashCommandItems(plugins), [plugins]);
@@ -820,6 +939,12 @@ export function usePageEditorController({
       return;
     }
 
+    if (item.id === 'live-reference') {
+      setSlashState(baseSlashState);
+      setIsLiveReferencePickerOpen(true);
+      return;
+    }
+
     if (item.id === 'ai-generate') {
       if (!isAiSlashEnabled) {
         setSlashState(baseSlashState);
@@ -844,6 +969,11 @@ export function usePageEditorController({
 
         if (Array.isArray(generatedContent) && generatedContent.length > 0) {
           editor.chain().focus().insertContent(generatedContent as Content).run();
+          return;
+        }
+
+        if (typeof response.document === 'string') {
+          insertAiTextWithLiveReferences(editor, response.document);
           return;
         }
 
@@ -947,11 +1077,131 @@ export function usePageEditorController({
     setIsTablePickerOpen(false);
   };
 
+  const handleSelectLiveReference = (selection: LiveReferenceSelection) => {
+    if (!editor || !canEdit) {
+      return;
+    }
+
+    if (liveReferenceEditTarget) {
+      editor
+        .chain()
+        .focus()
+        .deleteRange({
+          from: liveReferenceEditTarget.pos,
+          to: liveReferenceEditTarget.pos + liveReferenceEditTarget.nodeSize,
+        })
+        .insertLiveReference(selection)
+        .run();
+      setLiveReferenceEditTarget(null);
+    } else {
+      editor.chain().focus().insertLiveReference(selection).run();
+    }
+
+    setIsLiveReferencePickerOpen(false);
+  };
+
   const applySlashItemRef = useRef(applySlashItem);
+
+  const recomputeSlashMenuPosition = useCallback(() => {
+    if (!editor || !slashStateRef.current.isOpen) {
+      return;
+    }
+
+    const anchorPos = Math.min(slashStateRef.current.to, editor.state.doc.content.size);
+    const coords = editor.view.coordsAtPos(anchorPos);
+    const surface = document.querySelector('[data-page-editor-surface]') as HTMLElement | null;
+    const surfaceRect = surface?.getBoundingClientRect();
+    const surfaceScrollLeft = surface?.scrollLeft ?? 0;
+    const surfaceScrollTop = surface?.scrollTop ?? 0;
+    const menuWidth = 304;
+    const menuHeight = 288;
+    const left = surfaceRect
+      ? Math.min(coords.left - surfaceRect.left + surfaceScrollLeft, Math.max(12, surfaceRect.width - menuWidth - 12))
+      : Math.min(coords.left, Math.max(12, window.innerWidth - menuWidth - 12));
+    const top = surfaceRect
+      ? Math.min(coords.bottom - surfaceRect.top + surfaceScrollTop + 8, Math.max(12, surfaceRect.height - menuHeight - 12))
+      : Math.min(coords.bottom + 8, Math.max(12, window.innerHeight - menuHeight - 12));
+
+    setSlashState((current) => {
+      if (!current.isOpen) {
+        return current;
+      }
+
+      if (Math.abs(current.left - left) < 1 && Math.abs(current.top - top) < 1) {
+        return current;
+      }
+
+      return {
+        ...current,
+        left,
+        top,
+      };
+    });
+  }, [editor]);
 
   useEffect(() => {
     applySlashItemRef.current = applySlashItem;
   });
+
+  useEffect(() => {
+    const handleEditLiveReference = (event: Event) => {
+      if (!editor || !canEdit) {
+        return;
+      }
+
+      const customEvent = event as CustomEvent<{
+        pos?: number | null;
+        attrs?: Partial<LiveReferenceSelection>;
+      }>;
+      const pos = customEvent.detail?.pos;
+
+      if (typeof pos !== 'number' || pos < 0) {
+        return;
+      }
+
+      const node = editor.state.doc.nodeAt(pos);
+      const nodeSize = node?.nodeSize ?? 0;
+      if (!node || node.type.name !== 'liveReference' || nodeSize <= 0) {
+        return;
+      }
+
+      const attrs = node.attrs as {
+        spaceId?: string;
+        datasheetId?: string;
+        recordId?: string;
+        fieldId?: string;
+        label?: string;
+      };
+
+      setLiveReferenceEditTarget({
+        pos,
+        nodeSize,
+        selection: {
+          spaceId: String(attrs.spaceId ?? customEvent.detail?.attrs?.spaceId ?? spaceId),
+          datasheetId: String(attrs.datasheetId ?? customEvent.detail?.attrs?.datasheetId ?? ''),
+          recordId: String(attrs.recordId ?? customEvent.detail?.attrs?.recordId ?? ''),
+          fieldId: String(attrs.fieldId ?? customEvent.detail?.attrs?.fieldId ?? ''),
+          label: String(attrs.label ?? customEvent.detail?.attrs?.label ?? ''),
+        },
+      });
+      setIsLiveReferencePickerOpen(true);
+    };
+
+    window.addEventListener('wikilive:edit-live-reference', handleEditLiveReference);
+
+    return () => {
+      window.removeEventListener('wikilive:edit-live-reference', handleEditLiveReference);
+    };
+  }, [canEdit, editor, spaceId]);
+
+  useEffect(() => {
+    const globalFlags = window as unknown as { __wikiliveSlashMenuOpen?: boolean };
+    globalFlags.__wikiliveSlashMenuOpen = slashState.isOpen;
+
+    return () => {
+      globalFlags.__wikiliveSlashMenuOpen = false;
+    };
+  }, [slashState.isOpen]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -970,6 +1220,12 @@ export function usePageEditorController({
       if (isTemplateVariableModalOpen && event.key === 'Escape') {
         event.preventDefault();
         closeTemplateVariableModal();
+        return;
+      }
+
+      if (isLiveReferencePickerOpen && event.key === 'Escape') {
+        event.preventDefault();
+        setIsLiveReferencePickerOpen(false);
         return;
       }
 
@@ -1034,17 +1290,26 @@ export function usePageEditorController({
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [canEdit, closeImageModal, editor, isImageModalOpen, isLinkModalOpen, isTemplateVariableModalOpen]);
+  }, [
+    canEdit,
+    closeImageModal,
+    editor,
+    isImageModalOpen,
+    isLinkModalOpen,
+    isLiveReferencePickerOpen,
+    isTemplateVariableModalOpen,
+  ]);
 
   return {
     editor,
     title: page?.title ?? 'Новая страница',
-    description: page?.plainTextPreview || recoveryMessage || saveStatus,
+    description: manualDescription,
     saveStatus,
     connectionStatus,
     recoveryMessage,
     activeUsers,
     handleSaveMeta,
+    handleToggleHeadingNumbering,
     slashState,
     selectedIndex,
     setSelectedIndex,
@@ -1065,6 +1330,16 @@ export function usePageEditorController({
       initialSpaceId: spaceId,
       onSelect: handleSelectTable,
       onClose: () => setIsTablePickerOpen(false),
+    },
+    liveReferencePicker: {
+      isOpen: isLiveReferencePickerOpen,
+      initialSpaceId: spaceId,
+      initialSelection: liveReferenceEditTarget?.selection ?? null,
+      onSelect: handleSelectLiveReference,
+      onClose: () => {
+        setIsLiveReferencePickerOpen(false);
+        setLiveReferenceEditTarget(null);
+      },
     },
     linkModal: {
       isOpen: isLinkModalOpen,
@@ -1114,5 +1389,6 @@ export function usePageEditorController({
       onClose: closeBookmarkModal,
     },
     getCurrentDocumentStateValue,
+    applyDocumentStateValue,
   };
 }

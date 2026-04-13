@@ -7,6 +7,11 @@ type SpaceRealtimeEvent =
       type: 'page_access_updated';
       spaceId: string;
       pageId: string;
+    }
+  | {
+      type: 'page_updated';
+      spaceId: string;
+      pageId: string;
     };
 
 @Injectable()
@@ -48,6 +53,14 @@ export class RealtimeService {
   broadcastPageAccessUpdated(spaceId: string, pageId: string): void {
     this.broadcast(spaceId, {
       type: 'page_access_updated',
+      spaceId,
+      pageId,
+    });
+  }
+
+  broadcastPageUpdated(spaceId: string, pageId: string): void {
+    this.broadcast(spaceId, {
+      type: 'page_updated',
       spaceId,
       pageId,
     });
