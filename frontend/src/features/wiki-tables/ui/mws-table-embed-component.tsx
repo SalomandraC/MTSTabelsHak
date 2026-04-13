@@ -146,6 +146,11 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     y: number;
   } | null>(null);
   const selectEditorRef = useRef<HTMLDivElement | null>(null);
+  const activeFieldMenuIndex = activeFieldMenu
+    ? controller.visibleFields.findIndex(
+        (field) => field.id === activeFieldMenu.field.id
+      )
+    : -1;
 
   const selectColorToCss = (color: string) => {
     const palette: Record<string, string> = {
@@ -216,11 +221,12 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         return;
       }
 
-      ctx.fillStyle = '#f8fafc';
+      const isActiveFieldMenuColumn = fieldIndex === activeFieldMenuIndex;
+      ctx.fillStyle = isActiveFieldMenuColumn ? '#e8f0ff' : '#f8fafc';
       ctx.fillRect(x, 0, COLUMN_WIDTH, HEADER_HEIGHT);
       ctx.strokeStyle = '#dde2ea';
       ctx.strokeRect(x - 0.5, 0.5, COLUMN_WIDTH, HEADER_HEIGHT);
-      ctx.fillStyle = '#3f3f46';
+      ctx.fillStyle = isActiveFieldMenuColumn ? '#1d4ed8' : '#3f3f46';
       ctx.font =
         '600 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
       ctx.fillText(
@@ -331,6 +337,11 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
           const isSelected =
             controller.selection?.rowIndex === rowIndex &&
             controller.selection.fieldIndex === fieldIndex;
+          const isActiveFieldMenuColumn = fieldIndex === activeFieldMenuIndex;
+          if (isActiveFieldMenuColumn) {
+            ctx.fillStyle = rowIndex % 2 === 0 ? '#eff5ff' : '#e8f0ff';
+            ctx.fillRect(x, y, COLUMN_WIDTH, ROW_HEIGHT);
+          }
           ctx.strokeStyle = '#e5e8ef';
           ctx.strokeRect(x - 0.5, y - 0.5, COLUMN_WIDTH, ROW_HEIGHT);
 
@@ -410,7 +421,8 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     controller.viewport.height,
     controller.viewport.width,
     controller.visibleFields,
-    controller.visibleRows
+    controller.visibleRows,
+    activeFieldMenuIndex
   ]);
 
   useEffect(() => {
@@ -586,6 +598,13 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     }
   };
 
+  const resetAllTransforms = () => {
+    controller.setSortRules([]);
+    controller.setFilterRules([]);
+    controller.setGroupRule(null);
+    setActiveFieldMenu(null);
+  };
+
   return (
     <NodeViewWrapper
       className={[
@@ -720,6 +739,9 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
               canExpand={controller.records.length > 0}
               isLoading={controller.isLoading}
               isMutating={controller.isMutating}
+              hasActiveFilter={controller.filterRules.length > 0}
+              hasActiveGroup={Boolean(controller.groupRule)}
+              hasActiveSort={controller.sortRules.length > 0}
               searchQuery={controller.searchQuery}
               onSearchQueryChange={handleSearchQueryChange}
               onCreateRow={() => void controller.createRow()}
@@ -740,6 +762,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
               }
               onExpand={() => setIsExpandedViewOpen(true)}
               onRefresh={() => void controllerRef.current?.loadEmbed()}
+              onResetAll={resetAllTransforms}
             />
           </div>
         </div>
@@ -924,6 +947,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         onFilter={() => setIsFilterRecordsModalOpen(true)}
         onGroup={() => setIsGroupRecordsModalOpen(true)}
         onSort={() => setIsSortFieldsModalOpen(true)}
+        onResetAll={resetAllTransforms}
         onExpand={() => {}}
         onOpenFilePicker={openAttachmentUploadModal}
         onDownloadSelectedAttachment={() => {

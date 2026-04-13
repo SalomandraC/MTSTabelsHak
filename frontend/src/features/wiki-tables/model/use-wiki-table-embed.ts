@@ -739,6 +739,13 @@ export function useWikiTableEmbed(
   const activePreferencesKeyRef = useRef<string | null>(null);
   const hasHydratedPreferencesRef = useRef(false);
   const pageSize = attrs.pageSize ?? 50;
+  const serverSort = useMemo(
+    () =>
+      sortRules.length
+        ? sortRules.map(({ fieldId, desc }) => ({ fieldId, desc }))
+        : undefined,
+    [sortRules]
+  );
 
   const registerScrollElement = useCallback(
     (element: HTMLDivElement | null) => {
@@ -834,7 +841,7 @@ export function useWikiTableEmbed(
           filterByFormula: attrs.filterByFormula,
           pageSize,
           allowInlineEdit: attrs.allowInlineEdit,
-          sort: sortRules.map(({ fieldId, desc }) => ({ fieldId, desc }))
+          sort: serverSort
         });
 
         setData(response);
@@ -914,7 +921,7 @@ export function useWikiTableEmbed(
       attrs.spaceId,
       attrs.viewId,
       pageSize,
-      sortRules
+      serverSort
     ]
   );
 
@@ -1098,7 +1105,7 @@ export function useWikiTableEmbed(
         pageNum: pageNum + 1,
         fields: attrs.selectedFieldIds,
         filterByFormula: attrs.filterByFormula,
-        sort: sortRules.map(({ fieldId, desc }) => ({ fieldId, desc }))
+        sort: serverSort
       });
       setRecords((current) => [...current, ...response.items]);
       setPageNum(response.pageNum);
@@ -1123,7 +1130,7 @@ export function useWikiTableEmbed(
     isMutating,
     pageNum,
     pageSize,
-    sortRules
+    serverSort
   ]);
 
   const updateCell = (record: MwsRecord, field: MwsField, value: unknown) => {

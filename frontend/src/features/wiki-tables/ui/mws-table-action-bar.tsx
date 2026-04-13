@@ -22,20 +22,27 @@ type ToolbarButtonProps = {
   icon: React.ReactNode;
   onClick?: () => void;
   disabled?: boolean;
+  active?: boolean;
 };
 
 function ToolbarButton({
   label,
   icon,
   onClick,
-  disabled = false
+  disabled = false,
+  active = false
 }: ToolbarButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-sm text-[#3f3f46] transition-colors hover:bg-[#edf0f5] disabled:cursor-not-allowed disabled:opacity-40 [&>svg]:h-4 [&>svg]:w-4"
+      className={[
+        'inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 [&>svg]:h-4 [&>svg]:w-4',
+        active
+          ? 'bg-[#d70032] text-white hover:bg-[#bd002c]'
+          : 'text-[#3f3f46] hover:bg-[#edf0f5]'
+      ].join(' ')}
     >
       {icon}
       <span className="whitespace-nowrap">{label}</span>
@@ -52,6 +59,9 @@ export type MwsTableActionBarProps = {
   canExpand: boolean;
   isLoading: boolean;
   isMutating: boolean;
+  hasActiveFilter: boolean;
+  hasActiveGroup: boolean;
+  hasActiveSort: boolean;
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
   onCreateRow: () => void;
@@ -65,6 +75,7 @@ export type MwsTableActionBarProps = {
   onDeleteRow: () => void;
   onExpand: () => void;
   onRefresh: () => void;
+  onResetAll?: () => void;
   onCloseExpanded?: () => void;
 };
 
@@ -77,6 +88,9 @@ export function MwsTableActionBar({
   canExpand,
   isLoading,
   isMutating,
+  hasActiveFilter,
+  hasActiveGroup,
+  hasActiveSort,
   searchQuery,
   onSearchQueryChange,
   onCreateRow,
@@ -90,8 +104,12 @@ export function MwsTableActionBar({
   onDeleteRow,
   onExpand,
   onRefresh,
+  onResetAll,
   onCloseExpanded
 }: MwsTableActionBarProps) {
+  const hasAnyActiveTransforms =
+    hasActiveFilter || hasActiveGroup || hasActiveSort;
+
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-editor-border-subtle bg-[#f5f6f8] px-2 py-2">
       <ToolbarButton
@@ -140,19 +158,30 @@ export function MwsTableActionBar({
         icon={<Filter className="h-4 w-4" />}
         onClick={onFilter}
         disabled={!canManageFields}
+        active={hasActiveFilter}
       />
       <ToolbarButton
         label="Группа"
         icon={<Group className="h-4 w-4" />}
         onClick={onGroup}
         disabled={!canManageFields}
+        active={hasActiveGroup}
       />
       <ToolbarButton
         label="Сортировка"
         icon={<SortAsc className="h-4 w-4" />}
         onClick={onSort}
         disabled={!canManageFields}
+        active={hasActiveSort}
       />
+      {hasAnyActiveTransforms ? (
+        <ToolbarButton
+          label="Сбросить все"
+          icon={<X className="h-4 w-4" />}
+          onClick={onResetAll}
+          disabled={!canManageFields}
+        />
+      ) : null}
       <ToolbarButton
         label="Удалить строку"
         icon={<Trash2 className="h-4 w-4" />}

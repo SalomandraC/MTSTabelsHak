@@ -22,6 +22,7 @@ export type ExpandedTableModalProps = {
   onFilter: () => void;
   onGroup: () => void;
   onSort: () => void;
+  onResetAll: () => void;
   onExpand: () => void;
   onOpenFilePicker: () => void;
   onDownloadSelectedAttachment: () => void;
@@ -50,6 +51,7 @@ export function ExpandedTableModal({
   onFilter,
   onGroup,
   onSort,
+  onResetAll,
   onExpand,
   onOpenFilePicker,
   onDownloadSelectedAttachment,
@@ -126,6 +128,9 @@ export function ExpandedTableModal({
           canExpand={controller.records.length > 0}
           isLoading={controller.isLoading}
           isMutating={controller.isMutating}
+          hasActiveFilter={controller.filterRules.length > 0}
+          hasActiveGroup={Boolean(controller.groupRule)}
+          hasActiveSort={controller.sortRules.length > 0}
           searchQuery={controller.searchQuery}
           onSearchQueryChange={onSearchQueryChange}
           onCreateRow={onCreateRow}
@@ -139,6 +144,7 @@ export function ExpandedTableModal({
           onDeleteRow={onDeleteRow}
           onExpand={onExpand}
           onRefresh={onRefresh ? onRefresh : () => void controller.loadEmbed()}
+          onResetAll={onResetAll}
           onCloseExpanded={onClose}
         />
 

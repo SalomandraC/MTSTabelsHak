@@ -1,4 +1,11 @@
-import { ArrowDownAZ, ArrowUpAZ, EyeOff, Filter, FolderTree } from 'lucide-react';
+import {
+  ArrowDownAZ,
+  ArrowUpAZ,
+  EyeOff,
+  Filter,
+  FolderTree,
+  X
+} from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useEffect, useRef, type ReactNode } from 'react';
 
@@ -92,13 +99,23 @@ export function FieldActionsMenu({
       role="menu"
       aria-label={`Действия для поля ${fieldName}`}
     >
-      <div className="border-b border-[#eef2f7] px-3 py-2">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-editor-text-tertiary">
-          Поле
-        </p>
-        <p className="truncate text-sm font-semibold text-editor-text-primary">
-          {fieldName}
-        </p>
+      <div className="flex items-start justify-between gap-3 border-b border-[#eef2f7] px-3 py-2">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-editor-text-tertiary">
+            Поле
+          </p>
+          <p className="truncate text-sm font-semibold text-editor-text-primary">
+            {fieldName}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Закрыть меню действий по полю"
+          className="rounded-md p-1 text-[#667085] transition-colors hover:bg-[#f3f5fb]"
+        >
+          <X className="h-4 w-4" />
+        </button>
       </div>
 
       <div className="py-1">
