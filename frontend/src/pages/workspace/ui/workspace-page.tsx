@@ -30,6 +30,7 @@ import { TimeMachinePanel } from '../../../features/page-editor/ui/time-machine-
 import { AiChatSidebar } from '../../../features/plugins/ai-assistant';
 import { NavigationSidebar, PluginsModal, usePlugins } from '../../../features/plugins';
 import { ScrollArea } from '../../../shared/ui';
+import workspaceLogo from '../../../app/images/logo.svg';
 import {
   DEFAULT_WIKILIVE_SPACE_ID,
   type Backlink,
@@ -116,21 +117,40 @@ function filterWorkspaceTree(nodes: WorkspaceTreeNode[], query: string): Workspa
     .filter((node): node is WorkspaceTreeNode => Boolean(node));
 }
 
+function findPinnedPages(nodes: WorkspaceTreeNode[], pinnedPageIds: Set<string>): WorkspaceTreeNode[] {
+  return nodes.flatMap((node) => [
+    ...(node.kind === 'wikiPage' && node.linkedPageId && pinnedPageIds.has(node.linkedPageId)
+      ? [{ ...node, children: [] }]
+      : []),
+    ...findPinnedPages(node.children ?? [], pinnedPageIds),
+  ]);
+}
+
+function removePinnedPages(nodes: WorkspaceTreeNode[], pinnedPageIds: Set<string>): WorkspaceTreeNode[] {
+  return nodes
+    .map((node) => {
+      if (node.kind === 'wikiPage' && node.linkedPageId && pinnedPageIds.has(node.linkedPageId)) {
+        return null;
+      }
+
+      const children = removePinnedPages(node.children ?? [], pinnedPageIds);
+
+      if (node.children.length > 0 && children.length === 0 && node.kind !== 'wikiPage') {
+        return null;
+      }
+
+      return {
+        ...node,
+        children,
+      };
+    })
+    .filter((node): node is WorkspaceTreeNode => Boolean(node));
+}
+
 function WorkspaceLogo() {
   return (
-    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] bg-[#f8c58b] text-[#9a5a1e] shadow-sm">
-      <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true" className="drop-shadow-sm">
-        <path
-          d="M20 42h24v10.2c0 .8-.5 1.5-1.2 1.8l-10 4.6a2 2 0 0 1-1.6 0l-10-4.6A2 2 0 0 1 20 52.2V42Z"
-          fill="#d89548"
-        />
-        <circle cx="32" cy="25" r="22" fill="#f8c58b" />
-        <circle cx="32" cy="25" r="18.75" fill="none" stroke="#df9b50" strokeWidth="1.5" />
-        <path
-          d="M31.4 37.9c.2.5.9.5 1.2 0l11-21.9a.7.7 0 0 0-.6-1h-6.7c-.2 0-.5.1-.6.3l-3.1 6c-.2.5-.9.5-1.1 0l-2.8-5.9a.7.7 0 0 0-.6-.4H21c-.5 0-.8.5-.6.9l11 22Z"
-          fill="#e09847"
-        />
-      </svg>
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[8px] shadow-sm">
+      <img src={workspaceLogo} alt="Логотип WikiLive" className="h-full w-full object-cover" />
     </div>
   );
 }
@@ -215,6 +235,8 @@ function WorkspaceTreeItem({
   activePageId,
   selectedTableNodeId,
   expandedFolderIds,
+  pinnedPageIds,
+  onTogglePinnedPage,
   onSelectPage,
   onSelectMwsTable,
   onToggleFolder,
@@ -234,6 +256,8 @@ function WorkspaceTreeItem({
   activePageId: string | null;
   selectedTableNodeId: string | null;
   expandedFolderIds: Set<string>;
+  pinnedPageIds: Set<string>;
+  onTogglePinnedPage: (pageId: string) => void;
   onSelectPage: (pageId: string) => void;
   onSelectMwsTable: (node: WorkspaceTreeNode) => void;
   onToggleFolder: (folderId: string) => void;
@@ -261,6 +285,7 @@ function WorkspaceTreeItem({
   const isExpanded = isExpandable ? expandedFolderIds.has(node.id) : false;
   const isActivePage = node.linkedPageId === activePageId;
   const isSelectedTable = node.kind === 'mwsTable' && node.id === selectedTableNodeId;
+  const isPinnedPage = node.kind === 'wikiPage' && Boolean(node.linkedPageId && pinnedPageIds.has(node.linkedPageId));
   const canDeletePage = node.wikiPage?.role === 'owner';
   const canOpenActionsMenu = shouldShowWorkspacePageActions(node);
   const shareUrl = node.kind === 'wikiPage' && node.linkedPageId ? getShareUrl(spaceId, node.linkedPageId) : undefined;
@@ -485,7 +510,10 @@ function WorkspaceTreeItem({
           >
             {getWorkspaceNodeIcon(node)}
           </span>
-          <span className="truncate">{node.title}</span>
+          <span className="flex min-w-0 items-center gap-1 truncate">
+            {isPinnedPage ? <span className="shrink-0 text-[#d70032]">★</span> : null}
+            <span className="truncate">{node.title}</span>
+          </span>
         </button>
 
         {canOpenActionsMenu ? (
@@ -525,6 +553,12 @@ function WorkspaceTreeItem({
               createError={createError}
               contextMenuPosition={contextMenuPosition}
               createInputRef={createInputRef}
+              isPinned={Boolean(node.linkedPageId && pinnedPageIds.has(node.linkedPageId))}
+              onTogglePinned={() => {
+                if (node.linkedPageId) {
+                  onTogglePinnedPage(node.linkedPageId);
+                }
+              }}
               onCloseActionsMenu={closeActionsMenu}
               onOpenCreateMode={openCreateMode}
               onCreatePageTitleChange={setCreatePageTitle}
@@ -550,6 +584,8 @@ function WorkspaceTreeItem({
               activePageId={activePageId}
               selectedTableNodeId={selectedTableNodeId}
               expandedFolderIds={expandedFolderIds}
+              pinnedPageIds={pinnedPageIds}
+              onTogglePinnedPage={onTogglePinnedPage}
               onSelectPage={onSelectPage}
               onSelectMwsTable={onSelectMwsTable}
               onToggleFolder={onToggleFolder}
@@ -741,9 +777,7 @@ export function WorkspacePage() {
   const [dragOverNodeId, setDragOverNodeId] = useState<string | null>(null);
   const [dragOverPosition, setDragOverPosition] = useState<'before' | 'after' | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [workbenchTab, setWorkbenchTab] = useState<'catalog' | 'favorite'>('catalog');
   const workbenchTreeWrapperRef = useRef<HTMLDivElement>(null);
-
   const findNodeAndParent = useCallback(
     (
       nodes: WorkspaceTreeNode[],
@@ -819,10 +853,37 @@ export function WorkspacePage() {
     setDragOverNodeId(null);
     setDragOverPosition(null);
   }, []);
+  const spaceSelectMenuRef = useRef<HTMLDivElement>(null);
   const blankAreaCreateRef = useRef<HTMLDivElement>(null);
   const blankAreaCreateInputRef = useRef<HTMLInputElement>(null);
   const [activePageId, setActivePageId] = useState<string | null>(null);
   const [selectedTableNode, setSelectedTableNode] = useState<WorkspaceTreeNode | null>(null);
+  const [pinnedPageIds, setPinnedPageIds] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') {
+      return new Set();
+    }
+
+    try {
+      const raw = window.localStorage.getItem('wikilive:pinned-pages');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      return new Set();
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem('wikilive:pinned-pages', JSON.stringify(Array.from(pinnedPageIds)));
+    } catch {
+      // ignore storage errors
+    }
+  }, [pinnedPageIds]);
+
   const [activePage, setActivePage] = useState<WikiPage | null>(null);
   const [isPageLoading, setIsPageLoading] = useState(false);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
@@ -850,6 +911,7 @@ export function WorkspacePage() {
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isEditingDisplayName, setIsEditingDisplayName] = useState(false);
+  const [isSpaceMenuOpen, setIsSpaceMenuOpen] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState(displayName);
   const [isAccessPanelOpen, setIsAccessPanelOpen] = useState(false);
   const [templates, setTemplates] = useState<PageTemplateSummary[]>([]);
@@ -899,6 +961,11 @@ export function WorkspacePage() {
   });
 
   const visibleTree = useMemo(() => filterWorkspaceTree(tree, searchQuery), [searchQuery, tree]);
+  const pinnedPages = useMemo(() => findPinnedPages(visibleTree, pinnedPageIds), [visibleTree, pinnedPageIds]);
+  const treeWithoutPinnedPages = useMemo(
+    () => removePinnedPages(visibleTree, pinnedPageIds),
+    [visibleTree, pinnedPageIds],
+  );
   const hasSearch = searchQuery.trim().length > 0;
   const canManageAccess = activePage?.access?.capabilities.canManageAccess ?? false;
   const canEditActivePage = activePage?.access?.capabilities.canEdit ?? true;
@@ -934,6 +1001,23 @@ export function WorkspacePage() {
 
     setIsWhatsNewBannerVisible(false);
   }, []);
+
+  useEffect(() => {
+    if (!isSpaceMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (spaceSelectMenuRef.current && !spaceSelectMenuRef.current.contains(event.target as Node)) {
+        setIsSpaceMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+    };
+  }, [isSpaceMenuOpen]);
 
   useEffect(() => {
     const updateRightSidebarVisibility = () => {
@@ -1394,9 +1478,24 @@ export function WorkspacePage() {
     writeWorkspaceRoute(selectedSpaceId, pageId, 'push');
   };
 
+  const handleTogglePinnedPage = useCallback((pageId: string) => {
+    setPinnedPageIds((previous) => {
+      const next = new Set(previous);
+
+      if (next.has(pageId)) {
+        next.delete(pageId);
+      } else {
+        next.add(pageId);
+      }
+
+      return next;
+    });
+  }, []);
+
   const handleSelectSpace = (spaceId: string) => {
     pendingRoutePageIdRef.current = null;
     setSelectedSpaceId(spaceId);
+    setIsSpaceMenuOpen(false);
     writeWorkspaceRoute(spaceId, null, 'push');
   };
 
@@ -1502,7 +1601,7 @@ export function WorkspacePage() {
 
   const handleWorkbenchBlankAreaContextMenu = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
-      if (workbenchTab !== 'catalog' || isLoading) {
+      if (isLoading) {
         return;
       }
 
@@ -1541,7 +1640,7 @@ export function WorkspacePage() {
       setIsBlankAreaCreateOpen(true);
       setIsBlankAreaCreateMode(false);
     },
-    [isLoading, workbenchTab],
+    [isLoading],
   );
 
   useEffect(() => {
@@ -1981,22 +2080,43 @@ export function WorkspacePage() {
                     <Pencil size={14} strokeWidth={2.2} />
                   </button>
                 </div>
-                <label className="sr-only" htmlFor="workspace-space-select">
-                  Пространство
-                </label>
-                <select
-                  id="workspace-space-select"
-                  value={selectedSpaceId}
-                  onChange={(event) => handleSelectSpace(event.target.value)}
-                  className="mt-0.5 h-6 max-w-[170px] rounded border-0 bg-transparent px-0 text-xs font-semibold text-[#767676] outline-none hover:text-[#333]"
-                  title="Пространство"
-                >
-                  {spaces.map((space) => (
-                    <option key={space.id} value={space.id}>
-                      {space.name}
-                    </option>
-                  ))}
-                </select>
+                <div ref={spaceSelectMenuRef} className="relative mt-0.5">
+                  <button
+                    id="workspace-space-select"
+                    type="button"
+                    onClick={() => setIsSpaceMenuOpen((value) => !value)}
+                    className="flex h-7 w-full max-w-[190px] items-center justify-between gap-2 rounded-md border border-[#ffd9e1] bg-white px-2 text-xs font-semibold text-[#d70032] outline-none transition-colors hover:bg-[#fff1f3] focus-visible:ring-2 focus-visible:ring-[#d70032]/25"
+                    aria-haspopup="menu"
+                    aria-expanded={isSpaceMenuOpen}
+                    title="Пространство"
+                  >
+                    <span className="truncate">{spaces.find((space) => space.id === selectedSpaceId)?.name ?? 'Пространство'}</span>
+                    <ChevronDown size={13} strokeWidth={2.2} className={isSpaceMenuOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                  </button>
+                  {isSpaceMenuOpen ? (
+                    <div className="absolute left-0 top-8 z-[120] w-full max-w-[220px] rounded-lg border border-[#ffd9e1] bg-white p-1 shadow-[0_10px_30px_rgba(215,0,50,0.15)]">
+                      <ul className="space-y-1">
+                        {spaces.map((space) => {
+                          const isSelected = space.id === selectedSpaceId;
+                          return (
+                            <li key={space.id}>
+                              <button
+                                type="button"
+                                onClick={() => handleSelectSpace(space.id)}
+                                className={[
+                                  'flex w-full items-center rounded-lg px-2 py-1.5 text-left text-xs font-semibold transition-colors',
+                                  isSelected ? 'bg-[#d70032] text-white' : 'bg-white text-[#d70032] hover:bg-[#d70032] hover:text-white',
+                                ].join(' ')}
+                              >
+                                <span className="truncate">{space.name}</span>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
             <button
@@ -2017,35 +2137,10 @@ export function WorkspacePage() {
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Найти MWS таблицу, папку или wiki-страницу"
-                className="h-9 w-full rounded-md border border-[#dfe2e7] bg-[#fafafa] px-3 text-sm outline-none focus:border-[#5586ff]"
+                className="h-9 w-full rounded-md border border-[#dfe2e7] bg-[#fafafa] px-3 text-sm outline-none focus:border-[#d70032]"
               />
             </div>
           ) : null}
-
-          <div className="px-3">
-            <div className="flex rounded-md bg-[#f1f2f4] p-0.5">
-              <button
-                type="button"
-                onClick={() => setWorkbenchTab('catalog')}
-                className={[
-                  'h-8 flex-1 rounded-[5px] text-sm font-semibold transition-colors',
-                  workbenchTab === 'catalog' ? 'bg-white text-[#1f1f1f] shadow-sm' : 'text-[#777] hover:text-[#333]',
-                ].join(' ')}
-              >
-                Проводник
-              </button>
-              <button
-                type="button"
-                onClick={() => setWorkbenchTab('favorite')}
-                className={[
-                  'h-8 flex-1 rounded-[5px] text-sm font-semibold transition-colors',
-                  workbenchTab === 'favorite' ? 'bg-white text-[#1f1f1f] shadow-sm' : 'text-[#777] hover:text-[#333]',
-                ].join(' ')}
-              >
-                Закрепить
-              </button>
-            </div>
-          </div>
 
           <div className="mt-3 px-3">
             <button
@@ -2076,19 +2171,37 @@ export function WorkspacePage() {
             id="WORKBENCH_SIDE_NODE_WRAPPER"
             onContextMenu={handleWorkbenchBlankAreaContextMenu}
           >
-            {workbenchTab === 'favorite' ? (
-              <div className="px-3 py-6 text-sm text-[#969fa8]">Закрепленных страниц пока нет</div>
+            {isLoading ? (
+              <WorkspaceTreeSkeleton />
             ) : (
-              isLoading ? (
-                <WorkspaceTreeSkeleton />
-              ) : (
-                <>
-                  {tree.length === 0 ? <p className="px-2 py-2 text-sm text-[#969fa8]">MWS-дерево пустое</p> : null}
-                  {hasSearch && visibleTree.length === 0 ? (
-                    <p className="px-2 py-2 text-sm text-[#969fa8]">Ничего не найдено</p>
-                  ) : null}
-                  <ul role="tree" aria-label="Проводник" className="treeViewRoot space-y-0.5" tabIndex={0}>
-                    {visibleTree.map((node) => (
+              <>
+                {pinnedPages.length === 0 && treeWithoutPinnedPages.length === 0 ? (
+                  <p className="px-2 py-2 text-sm text-[#969fa8]">MWS-дерево пустое</p>
+                ) : null}
+                {hasSearch && pinnedPages.length === 0 && treeWithoutPinnedPages.length === 0 ? (
+                  <p className="px-2 py-2 text-sm text-[#969fa8]">Ничего не найдено</p>
+                ) : null}
+                <ul role="tree" aria-label="Проводник" className="treeViewRoot space-y-0.5" tabIndex={0}>
+                  {pinnedPages.map((node) => (
+                    <WorkspaceTreeItem
+                      key={node.id}
+                      node={node}
+                      depth={0}
+                      activePageId={activePageId}
+                      selectedTableNodeId={selectedTableNode?.id ?? null}
+                      expandedFolderIds={effectiveExpandedFolderIds}
+                      pinnedPageIds={pinnedPageIds}
+                      onTogglePinnedPage={handleTogglePinnedPage}
+                      onSelectPage={handleSelectPage}
+                      onSelectMwsTable={handleSelectMwsTable}
+                      onToggleFolder={handleToggleFolder}
+                      onDeletePage={(pageId, title) => void handleDeletePage(pageId, title)}
+                      onCreatePage={async (title, parentNodeId) => {
+                        await handleCreatePage(title, parentNodeId);
+                      }}
+                    />
+                  ))}
+                  {treeWithoutPinnedPages.map((node) => (
                       <WorkspaceTreeItem
                         key={node.id}
                         node={node}
@@ -2096,6 +2209,8 @@ export function WorkspacePage() {
                         activePageId={activePageId}
                         selectedTableNodeId={selectedTableNode?.id ?? null}
                         expandedFolderIds={effectiveExpandedFolderIds}
+                        pinnedPageIds={pinnedPageIds}
+                        onTogglePinnedPage={handleTogglePinnedPage}
                         onSelectPage={handleSelectPage}
                         onSelectMwsTable={handleSelectMwsTable}
                         onToggleFolder={handleToggleFolder}
@@ -2195,7 +2310,7 @@ export function WorkspacePage() {
                   ) : null}
                 </>
               )
-            )}
+            }
           </div>
 
           <div className="flex h-12 items-center justify-center gap-4 border-t border-[#e5e6eb]">

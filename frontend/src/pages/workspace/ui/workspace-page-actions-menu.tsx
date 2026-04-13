@@ -17,8 +17,10 @@ type WorkspacePageActionsMenuProps = {
   onCreatePageTitleChange: (value: string) => void;
   onCreatePageSubmit: () => void;
   onCancelCreateMode: () => void;
-  onSelectPage: (pageId: string) => void;
+  isPinned: boolean;
+  onTogglePinned: () => void;
   onDeletePage: () => void;
+  onSelectPage: (pageId: string) => void;
 };
 
 export function WorkspacePageActionsMenu({
@@ -37,8 +39,10 @@ export function WorkspacePageActionsMenu({
   onCreatePageTitleChange,
   onCreatePageSubmit,
   onCancelCreateMode,
-  onSelectPage,
+  isPinned,
+  onTogglePinned,
   onDeletePage,
+  onSelectPage,
 }: WorkspacePageActionsMenuProps) {
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
 
@@ -112,11 +116,11 @@ export function WorkspacePageActionsMenu({
             onClick={(event) => {
               event.stopPropagation();
               onCloseActionsMenu();
-              onSelectPage(linkedPageId);
+              onTogglePinned();
             }}
             className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
           >
-            Редактировать
+            {isPinned ? 'Открепить' : 'Закрепить'}
           </button>
           <button
             type="button"
