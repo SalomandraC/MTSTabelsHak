@@ -2,6 +2,7 @@ import type { Editor } from '@tiptap/core';
 import { useEditorState } from '@tiptap/react';
 import { Code2, List, ListOrdered, ListChecks, MessageSquare, MonitorPlay } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 
 import { handleListAction } from '../model/list-actions';
 import { menuBarStateSelector } from '../model/menu-state';
@@ -44,7 +45,7 @@ type FloatingToolbarProps = {
 };
 
 type ToolbarButtonProps = {
-  icon: React.ReactNode;
+  icon: ReactNode;
   pressed?: boolean;
   disabled?: boolean;
   isFirst?: boolean;
@@ -155,8 +156,73 @@ export function FloatingToolbar({
     const start = view.coordsAtPos(from);
     const end = view.coordsAtPos(to);
 
-    const top = Math.min(start.top, end.top);
-    const left = (start.left + end.left) / 2;
+    const surface = document.querySelector('[data-page-editor-surface]') as HTMLElement | null;
+    const surfaceRect = surface?.getBoundingClientRect();
+    const surfaceScrollLeft = surface?.scrollLeft ?? 0;
+    const surfaceScrollTop = surface?.scrollTop ?? 0;
+    const toolbarWidth = toolbarRef.current?.getBoundingClientRect().width ?? 0;
+    const toolbarHeight = toolbarRef.current?.getBoundingClientRect().height ?? 0;
+    const margin = 8;
+
+    let absoluteTop = Math.min(start.top, end.top);
+    let absoluteLeft = (start.left + end.left) / 2;
+
+    const domSelection = view.dom.ownerDocument.getSelection();
+    if (domSelection && domSelection.rangeCount > 0) {
+      const range = domSelection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      const hasNonZeroSelection = rect.width > 0 && rect.height > 0;
+
+      if (hasNonZeroSelection) {
+        absoluteTop = rect.top;
+        absoluteLeft = rect.left + rect.width / 2;
+      } else {
+        const domPoint = view.domAtPos(from);
+        const nodeElement =
+          domPoint.node instanceof HTMLElement
+            ? domPoint.node
+            : domPoint.node.parentElement;
+
+        if (nodeElement) {
+          const nodeRect = nodeElement.getBoundingClientRect();
+          absoluteTop = nodeRect.top;
+          absoluteLeft = start.left;
+        }
+      }
+    }
+
+    const headerElement = document.querySelector('[data-page-editor-header]') as HTMLElement | null;
+    const headerRect = headerElement?.getBoundingClientRect();
+    if (headerRect && absoluteTop <= headerRect.bottom + 4) {
+      setVisible(false);
+      setIsImproveMenuOpen(false);
+      return;
+    }
+
+    const minCenterLeft = surfaceRect
+      ? surfaceRect.left + margin + toolbarWidth / 2
+      : margin + toolbarWidth / 2;
+    const maxCenterLeft = surfaceRect
+      ? surfaceRect.right - margin - toolbarWidth / 2
+      : window.innerWidth - margin - toolbarWidth / 2;
+    const clampedCenterLeft = Math.max(
+      minCenterLeft,
+      Math.min(absoluteLeft, Math.max(minCenterLeft, maxCenterLeft)),
+    );
+
+    const desiredTop = absoluteTop - 40;
+    const minTop = surfaceRect ? surfaceRect.top + margin : margin;
+    const maxTop = surfaceRect
+      ? surfaceRect.bottom - margin - toolbarHeight
+      : window.innerHeight - margin - toolbarHeight;
+    const clampedTop = Math.max(minTop, Math.min(desiredTop, Math.max(minTop, maxTop)));
+
+    const top = surfaceRect
+      ? clampedTop - surfaceRect.top + surfaceScrollTop
+      : clampedTop;
+    const left = surfaceRect
+      ? clampedCenterLeft - surfaceRect.left + surfaceScrollLeft
+      : clampedCenterLeft;
 
     setPosition({ top, left });
     setVisible(true);
@@ -193,6 +259,38 @@ export function FloatingToolbar({
     document.addEventListener('mousedown', onPointerDown);
     return () => document.removeEventListener('mousedown', onPointerDown);
   }, [isImproveMenuOpen]);
+
+  useEffect(() => {
+    if (!editor || !visible) {
+      return;
+    }
+
+    const surface = document.querySelector('[data-page-editor-surface]') as HTMLElement | null;
+    const header = document.querySelector('[data-page-editor-header]') as HTMLElement | null;
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => updatePosition()) : null;
+
+    if (surface && observer) {
+      observer.observe(surface);
+    }
+    if (toolbarRef.current && observer) {
+      observer.observe(toolbarRef.current);
+    }
+    if (header && observer) {
+      observer.observe(header);
+    }
+
+    const onWindowResize = () => updatePosition();
+    const onWindowScroll = () => updatePosition();
+
+    window.addEventListener('resize', onWindowResize);
+    window.addEventListener('scroll', onWindowScroll, true);
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', onWindowResize);
+      window.removeEventListener('scroll', onWindowScroll, true);
+    };
+  }, [editor, visible, updatePosition]);
 
   if (!editor || !state || !visible) {
     return null;
@@ -251,11 +349,11 @@ export function FloatingToolbar({
   };
 
   const style: React.CSSProperties = {
-    position: 'fixed',
-    top: position.top - 40,
+    position: 'absolute',
+    top: position.top,
     left: position.left,
     transform: 'translateX(-50%)',
-    zIndex: 50,
+    zIndex: 40,
   };
 
   return (

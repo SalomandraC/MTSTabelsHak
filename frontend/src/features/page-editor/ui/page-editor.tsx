@@ -473,7 +473,7 @@ function LivePageEditor({
 
         <div
           ref={editorSurfaceRef}
-          className="relative mx-auto w-full max-w-4xl flex-1 px-2 pb-4 pt-1 sm:px-6 sm:pb-10 sm:pt-5"
+          className="relative z-[10] mx-auto w-full max-w-4xl flex-1 px-2 pb-4 pt-1 sm:px-6 sm:pb-10 sm:pt-5"
           data-page-editor-surface
           onContextMenu={(event) => {
             if (!isAiInlineChatEnabled || !controller.editor) {

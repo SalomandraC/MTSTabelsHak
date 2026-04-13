@@ -1939,7 +1939,7 @@ export function WorkspacePage() {
       ) : null}
       {!leftSidebar.isCollapsed ? (
         <aside
-          className="relative flex h-full shrink-0 flex-col border-r border-[#e5e6eb] bg-white"
+          className="relative z-[90] flex h-full shrink-0 flex-col border-r border-[#e5e6eb] bg-white"
           style={{ width: `${leftSidebar.width}px` }}
         >
           <div className="flex h-16 items-center justify-between px-4">
@@ -2326,7 +2326,7 @@ export function WorkspacePage() {
 
       {!rightSidebar.isCollapsed ? (
         <aside
-          className="relative h-full shrink-0 flex flex-col border-l border-editor-border-subtle bg-white/95"
+          className="relative z-[90] h-full shrink-0 flex flex-col border-l border-editor-border-subtle bg-white/95"
           style={{ width: `${rightSidebar.width}px` }}
         >
           <div

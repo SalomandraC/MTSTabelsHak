@@ -592,8 +592,7 @@ export function AiInlineCopilot({
       left = Math.min(Math.max(anchor.x + gap, margin), Math.max(margin, surfaceWidth - panelWidth - margin));
     }
 
-    const maxTop = Math.max(margin, surfaceHeight - panelHeight - margin);
-    const top = Math.min(anchor.y + gap, maxTop);
+    const top = anchor.y + gap;
 
     return {
       left,
