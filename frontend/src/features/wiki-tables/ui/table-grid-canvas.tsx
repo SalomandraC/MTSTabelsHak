@@ -17,6 +17,11 @@ export type TableGridProps = {
   isExpanded?: boolean;
   isReadOnly?: boolean;
   selectColorToCss: (color: string) => string;
+  onOpenFieldMenu?: (payload: {
+    fieldIndex: number;
+    clientX: number;
+    clientY: number;
+  }) => void;
 };
 
 export function TableGridCanvas({
@@ -31,7 +36,8 @@ export function TableGridCanvas({
   onAddColumn,
   onAddRow,
   onOpenAttachmentUpload,
-  onDownloadAllAttachments
+  onDownloadAllAttachments,
+  onOpenFieldMenu
 }: TableGridProps & {
   onCanvasKeyDown: (event: React.KeyboardEvent<HTMLCanvasElement>) => void;
   selectEditorRef: React.RefObject<HTMLDivElement>;
@@ -126,6 +132,30 @@ export function TableGridCanvas({
 
             if (
               !isReadOnly &&
+              onOpenFieldMenu &&
+              y >= 0 &&
+              y <= HEADER_HEIGHT &&
+              x >= INDEX_WIDTH
+            ) {
+              const fieldIndex = Math.floor(
+                (x + controller.scrollOffset.left - INDEX_WIDTH) / COLUMN_WIDTH
+              );
+
+              if (
+                fieldIndex >= 0 &&
+                fieldIndex < controller.visibleFields.length
+              ) {
+                onOpenFieldMenu({
+                  fieldIndex,
+                  clientX: event.clientX,
+                  clientY: event.clientY
+                });
+                return;
+              }
+            }
+
+            if (
+              !isReadOnly &&
               onAddRow &&
               x >= 0 &&
               x <= INDEX_WIDTH &&
@@ -148,6 +178,37 @@ export function TableGridCanvas({
             controller.setEditingCell(null);
             controller.setEditingSelectCell(null);
             controller.beginEdit(nextSelection, { fromSingleClick: true });
+          }}
+          onContextMenu={(event) => {
+            if (isReadOnly || !onOpenFieldMenu) {
+              return;
+            }
+
+            const rect = event.currentTarget.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            if (y < 0 || y > HEADER_HEIGHT || x < INDEX_WIDTH) {
+              return;
+            }
+
+            const fieldIndex = Math.floor(
+              (x + controller.scrollOffset.left - INDEX_WIDTH) / COLUMN_WIDTH
+            );
+
+            if (
+              fieldIndex < 0 ||
+              fieldIndex >= controller.visibleFields.length
+            ) {
+              return;
+            }
+
+            event.preventDefault();
+            onOpenFieldMenu({
+              fieldIndex,
+              clientX: event.clientX,
+              clientY: event.clientY
+            });
           }}
           onDoubleClick={(event) => {
             if (!isReadOnly) {

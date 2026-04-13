@@ -10,6 +10,11 @@ export type ExpandedTableModalProps = {
   selectColorToCss: (color: string) => string;
   selectEditorRef: React.RefObject<HTMLDivElement>;
   onClose: () => void;
+  onOpenFieldMenu?: (payload: {
+    fieldIndex: number;
+    clientX: number;
+    clientY: number;
+  }) => void;
   onRefresh?: () => void;
   onSearchQueryChange: (value: string) => void;
   onCreateField: () => void;
@@ -38,6 +43,7 @@ export function ExpandedTableModal({
   selectColorToCss,
   selectEditorRef,
   onClose,
+  onOpenFieldMenu,
   onSearchQueryChange,
   onCreateField,
   onHideFields,
@@ -145,6 +151,7 @@ export function ExpandedTableModal({
             onAttachmentWidgetClose={onAttachmentWidgetClose}
             onOpenAttachmentUpload={onOpenAttachmentUpload}
             onDownloadAllAttachments={onDownloadAllAttachments}
+            onOpenFieldMenu={onOpenFieldMenu}
             onAddColumn={onCreateField}
             onAddRow={onCreateRow}
             onCanvasKeyDown={onCanvasKeyDown}
