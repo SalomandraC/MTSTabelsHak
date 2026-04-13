@@ -1,6 +1,5 @@
 fastapi==0.116.1
 uvicorn[standard]==0.35.0
-chromadb==1.0.15
-transformers==4.55.0
-torch==2.8.0
+qdrant-client==1.15.1
+fastembed==0.7.1
 numpy==2.3.2

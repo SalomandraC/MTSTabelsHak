@@ -32,8 +32,8 @@ services:
     build:
       context: ./services/context-engine
     environment:
-      CHROMA_PERSIST_DIRECTORY: /data/chroma
-      CONTEXT_ENGINE_EMBEDDING_MODEL: cointegrated/rubert-tiny2
+      QDRANT_PERSIST_DIRECTORY: /data/qdrant
+      CONTEXT_ENGINE_EMBEDDING_MODEL: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
       CONTEXT_ENGINE_SEARCH_TOP_K: 5
     ports:
       - "8090:8090"

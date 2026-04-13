@@ -2,7 +2,11 @@ import type { Editor } from '@tiptap/core';
 import { Files, Search, SendHorizontal, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { wikiliveApi } from '../../../../shared/api/wikilive';
+import {
+  type MwsSpace,
+  type WorkspaceTreeNode,
+  wikiliveApi,
+} from '../../../../shared/api/wikilive';
 import { getEditorMarkdown } from '../model/editor-markdown';
 import { useAiTableContext } from '../model/use-ai-table-context';
 
@@ -34,6 +38,8 @@ type SelectedContextFolder = {
   title: string;
 };
 
+type ContextScope = 'currentFile' | 'documents' | 'folders' | 'space';
+
 type AiSidebarChatProps = {
   pageId: string | null;
   spaceId: string;
@@ -43,6 +49,7 @@ type AiSidebarChatProps = {
   onClose: () => void;
   availablePages?: AvailableContextPage[];
   availableFolders?: AvailableContextFolder[];
+  availableSpaces?: MwsSpace[];
 };
 
 function normalizeMarkdownSnippet(text: string, maxLength = 6000) {
@@ -71,6 +78,24 @@ function buildChatContextMarkdown(
   });
 
   return sections.join('\n\n---\n\n');
+}
+
+function flattenPagesFromTree(nodes: WorkspaceTreeNode[]): AvailableContextPage[] {
+  return nodes.flatMap((node) => [
+    ...(node.kind === 'wikiPage' && node.linkedPageId
+      ? [{ id: node.linkedPageId, title: node.title }]
+      : []),
+    ...flattenPagesFromTree(node.children ?? []),
+  ]);
+}
+
+function flattenFoldersFromTree(nodes: WorkspaceTreeNode[]): AvailableContextFolder[] {
+  return nodes.flatMap((node) => [
+    ...((node.kind === 'wikiFolder' || node.kind === 'mwsFolder')
+      ? [{ id: node.id, title: node.title }]
+      : []),
+    ...flattenFoldersFromTree(node.children ?? []),
+  ]);
 }
 
 function ChatBubble({ message }: { message: ChatMessage }) {
@@ -135,6 +160,7 @@ export function AiSidebarChat({
   onClose,
   availablePages = [],
   availableFolders = [],
+  availableSpaces = [],
 }: AiSidebarChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
@@ -142,22 +168,47 @@ export function AiSidebarChat({
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedDocuments, setSelectedDocuments] = useState<SelectedContextDocument[]>([]);
   const [selectedFolders, setSelectedFolders] = useState<SelectedContextFolder[]>([]);
-  const [isContextMenuOpen, setIsContextMenuOpen] = useState(false);
-  const [contextSearch, setContextSearch] = useState('');
+  const [contextSpaceId, setContextSpaceId] = useState(spaceId);
+  const [contextScope, setContextScope] = useState<ContextScope>('currentFile');
+  const [contextTree, setContextTree] = useState<WorkspaceTreeNode[] | null>(null);
+  const [isContextTreeLoading, setIsContextTreeLoading] = useState(false);
+  const [dragDropHint, setDragDropHint] = useState('');
+  const [selectedDocumentOptionId, setSelectedDocumentOptionId] = useState('');
+  const [selectedFolderOptionId, setSelectedFolderOptionId] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
   const contextRowRef = useRef<HTMLDivElement>(null);
   const { handleAiChatResponse } = useAiTableContext();
 
+  const activeTreePages = useMemo(
+    () => (contextSpaceId === spaceId ? availablePages : flattenPagesFromTree(contextTree ?? [])),
+    [availablePages, contextSpaceId, contextTree, spaceId],
+  );
+
+  const activeTreeFolders = useMemo(
+    () => (contextSpaceId === spaceId ? availableFolders : flattenFoldersFromTree(contextTree ?? [])),
+    [availableFolders, contextSpaceId, contextTree, spaceId],
+  );
+
+  const currentSpacePageMap = useMemo(
+    () => new Map(availablePages.map((page) => [page.id, page])),
+    [availablePages],
+  );
+
+  const currentSpaceFolderMap = useMemo(
+    () => new Map(availableFolders.map((folder) => [folder.id, folder])),
+    [availableFolders],
+  );
+
   const contextPages = useMemo(() => {
     const unique = new Map<string, AvailableContextPage>();
 
-    availablePages.forEach((page) => {
+    activeTreePages.forEach((page) => {
       if (page.id && page.title) {
         unique.set(page.id, page);
       }
     });
 
-    if (pageId) {
+    if (pageId && contextSpaceId === spaceId) {
       unique.delete(pageId);
     }
 
@@ -166,12 +217,12 @@ export function AiSidebarChat({
     });
 
     return Array.from(unique.values());
-  }, [availablePages, pageId, selectedDocuments]);
+  }, [activeTreePages, contextSpaceId, pageId, selectedDocuments, spaceId]);
 
   const contextFolders = useMemo(() => {
     const unique = new Map<string, AvailableContextFolder>();
 
-    availableFolders.forEach((folder) => {
+    activeTreeFolders.forEach((folder) => {
       if (folder.id && folder.title) {
         unique.set(folder.id, folder);
       }
@@ -182,27 +233,7 @@ export function AiSidebarChat({
     });
 
     return Array.from(unique.values());
-  }, [availableFolders, selectedFolders]);
-
-  const filteredContextPages = useMemo(() => {
-    const normalizedQuery = contextSearch.trim().toLowerCase();
-
-    if (!normalizedQuery) {
-      return contextPages;
-    }
-
-    return contextPages.filter((page) => page.title.toLowerCase().includes(normalizedQuery));
-  }, [contextPages, contextSearch]);
-
-  const filteredContextFolders = useMemo(() => {
-    const normalizedQuery = contextSearch.trim().toLowerCase();
-
-    if (!normalizedQuery) {
-      return contextFolders;
-    }
-
-    return contextFolders.filter((folder) => folder.title.toLowerCase().includes(normalizedQuery));
-  }, [contextFolders, contextSearch]);
+  }, [activeTreeFolders, selectedFolders]);
 
   const currentMarkdown = useMemo(() => getEditorMarkdown(editor), [editor]);
 
@@ -218,12 +249,63 @@ export function AiSidebarChat({
     [selectedDocuments],
   );
 
-  const markdownContext = useMemo(
-    () => buildChatContextMarkdown(pageTitle, currentMarkdown, selectedDocuments.filter((document) => !document.isLoading)),
-    [currentMarkdown, pageTitle, selectedDocuments],
+  const activeSelectedDocuments = useMemo(
+    () => selectedDocuments.filter((document) => !document.isLoading),
+    [selectedDocuments],
   );
 
+  const activeSelectedPageIds = useMemo(() => {
+    if (contextScope === 'currentFile') {
+      return pageId ? [pageId] : [];
+    }
+
+    if (contextScope === 'documents') {
+      return activeSelectedDocuments.map((document) => document.pageId);
+    }
+
+    return [];
+  }, [activeSelectedDocuments, contextScope, pageId]);
+
+  const activeSelectedFolderIds = useMemo(() => {
+    if (contextScope !== 'folders') {
+      return [];
+    }
+
+    return selectedFolders.map((folder) => folder.folderId);
+  }, [contextScope, selectedFolders]);
+
+  const activeContextDocuments = useMemo(() => {
+    if (contextScope !== 'documents') {
+      return [];
+    }
+
+    return activeSelectedDocuments;
+  }, [activeSelectedDocuments, contextScope]);
+
+  const markdownContext = useMemo(() => {
+    if (contextScope !== 'currentFile') {
+      return '';
+    }
+
+    return buildChatContextMarkdown(pageTitle, currentMarkdown, []);
+  }, [contextScope, currentMarkdown, pageTitle]);
+
   const hasPendingContext = selectedDocuments.some((document) => document.isLoading);
+  const hasSelectedDocumentsScope = activeSelectedPageIds.length > 0;
+  const hasSelectedFoldersScope = activeSelectedFolderIds.length > 0;
+  const isScopeReady =
+    contextScope === 'space' ||
+    (contextScope === 'currentFile' && Boolean(pageId)) ||
+    (contextScope === 'documents' && hasSelectedDocumentsScope) ||
+    (contextScope === 'folders' && hasSelectedFoldersScope);
+  const scopeDescription =
+    contextScope === 'currentFile'
+      ? 'Поиск и ответ только по текущему файлу'
+      : contextScope === 'documents'
+        ? 'Ответ по выбранным документам'
+        : contextScope === 'folders'
+          ? 'Поиск только внутри выбранных папок'
+          : 'Поиск по всему текущему пространству';
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -237,30 +319,59 @@ export function AiSidebarChat({
     }
 
     row.scrollTo({ left: row.scrollWidth, behavior: 'smooth' });
-  }, [selectedDocuments.length]);
+  }, [selectedDocuments.length, selectedFolders.length, contextScope]);
 
   useEffect(() => {
+    setContextSpaceId(spaceId);
     setSelectedDocuments([]);
     setSelectedFolders([]);
-    setIsContextMenuOpen(false);
-    setContextSearch('');
+    setContextScope('currentFile');
+    setContextTree(null);
+    setSelectedDocumentOptionId('');
+    setSelectedFolderOptionId('');
   }, [pageId]);
 
   useEffect(() => {
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsContextMenuOpen(false);
+    if (contextScope === 'currentFile') {
+      setContextSpaceId(spaceId);
+    }
+  }, [contextScope, spaceId]);
+
+  useEffect(() => {
+    if ((contextScope !== 'documents' && contextScope !== 'folders') || contextSpaceId === spaceId) {
+      setContextTree(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadContextTree = async () => {
+      setIsContextTreeLoading(true);
+      try {
+        const response = await wikiliveApi.getWorkspaceTree(contextSpaceId);
+        if (!cancelled) {
+          setContextTree(response.items);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setContextTree([]);
+          setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить дерево выбранного пространства');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsContextTreeLoading(false);
+        }
       }
     };
 
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
-  }, []);
+    void loadContextTree();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [contextScope, contextSpaceId, spaceId]);
 
   const handleAddDocument = async (page: AvailableContextPage) => {
-    setIsContextMenuOpen(false);
-    setContextSearch('');
-
     if (selectedDocuments.some((document) => document.pageId === page.id) || page.id === pageId) {
       return;
     }
@@ -295,14 +406,21 @@ export function AiSidebarChat({
     }
   };
 
+  const handleAddDocumentById = async (pageIdToAdd: string) => {
+    const page = contextPages.find((item) => item.id === pageIdToAdd);
+    if (!page) {
+      return;
+    }
+
+    setSelectedDocumentOptionId('');
+    await handleAddDocument(page);
+  };
+
   const handleRemoveDocument = (pageIdToRemove: string) => {
     setSelectedDocuments((current) => current.filter((document) => document.pageId !== pageIdToRemove));
   };
 
   const handleAddFolder = (folder: AvailableContextFolder) => {
-    setIsContextMenuOpen(false);
-    setContextSearch('');
-
     if (selectedFolders.some((current) => current.folderId === folder.id)) {
       return;
     }
@@ -312,6 +430,43 @@ export function AiSidebarChat({
 
   const handleRemoveFolder = (folderIdToRemove: string) => {
     setSelectedFolders((current) => current.filter((folder) => folder.folderId !== folderIdToRemove));
+  };
+
+  const handleAddFolderById = (folderIdToAdd: string) => {
+    const folder = contextFolders.find((item) => item.id === folderIdToAdd);
+    if (!folder) {
+      return;
+    }
+
+    setSelectedFolderOptionId('');
+    handleAddFolder(folder);
+  };
+
+  const handleDropOnContext = async (event: React.DragEvent<HTMLDivElement>) => {
+    const droppedNodeId = event.dataTransfer.getData('application/x-wikilive-node-id');
+    if (!droppedNodeId) {
+      return;
+    }
+
+    event.preventDefault();
+    setDragDropHint('');
+
+    const page = currentSpacePageMap.get(droppedNodeId);
+    const folder = currentSpaceFolderMap.get(droppedNodeId);
+
+    if (page) {
+      setContextScope('documents');
+      setContextSpaceId(spaceId);
+      await handleAddDocument(page);
+      return;
+    }
+
+    if (folder) {
+      setContextScope('folders');
+      setContextSpaceId(spaceId);
+      handleAddFolder(folder);
+      return;
+    }
   };
 
   const handleSend = async () => {
@@ -328,16 +483,22 @@ export function AiSidebarChat({
     try {
       const response = await wikiliveApi.aiChat({
         question: trimmed,
-        spaceId,
-        pageId: pageId ?? undefined,
-        pageTitle,
-        pageSnapshot: {
-          markdown: markdownContext,
-          contextDocuments: selectedContextPayload,
-        },
-        selectedPageIds: selectedDocuments.map((document) => document.pageId),
-        selectedFolderIds: selectedFolders.map((folder) => folder.folderId),
-        contextDocuments: selectedContextPayload,
+        spaceId: contextScope === 'currentFile' ? spaceId : contextSpaceId,
+        pageId: contextScope === 'currentFile' ? pageId ?? undefined : undefined,
+        pageTitle: contextScope === 'currentFile' ? pageTitle : undefined,
+        pageSnapshot:
+          contextScope === 'currentFile'
+            ? {
+                markdown: markdownContext,
+                contextDocuments: [],
+              }
+            : undefined,
+        selectedPageIds: activeSelectedPageIds,
+        selectedFolderIds: activeSelectedFolderIds,
+        contextDocuments:
+          contextScope === 'documents'
+            ? selectedContextPayload
+            : [],
         useVectorSearch: true,
       });
 
@@ -397,13 +558,130 @@ export function AiSidebarChat({
               void handleSend();
             }}
           >
-            <div className="mb-1 mt-1 rounded-lg border border-editor-border-subtle bg-[#f8fafd] px-2 py-1.5">
+            <div className="mb-2 mt-1 rounded-xl border border-editor-border-subtle bg-[#fafbfd] p-2">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">
+                Область контекста
+              </p>
+              <div className="space-y-2">
+                <label className="block text-xs text-editor-text-tertiary">
+                  <span className="mb-1 block font-semibold">Тип области</span>
+                  <select
+                    value={contextScope}
+                    onChange={(event) => setContextScope(event.target.value as ContextScope)}
+                    className="w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm text-editor-text-primary outline-none"
+                  >
+                    <option value="currentFile" disabled={!pageId}>Текущий файл</option>
+                    <option value="documents">Конкретные документы</option>
+                    <option value="folders">Конкретные папки</option>
+                    <option value="space">Пространство</option>
+                  </select>
+                </label>
+
+                {contextScope !== 'currentFile' ? (
+                  <label className="block text-xs text-editor-text-tertiary">
+                    <span className="mb-1 block font-semibold">Пространство</span>
+                    <select
+                      value={contextSpaceId}
+                      onChange={(event) => {
+                        setContextSpaceId(event.target.value);
+                        setSelectedDocuments([]);
+                        setSelectedFolders([]);
+                        setSelectedDocumentOptionId('');
+                        setSelectedFolderOptionId('');
+                      }}
+                      className="w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm text-editor-text-primary outline-none"
+                    >
+                      {availableSpaces.map((space) => (
+                        <option key={space.id} value={space.id}>
+                          {space.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+
+                {contextScope === 'documents' ? (
+                  <label className="block text-xs text-editor-text-tertiary">
+                    <span className="mb-1 block font-semibold">Документ</span>
+                    <select
+                      value={selectedDocumentOptionId}
+                      onChange={(event) => {
+                        const nextId = event.target.value;
+                        setSelectedDocumentOptionId(nextId);
+                        if (nextId) {
+                          void handleAddDocumentById(nextId);
+                        }
+                      }}
+                      disabled={isContextTreeLoading}
+                      className="w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm text-editor-text-primary outline-none disabled:opacity-60"
+                    >
+                      <option value="">Выберите документ…</option>
+                      {contextPages.map((page) => (
+                        <option key={page.id} value={page.id}>
+                          {page.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+
+                {contextScope === 'folders' ? (
+                  <label className="block text-xs text-editor-text-tertiary">
+                    <span className="mb-1 block font-semibold">Папка</span>
+                    <select
+                      value={selectedFolderOptionId}
+                      onChange={(event) => {
+                        const nextId = event.target.value;
+                        setSelectedFolderOptionId(nextId);
+                        if (nextId) {
+                          handleAddFolderById(nextId);
+                        }
+                      }}
+                      disabled={isContextTreeLoading}
+                      className="w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm text-editor-text-primary outline-none disabled:opacity-60"
+                    >
+                      <option value="">Выберите папку…</option>
+                      {contextFolders.map((folder) => (
+                        <option key={folder.id} value={folder.id}>
+                          {folder.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+              </div>
+              <p className="mt-2 text-xs text-editor-text-tertiary">{scopeDescription}</p>
+            </div>
+
+            <div
+              className={[
+                'mb-1 mt-1 rounded-lg border bg-[#f8fafd] px-2 py-1.5 transition-colors',
+                dragDropHint ? 'border-[#d70032] ring-1 ring-[#ffd2d9]' : 'border-editor-border-subtle',
+              ].join(' ')}
+              onDragOver={(event) => {
+                const droppedNodeId = event.dataTransfer.getData('application/x-wikilive-node-id');
+                if (!droppedNodeId) {
+                  return;
+                }
+
+                event.preventDefault();
+                const canDropDocument = Boolean(currentSpacePageMap.get(droppedNodeId));
+                const canDropFolder = Boolean(currentSpaceFolderMap.get(droppedNodeId));
+
+                if (canDropDocument || canDropFolder) {
+                  setDragDropHint('Отпустите, чтобы добавить в контекст');
+                }
+              }}
+              onDragLeave={() => setDragDropHint('')}
+              onDrop={(event) => void handleDropOnContext(event)}
+            >
               <div
                 ref={contextRowRef}
                 className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
               >
-                {pageId ? <ContextChip title={pageTitle ?? 'Текущая страница'} /> : null}
-                {selectedDocuments.map((document) => (
+                {contextScope === 'currentFile' && pageId ? <ContextChip title={pageTitle ?? 'Текущая страница'} /> : null}
+                {contextScope === 'documents' &&
+                  selectedDocuments.map((document) => (
                   <ContextChip
                     key={document.pageId}
                     title={document.title}
@@ -412,7 +690,8 @@ export function AiSidebarChat({
                     onRemove={() => handleRemoveDocument(document.pageId)}
                   />
                 ))}
-                {selectedFolders.map((folder) => (
+                {contextScope === 'folders' &&
+                  selectedFolders.map((folder) => (
                   <ContextChip
                     key={folder.folderId}
                     title={`Папка: ${folder.title}`}
@@ -420,88 +699,14 @@ export function AiSidebarChat({
                     onRemove={() => handleRemoveFolder(folder.folderId)}
                   />
                 ))}
-                {!pageId && selectedDocuments.length === 0 && selectedFolders.length === 0 ? (
+                {((contextScope === 'currentFile' && !pageId) ||
+                  (contextScope === 'documents' && selectedDocuments.length === 0) ||
+                  (contextScope === 'folders' && selectedFolders.length === 0) ||
+                  contextScope === 'space') ? (
                   <span className="text-[11px] text-editor-text-tertiary">Контекст не выбран</span>
                 ) : null}
               </div>
-            </div>
-
-            <div
-              id="ai-chat-context-panel"
-              className={[
-                'mb-3 grid overflow-hidden rounded-2xl border border-editor-border-subtle bg-[#fafbfd] transition-all duration-200 ease-out',
-                isContextMenuOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
-              ].join(' ')}
-            >
-              <div className="min-h-0">
-                <div className="space-y-3 p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">Добавить в контекст</p>
-                      <p className="mt-1 text-xs text-editor-text-tertiary">Можно добавлять документы как явный контекст и папки как область поиска для ИИ.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setIsContextMenuOpen(false)}
-                      className="rounded-full border border-editor-border-subtle bg-white px-2.5 py-1 text-[11px] font-semibold text-editor-text-secondary transition-colors hover:bg-editor-bg-control"
-                    >
-                      Скрыть
-                    </button>
-                  </div>
-
-                  <div className="rounded-xl border border-editor-border-subtle bg-white shadow-sm">
-                    <div className="border-b border-editor-border-subtle p-2">
-                      <div className="flex items-center gap-2 rounded-lg border border-editor-border-subtle bg-[#fafbfd] px-3 py-2">
-                        <Search size={14} className="shrink-0 text-editor-text-tertiary" />
-                        <input
-                          value={contextSearch}
-                          onChange={(event) => setContextSearch(event.target.value)}
-                          placeholder="Найти документ"
-                          className="w-full bg-transparent text-sm outline-none placeholder:text-editor-text-tertiary"
-                        />
-                      </div>
-                    </div>
-                    <div className="max-h-56 overflow-y-auto p-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                      <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-editor-text-tertiary">
-                        Документы
-                      </div>
-                      {filteredContextPages.length > 0 ? (
-                        filteredContextPages.map((page) => (
-                          <button
-                            key={page.id}
-                            type="button"
-                            onClick={() => void handleAddDocument(page)}
-                            className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm text-editor-text-primary transition-colors hover:bg-editor-bg-control"
-                          >
-                            <span className="min-w-0 truncate">{page.title}</span>
-                            <span className="shrink-0 text-[11px] text-editor-text-tertiary">Добавить</span>
-                          </button>
-                        ))
-                      ) : (
-                        <div className="px-3 py-2 text-sm text-editor-text-tertiary">Документы не найдены</div>
-                      )}
-                      <div className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-editor-text-tertiary">
-                        Папки
-                      </div>
-                      {filteredContextFolders.length > 0 ? (
-                        filteredContextFolders.map((folder) => (
-                          <button
-                            key={folder.id}
-                            type="button"
-                            onClick={() => handleAddFolder(folder)}
-                            className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm text-editor-text-primary transition-colors hover:bg-editor-bg-control"
-                          >
-                            <span className="min-w-0 truncate">{folder.title}</span>
-                            <span className="shrink-0 text-[11px] text-editor-text-tertiary">Ограничить</span>
-                          </button>
-                        ))
-                      ) : (
-                        <div className="px-3 py-2 text-sm text-editor-text-tertiary">Папки не найдены</div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
+              {dragDropHint ? <p className="mt-2 text-[11px] font-semibold text-[#b00025]">{dragDropHint}</p> : null}
             </div>
 
             <label className="sr-only" htmlFor="ai-sidebar-chat-input">
@@ -524,22 +729,20 @@ export function AiSidebarChat({
                 disabled={isSending || !enabled || hasPendingContext}
               />
               <div className="flex w-11 shrink-0 self-stretch flex-col justify-between">
-                <button
-                  type="button"
-                  onClick={() => setIsContextMenuOpen((value) => !value)}
-                  className="inline-flex h-6 w-11 items-center justify-center rounded-lg border border-editor-border-subtle bg-white text-editor-text-secondary transition-colors hover:bg-editor-bg-control"
-                  aria-expanded={isContextMenuOpen}
-                  aria-controls="ai-chat-context-panel"
-                  aria-label={isContextMenuOpen ? 'Скрыть выбор контекста' : 'Показать выбор контекста'}
-                  title={isContextMenuOpen ? 'Скрыть контекст' : 'Добавить контекст'}
-                >
+                <div className="inline-flex h-6 w-11 items-center justify-center rounded-lg border border-editor-border-subtle bg-white text-editor-text-secondary">
                   <Files size={13} />
-                </button>
+                </div>
                 <button
                   type="submit"
-                  disabled={isSending || !draft.trim() || !enabled || hasPendingContext}
+                  disabled={isSending || !draft.trim() || !enabled || hasPendingContext || !isScopeReady}
                   className="inline-flex h-7 w-11 items-center justify-center rounded-lg border border-editor-border-subtle bg-[#d70032] text-sm font-semibold text-white transition-colors hover:bg-[#b00025] disabled:cursor-not-allowed disabled:opacity-50"
-                  title={hasPendingContext ? 'Контекст загружается' : 'Отправить'}
+                  title={
+                    hasPendingContext
+                      ? 'Контекст загружается'
+                      : !isScopeReady
+                        ? 'Выберите область контекста или добавьте элементы в выбранную область'
+                        : 'Отправить'
+                  }
                 >
                   <SendHorizontal size={16} />
                 </button>

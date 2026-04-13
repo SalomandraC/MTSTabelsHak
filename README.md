@@ -6,7 +6,7 @@ WikiLive — это совместный вики-модуль для кейса
 
 Текущее состояние репозитория:
 - `backend/` содержит каркас бэкенда на NestJS с Prisma, PostgreSQL, Redis, BullMQ и Hocuspocus
-- `services/context-engine/` содержит Python FastAPI сервис для semantic search и AI retrieval по документам
+- `services/context-engine/` содержит Python FastAPI сервис для semantic search и AI retrieval по документам на `qdrant-client` в local persistent mode
 - `frontend/` содержит React + Tiptap workspace с MWS-first проводником, wiki-страницами рядом с таблицами, backlinks и live embeds
 - `docs/openapi.yaml` содержит HTTP/WebSocket контракт
 - `docs/MWS_TABLES_API_ANALYSIS.md` описывает, как сущности MWS Tables встраиваются в редактор
@@ -147,6 +147,7 @@ MWS-first проводник:
 AI retrieval и semantic search:
 - backend остаётся единственной внешней точкой входа для AI
 - `context-engine` индексирует текст страниц после сохранения snapshot в фоне через существующий BullMQ worker
+- `context-engine` хранит векторный индекс локально на диске через `qdrant-client(path=...)`, поэтому данные переживают перезапуск контейнера при сохранённом volume
 - поиск по содержимому работает только в рамках выбранного пространства
 - документы можно добавлять в AI chat как явный контекст
 - папки можно добавлять в AI chat как ограничение области semantic search
