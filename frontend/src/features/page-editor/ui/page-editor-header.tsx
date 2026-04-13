@@ -163,14 +163,6 @@ export function PageEditorHeader({
       style={fontFamilyStyle}
     >
       <div className="relative flex shrink-0 flex-col items-start gap-2">
-        <span className="inline-flex h-8 w-8 items-center justify-center text-[0.65rem] font-semibold text-editor-brand mt-0.5">
-          <img
-            src={DOC}
-            alt="Иконка страницы"
-            className="h-6 w-6"
-          />
-        </span>
-
         {showViewModeControls ? (
           <div ref={viewMenuRef} className="relative">
             <div className="mb-2 text-[8px]  font-semibold uppercase text-center tracking-[0.16em] text-editor-text-tertiary">Вид страницы</div>
