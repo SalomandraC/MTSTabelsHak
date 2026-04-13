@@ -6,7 +6,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { NodeSourceType, NodeSyncState, WikiNodeType } from '@prisma/client';
+import { WikiNodeType } from '@prisma/client';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import FormData from 'form-data';
@@ -28,6 +28,16 @@ type BackendSortRule = {
   fieldId: string;
   desc: boolean;
 };
+type NodeSourceTypeValue = 'local' | 'mws';
+type NodeSyncStateValue = 'local_only' | 'synced' | 'stale';
+type ExtendedWikiNodeTypeValue = WikiNodeType | 'mws_folder' | 'mws_table';
+
+const NODE_SOURCE_LOCAL: NodeSourceTypeValue = 'local';
+const NODE_SOURCE_MWS: NodeSourceTypeValue = 'mws';
+const NODE_SYNC_SYNCED: NodeSyncStateValue = 'synced';
+const NODE_SYNC_STALE: NodeSyncStateValue = 'stale';
+const WIKI_NODE_TYPE_MWS_FOLDER: ExtendedWikiNodeTypeValue = 'mws_folder';
+const WIKI_NODE_TYPE_MWS_TABLE: ExtendedWikiNodeTypeValue = 'mws_table';
 
 export type NormalizedMwsNode = {
   id: string;
@@ -130,7 +140,7 @@ export class MwsService {
     const existingShadowNodes = await this.prisma.wikiNode.findMany({
       where: {
         spaceId,
-        sourceType: NodeSourceType.mws,
+        sourceType: NODE_SOURCE_MWS,
       },
       select: {
         id: true,
@@ -139,8 +149,8 @@ export class MwsService {
     });
     const existingShadowNodeIdsBySourceId = new Map(
       existingShadowNodes
-        .filter((node): node is { id: string; sourceNodeId: string } => Boolean(node.sourceNodeId))
-        .map((node) => [node.sourceNodeId, node.id]),
+        .filter((node) => typeof node.sourceNodeId === 'string' && node.sourceNodeId.length > 0)
+        .map((node) => [node.sourceNodeId as string, node.id] as const),
     );
 
     const localIdsBySourceId = new Map<string, string>();
@@ -157,7 +167,7 @@ export class MwsService {
               icon: node.icon ?? null,
               isArchived: false,
               isExternalReadonly: true,
-              syncState: NodeSyncState.synced,
+              syncState: NODE_SYNC_SYNCED,
               lastSeenInSourceAt: syncedAt,
               mwsSpaceId: node.spaceId ?? spaceId,
               mwsDatasheetId: node.datasheetId ?? node.dstId,
@@ -171,14 +181,14 @@ export class MwsService {
             data: {
               spaceId,
               type: this.toShadowNodeType(node),
-              sourceType: NodeSourceType.mws,
+              sourceType: NODE_SOURCE_MWS,
               sourceNodeId: node.id,
               sourceParentNodeId: node.parentId,
               title: node.name,
               icon: node.icon ?? null,
               isArchived: false,
               isExternalReadonly: true,
-              syncState: NodeSyncState.synced,
+              syncState: NODE_SYNC_SYNCED,
               lastSeenInSourceAt: syncedAt,
               mwsSpaceId: node.spaceId ?? spaceId,
               mwsDatasheetId: node.datasheetId ?? node.dstId,
@@ -208,7 +218,7 @@ export class MwsService {
     const localNodesBoundToExternalParents = await this.prisma.wikiNode.findMany({
       where: {
         spaceId,
-        sourceType: NodeSourceType.local,
+        sourceType: NODE_SOURCE_LOCAL,
         mwsParentNodeId: {
           in: seenExternalIds,
         },
@@ -240,7 +250,7 @@ export class MwsService {
           },
         },
         data: {
-          syncState: NodeSyncState.stale,
+          syncState: NODE_SYNC_STALE,
           updatedBy: user.userId,
         },
       });
@@ -256,7 +266,7 @@ export class MwsService {
     let node = await this.prisma.wikiNode.findFirst({
       where: {
         spaceId,
-        sourceType: NodeSourceType.mws,
+        sourceType: NODE_SOURCE_MWS,
         sourceNodeId,
         isArchived: false,
       },
@@ -267,7 +277,7 @@ export class MwsService {
       node = await this.prisma.wikiNode.findFirst({
         where: {
           spaceId,
-          sourceType: NodeSourceType.mws,
+          sourceType: NODE_SOURCE_MWS,
           sourceNodeId,
           isArchived: false,
         },
@@ -753,8 +763,8 @@ export class MwsService {
     return node.type.toLowerCase().includes('folder');
   }
 
-  private toShadowNodeType(node: NormalizedMwsNode): WikiNodeType {
-    return this.isTableNode(node) ? WikiNodeType.mws_table : WikiNodeType.mws_folder;
+  private toShadowNodeType(node: NormalizedMwsNode): ExtendedWikiNodeTypeValue {
+    return this.isTableNode(node) ? WIKI_NODE_TYPE_MWS_TABLE : WIKI_NODE_TYPE_MWS_FOLDER;
   }
 
   private isTableNode(node: NormalizedMwsNode) {

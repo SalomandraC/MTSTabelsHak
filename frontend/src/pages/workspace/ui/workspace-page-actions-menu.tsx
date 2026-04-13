@@ -2,49 +2,68 @@ import { useState } from 'react';
 import type { RefObject } from 'react';
 
 type WorkspacePageActionsMenuProps = {
+  nodeKind: 'wikiPage' | 'wikiFolder' | 'mwsFolder';
   title: string;
-  linkedPageId: string;
+  linkedPageId?: string;
   canDeletePage: boolean;
+  canRenameFolder?: boolean;
+  canDeleteFolder?: boolean;
   isOpen: boolean;
-  isCreateMode: boolean;
+  createMode: 'page' | 'folder' | null;
   isCreatingPage: boolean;
-  createPageTitle: string;
+  isCreatingFolder?: boolean;
+  createTitle: string;
   createError: string;
   contextMenuPosition: { left: number; top: number } | null;
   createInputRef: RefObject<HTMLInputElement>;
   onCloseActionsMenu: () => void;
-  onOpenCreateMode: () => void;
-  onCreatePageTitleChange: (value: string) => void;
+  onOpenCreatePageMode: () => void;
+  onOpenCreateFolderMode?: () => void;
+  onOpenTemplateMarketplace?: () => void;
+  onCreateTitleChange: (value: string) => void;
   onCreatePageSubmit: () => void;
+  onCreateFolderSubmit?: () => void;
   onCancelCreateMode: () => void;
   isPinned: boolean;
   onTogglePinned: () => void;
   onDeletePage: () => void;
-  onSelectPage: (pageId: string) => void;
+  onRenameFolder?: () => void;
+  onDeleteFolder?: () => void;
 };
 
 export function WorkspacePageActionsMenu({
+  nodeKind,
   title,
   linkedPageId,
   canDeletePage,
+  canRenameFolder = false,
+  canDeleteFolder = false,
   isOpen,
-  isCreateMode,
+  createMode,
   isCreatingPage,
-  createPageTitle,
+  isCreatingFolder = false,
+  createTitle,
   createError,
   contextMenuPosition,
   createInputRef,
   onCloseActionsMenu,
-  onOpenCreateMode,
-  onCreatePageTitleChange,
+  onOpenCreatePageMode,
+  onOpenCreateFolderMode,
+  onOpenTemplateMarketplace,
+  onCreateTitleChange,
   onCreatePageSubmit,
+  onCreateFolderSubmit,
   onCancelCreateMode,
   isPinned,
   onTogglePinned,
   onDeletePage,
-  onSelectPage,
+  onRenameFolder,
+  onDeleteFolder,
 }: WorkspacePageActionsMenuProps) {
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const isFolder = nodeKind === 'wikiFolder' || nodeKind === 'mwsFolder';
+  const isFolderCreateMode = createMode === 'folder';
+  const isPageCreateMode = createMode === 'page';
 
   if (!isOpen) {
     return null;
@@ -53,7 +72,7 @@ export function WorkspacePageActionsMenu({
   return (
     <div
       role="menu"
-      aria-label={`Действия для страницы ${title}`}
+      aria-label={isFolder ? `Действия для папки ${title}` : `Действия для страницы ${title}`}
       className={[
         'z-60 w-44 overflow-hidden rounded-xl border border-editor-border-subtle bg-white py-1 shadow-[0_16px_40px_rgba(15,23,42,0.12)]',
         contextMenuPosition ? 'fixed' : 'absolute right-0 top-7',
@@ -67,18 +86,24 @@ export function WorkspacePageActionsMenu({
           : undefined
       }
     >
-      {isCreateMode ? (
+      {createMode ? (
         <div className="space-y-2 px-2 py-2">
-          <label className="block text-xs font-semibold uppercase tracking-wide text-[#6b7280]">Новая страница</label>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-[#6b7280]">
+            {isFolderCreateMode ? 'Новая папка' : 'Новая страница'}
+          </label>
           <input
             ref={createInputRef}
             type="text"
-            value={createPageTitle}
-            onChange={(event) => onCreatePageTitleChange(event.target.value)}
+            value={createTitle}
+            onChange={(event) => onCreateTitleChange(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
                 event.preventDefault();
-                onCreatePageSubmit();
+                if (isFolderCreateMode) {
+                  onCreateFolderSubmit?.();
+                } else {
+                  onCreatePageSubmit();
+                }
               }
 
               if (event.key === 'Escape') {
@@ -86,7 +111,7 @@ export function WorkspacePageActionsMenu({
                 onCancelCreateMode();
               }
             }}
-            placeholder="Название страницы"
+            placeholder={isFolderCreateMode ? 'Название папки' : 'Название страницы'}
             className="h-8 w-full rounded-md border border-editor-border-subtle bg-white px-2 text-sm outline-none focus:border-[#5586ff]"
           />
           {createError ? <p className="text-xs text-[#d70032]">{createError}</p> : null}
@@ -100,40 +125,97 @@ export function WorkspacePageActionsMenu({
             </button>
             <button
               type="button"
-              onClick={onCreatePageSubmit}
-              disabled={isCreatingPage}
+              onClick={isFolderCreateMode ? onCreateFolderSubmit : onCreatePageSubmit}
+              disabled={isFolderCreateMode ? isCreatingFolder : isCreatingPage}
               className="flex-1 rounded-md bg-[#d70032] px-2 py-1.5 text-xs font-semibold text-white hover:bg-[#b8002b] disabled:cursor-wait disabled:opacity-70"
             >
-              {isCreatingPage ? 'Создаем...' : 'Создать'}
+              {isFolderCreateMode
+                ? (isCreatingFolder ? 'Создаем...' : 'Создать')
+                : (isCreatingPage ? 'Создаем...' : 'Создать')}
             </button>
           </div>
         </div>
       ) : (
         <>
+          {nodeKind === 'wikiPage' ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(event) => {
+                event.stopPropagation();
+                onCloseActionsMenu();
+                onTogglePinned();
+              }}
+              className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
+            >
+              {isPinned ? 'Открепить' : 'Закрепить'}
+            </button>
+          ) : null}
           <button
             type="button"
             role="menuitem"
             onClick={(event) => {
               event.stopPropagation();
-              onCloseActionsMenu();
-              onTogglePinned();
-            }}
-            className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
-          >
-            {isPinned ? 'Открепить' : 'Закрепить'}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={(event) => {
-              event.stopPropagation();
-              onOpenCreateMode();
+              onOpenCreatePageMode();
             }}
             className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
           >
             Создать страницу
           </button>
-          {canDeletePage ? (
+          {isFolder ? (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onOpenTemplateMarketplace?.();
+                }}
+                className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
+              >
+                Создать из шаблона
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onOpenCreateFolderMode?.();
+                }}
+                className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
+              >
+                Создать папку
+              </button>
+              {canRenameFolder ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onCloseActionsMenu();
+                    onRenameFolder?.();
+                  }}
+                  className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
+                >
+                  Переименовать папку
+                </button>
+              ) : null}
+              {canDeleteFolder ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setIsConfirmDeleteOpen(true);
+                  }}
+                  className="flex w-full items-center px-3 py-2 text-left text-sm text-[#d70032] hover:bg-[#fff1f3]"
+                >
+                  Удалить папку
+                </button>
+              ) : null}
+            </>
+          ) : null}
+          {nodeKind === 'wikiPage' && canDeletePage ? (
             <button
               type="button"
               role="menuitem"
@@ -150,7 +232,9 @@ export function WorkspacePageActionsMenu({
             <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/30 p-4">
               <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-lg">
                 <p className="text-sm leading-6 text-[#1f1f1f]">
-                  Удалить страницу «{title}»? Таблицы MWS при этом не удаляются.
+                  {isFolder
+                    ? `Удалить папку «${title}»? Вложенные страницы и папки будут скрыты из дерева.`
+                    : `Удалить страницу «${title}»? Таблицы MWS при этом не удаляются.`}
                 </p>
                 <div className="mt-6 flex justify-end gap-3">
                   <button
@@ -168,11 +252,15 @@ export function WorkspacePageActionsMenu({
                     onClick={() => {
                       setIsConfirmDeleteOpen(false);
                       onCloseActionsMenu();
-                      onDeletePage();
+                      if (isFolder) {
+                        onDeleteFolder?.();
+                      } else {
+                        onDeletePage();
+                      }
                     }}
                     className="rounded-lg bg-[#d70032] px-4 py-2 text-sm font-semibold text-white hover:bg-[#b8002b]"
                   >
-                    Удалить
+                    {isFolder ? 'Удалить папку' : 'Удалить'}
                   </button>
                 </div>
               </div>

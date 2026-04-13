@@ -5,6 +5,9 @@ import { PrismaService } from 'src/infra/prisma/prisma.service';
 import { MwsService } from 'src/mws/mws.service';
 import { DocumentRole, PageAccessService } from 'src/page-access/page-access.service';
 
+const WIKI_NODE_TYPE_MWS_FOLDER = 'mws_folder';
+const WIKI_NODE_TYPE_MWS_TABLE = 'mws_table';
+
 type TreeRecord = WikiNode & {
   page: {
     plainTextPreview: string | null;
@@ -151,11 +154,11 @@ export class WorkspaceTreeService {
         nodeId,
         record.mwsDatasheetId,
       );
-      const mwsType = record.type === WikiNodeType.mws_table ? 'table' : 'folder';
+      const mwsType = record.type === WIKI_NODE_TYPE_MWS_TABLE ? 'table' : 'folder';
 
       return {
         id: record.id,
-        kind: record.type === WikiNodeType.mws_table ? 'mwsTable' : 'mwsFolder',
+        kind: record.type === WIKI_NODE_TYPE_MWS_TABLE ? 'mwsTable' : 'mwsFolder',
         title: record.title,
         spaceId: record.spaceId,
         parentId: record.parentId,

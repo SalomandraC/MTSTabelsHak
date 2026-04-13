@@ -11,6 +11,9 @@ import { CreateFolderDto } from './dto/create-folder.dto';
 import { MoveNodeDto } from './dto/move-node.dto';
 import { UpdateFolderDto } from './dto/update-folder.dto';
 
+const WIKI_NODE_TYPE_MWS_FOLDER = 'mws_folder';
+const WIKI_NODE_TYPE_MWS_TABLE = 'mws_table';
+
 export interface TreeNode {
   id: string;
   spaceId: string;
@@ -137,7 +140,7 @@ export class WikiTreeService {
       throw new NotFoundException('Node not found');
     }
 
-    if (node.type === WikiNodeType.mws_folder || node.type === WikiNodeType.mws_table) {
+    if (node.type === WIKI_NODE_TYPE_MWS_FOLDER || node.type === WIKI_NODE_TYPE_MWS_TABLE) {
       throw new BadRequestException('External MWS nodes are read-only and cannot be moved');
     }
 
@@ -171,7 +174,7 @@ export class WikiTreeService {
     }
 
     const parent = await this.prisma.wikiNode.findUnique({ where: { id: parentId } });
-    if (!parent || (parent.type !== WikiNodeType.folder && parent.type !== WikiNodeType.mws_folder)) {
+    if (!parent || (parent.type !== WikiNodeType.folder && parent.type !== WIKI_NODE_TYPE_MWS_FOLDER)) {
       throw new BadRequestException('Parent node must be an existing local or MWS folder');
     }
   }
@@ -213,7 +216,7 @@ export class WikiTreeService {
     }
 
     const shadowParent = await this.mwsService.resolveShadowNode(spaceId, externalParentNodeId, user);
-    if (shadowParent.type !== WikiNodeType.mws_folder) {
+    if (shadowParent.type !== WIKI_NODE_TYPE_MWS_FOLDER) {
       throw new BadRequestException('External parent must be an MWS folder');
     }
 

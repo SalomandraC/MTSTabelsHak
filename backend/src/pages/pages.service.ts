@@ -16,6 +16,8 @@ import { UpdatePageAccessDto } from './dto/update-page-access.dto';
 import { CreatePageDto } from './dto/create-page.dto';
 import { UpdatePageDto } from './dto/update-page.dto';
 
+const WIKI_NODE_TYPE_MWS_FOLDER = 'mws_folder';
+
 @Injectable()
 export class PagesService {
   constructor(
@@ -265,7 +267,7 @@ export class PagesService {
 
     if (dto.parentNodeId) {
       const parent = await db.wikiNode.findUnique({ where: { id: dto.parentNodeId } });
-      if (!parent || (parent.type !== WikiNodeType.folder && parent.type !== WikiNodeType.mws_folder)) {
+      if (!parent || (parent.type !== WikiNodeType.folder && parent.type !== WIKI_NODE_TYPE_MWS_FOLDER)) {
         throw new BadRequestException('Pages can only be created inside local or MWS folders');
       }
 
@@ -283,7 +285,7 @@ export class PagesService {
     }
 
     const shadowParent = await this.mwsService.resolveShadowNode(dto.spaceId, dto.externalParentNodeId, user);
-    if (shadowParent.type !== WikiNodeType.mws_folder) {
+    if (shadowParent.type !== WIKI_NODE_TYPE_MWS_FOLDER) {
       throw new BadRequestException('External parent must be an MWS folder');
     }
 
