@@ -163,11 +163,11 @@ export function PageEditorHeader({
       style={fontFamilyStyle}
     >
       <div className="relative flex shrink-0 flex-col items-start gap-2">
-        <span className="inline-flex h-7 w-7 items-center justify-center text-[0.65rem] font-semibold text-editor-brand mt-0.5">
+        <span className="inline-flex h-8 w-8 items-center justify-center text-[0.65rem] font-semibold text-editor-brand mt-0.5">
           <img
             src={DOC}
             alt="Иконка страницы"
-            className="h-4 w-4"
+            className="h-6 w-6"
           />
         </span>
 

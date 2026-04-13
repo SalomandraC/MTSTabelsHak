@@ -271,6 +271,7 @@ export type CreateFolderPayload = {
   spaceId: string;
   title: string;
   parentNodeId?: string | null;
+  externalParentNodeId?: string | null;
   icon?: string | null;
 };
 
@@ -386,7 +387,7 @@ export type MwsNode = {
 
 export type WorkspaceTreeNode = {
   id: string;
-  kind: 'mwsFolder' | 'mwsTable' | 'mwsNode' | 'wikiPage';
+  kind: 'mwsFolder' | 'mwsTable' | 'mwsNode' | 'wikiFolder' | 'wikiPage';
   title: string;
   spaceId: string;
   parentId: string | null;
@@ -884,7 +885,7 @@ export const wikiliveApi = {
   getWorkspaceTree(spaceId: string) {
     return request<{ items: WorkspaceTreeNode[] }>(`/api/v1/spaces/${spaceId}/workspace/tree`);
   },
-  createPage(spaceId: string, title: string, parentNodeId?: string | null) {
+  createPage(spaceId: string, title: string, parentNodeId?: string | null, externalParentNodeId?: string | null) {
     return request<{ page: PageSummary }>('/api/v1/pages', {
       method: 'POST',
       body: JSON.stringify({
@@ -892,6 +893,7 @@ export const wikiliveApi = {
         title,
         icon: 'doc',
         parentNodeId: parentNodeId ?? null,
+        externalParentNodeId: externalParentNodeId ?? null,
       }),
     });
   },
@@ -961,6 +963,7 @@ export const wikiliveApi = {
         title: payload.title,
         icon: payload.icon ?? 'folder',
         parentNodeId: payload.parentNodeId ?? null,
+        externalParentNodeId: payload.externalParentNodeId ?? null,
       }),
     });
   },
@@ -975,12 +978,12 @@ export const wikiliveApi = {
       method: 'DELETE',
     });
   },
-  moveNode(nodeId: string, payload: { targetParentId?: string | null; position?: number }) {
+  moveNode(nodeId: string, payload: { targetParentId?: string | null; targetExternalParentNodeId?: string | null }) {
     return request<{ node: WikiTreeNode }>(`/api/v1/nodes/${nodeId}/move`, {
       method: 'POST',
       body: JSON.stringify({
         targetParentId: payload.targetParentId ?? null,
-        position: payload.position,
+        targetExternalParentNodeId: payload.targetExternalParentNodeId ?? null,
       }),
     });
   },
