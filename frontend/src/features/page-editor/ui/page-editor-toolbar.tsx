@@ -26,7 +26,7 @@ import BrushCleaning from '../../../app/images/brush-cleaning.svg';
 import AtSign from '../../../app/images/at-sign.svg';
 import Picture from '../../../app/images/Picture.svg';
 
-import { History, MessageSquare, MonitorPlay, Pencil, TextAlignCenter, TextAlignEnd, TextAlignStart } from 'lucide-react';
+import { History, MessageSquare, MonitorPlay, Pencil, TextAlignCenter, TextAlignEnd, TextAlignStart, Highlighter } from 'lucide-react';
 
 const redFilter = 'brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(2665%) hue-rotate(346deg) brightness(101%) contrast(97%)';
 
@@ -81,6 +81,8 @@ function areMenuStatesEqual(
     previous.canCode === next.canCode &&
     previous.isUnderline === next.isUnderline &&
     previous.canUnderline === next.canUnderline &&
+    previous.isHighlight === next.isHighlight &&
+    previous.canHighlight === next.canHighlight &&
     previous.canClearNodes === next.canClearNodes &&
     previous.isParagraph === next.isParagraph &&
     previous.isHeading1 === next.isHeading1 &&
@@ -206,6 +208,8 @@ export function PageEditorToolbar({
       canCode: false,
       isUnderline: false,
       canUnderline: false,
+      isHighlight: false,
+      canHighlight: false,
       canClearNodes: false,
       isParagraph: false,
       isHeading1: false,
@@ -348,9 +352,25 @@ export function PageEditorToolbar({
           disabled={!canEdit || !state.canUnderline}
           noBorder={false}
           isFirst={false}
-          isLast={true}
+          isLast={false}
           isInGroup={true}
           aria-label="Подчёркнутый (Ctrl+U)"
+        />
+        <ToolbarButton
+          icon={
+            <Highlighter 
+              className="h-4 w-4"
+              style={state.isHighlight ? { color: '#d92c2c' } : { color: 'rgba(80, 87, 98, 1)' }}
+            />
+          }
+          onClick={() => editor.chain().focus().toggleHighlight().run()}
+          pressed={state.isHighlight}
+          disabled={!canEdit || !state.canHighlight}
+          noBorder={false}
+          isFirst={false}
+          isLast={true}
+          isInGroup={true}
+          aria-label="Выделить маркером"
         />
 
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />

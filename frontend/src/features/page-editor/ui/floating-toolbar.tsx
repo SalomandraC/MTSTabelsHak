@@ -1,6 +1,6 @@
 import type { Editor } from '@tiptap/core';
 import { useEditorState } from '@tiptap/react';
-import { Code2, List, ListOrdered, ListChecks, MessageSquare, MonitorPlay } from 'lucide-react';
+import { Code2, List, ListOrdered, ListChecks, MessageSquare, MonitorPlay, Highlighter } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { handleListAction } from '../model/list-actions';
@@ -280,6 +280,20 @@ export function FloatingToolbar({
         isFirst={false}
         isLast={false}
         aria-label="Подчёркнутый (Ctrl+U)"
+      />
+      <ToolbarButton
+        icon={
+          <Highlighter 
+            className="h-3.5 w-3.5" 
+            style={state.isHighlight ? { color: '#d92c2c' } : { color: 'rgba(80, 87, 98, 1)' }} 
+          />
+        }
+        onClick={() => editor.chain().focus().toggleHighlight().run()}
+        pressed={state.isHighlight}
+        disabled={!canEdit || !state.canHighlight}
+        isFirst={false}
+        isLast={false}
+        aria-label="Выделить маркером"
       />
       <ToolbarButton
         icon={

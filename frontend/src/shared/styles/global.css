@@ -192,6 +192,13 @@
     padding: 0.18rem 0.28rem;
   }
 
+  .tiptap mark {
+    background-color: #fef08a;
+    border-radius: 0.25rem;
+    padding: 0.1rem 0.2rem;
+    box-decoration-break: clone;
+  }
+
   .tiptap pre {
     /* Styles moved to React component */
   }

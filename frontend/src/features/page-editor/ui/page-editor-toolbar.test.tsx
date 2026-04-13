@@ -3,6 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { PageEditorToolbar } from './page-editor-toolbar';
 
+vi.mock('../../plugins', () => ({
+  usePlugins: () => ({
+    items: [],
+  }),
+}));
+
 vi.mock('@tiptap/react', () => ({
   useEditorState: () => ({
     isBold: false,
@@ -15,6 +21,8 @@ vi.mock('@tiptap/react', () => ({
     canCode: true,
     isUnderline: false,
     canUnderline: true,
+    isHighlight: false,
+    canHighlight: true,
     canClearNodes: true,
     isParagraph: true,
     isHeading1: false,
@@ -77,6 +85,7 @@ describe('PageEditorToolbar', () => {
         canEdit={false}
         onOpenLinkModal={vi.fn()}
         onOpenImageModal={vi.fn()}
+        onOpenIframeModal={vi.fn()}
         onCreateComment={onCreateComment}
       />,
     );
