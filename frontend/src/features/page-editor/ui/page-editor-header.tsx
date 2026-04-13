@@ -162,7 +162,8 @@ export function PageEditorHeader({
       className="relative z-[30] flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 border-b border-editor-border-subtle bg-editor-bg-page px-3 py-3 sm:px-4 sm:py-4"
       style={fontFamilyStyle}
     >
-      <div className="relative flex shrink-0 flex-col items-start gap-2">
+      <div className="relative flex shrink-0 flex-row items-start gap-10">
+
         {showViewModeControls ? (
           <div ref={viewMenuRef} className="relative">
             <div className="mb-2 text-[8px]  font-semibold uppercase text-center tracking-[0.16em] text-editor-text-tertiary">Вид страницы</div>
