@@ -1,5 +1,5 @@
 import { SendHorizontal, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/core';
 
 import { type MwsField, type MwsRecord, wikiliveApi } from '../../../../shared/api/wikilive';
@@ -113,6 +113,29 @@ function buildReportTitle(pageTitle?: string): string {
 function isAnalysisPrompt(prompt: string): boolean {
   const value = prompt.toLowerCase();
   return /(анализ|обзор|что видно|покажи|сводк|summary|inspect|explain)/i.test(value);
+}
+
+function isStructurePrompt(prompt: string): boolean {
+  const value = prompt.toLowerCase();
+  return /(структур|оглавлен|разметк|подзаголов|заголовк|structure|outline)/i.test(value);
+}
+
+function isReportPrompt(prompt: string): boolean {
+  const value = prompt.toLowerCase();
+  return /(отчет|report|summary|резюм)/i.test(value);
+}
+
+function shouldCreateNewReportDocument(prompt: string): boolean {
+  const value = prompt.toLowerCase();
+  const patterns = [
+    /нов(ый|ую|ое)?\s+(документ|файл|страниц[ау]?|лист)/i,
+    /отдельн[а-я]*\s+(документ|файл|страниц[ау]?|лист)/i,
+    /создай(те)?\s+нов(ый|ую|ое)?\s+(документ|файл|страниц[ау]?|лист)/i,
+    /в\s+нов(ый|ую|ое)?\s+(документ|файл|страниц[ау]?|лист)/i,
+    /вынес(и|ите)\s+в\s+отдельн(ый|ую|ое)/i,
+  ];
+
+  return patterns.some((pattern) => pattern.test(value));
 }
 
 function isTextLikeField(field: MwsField): boolean {
@@ -483,10 +506,10 @@ export function AiInlineCopilot({
   const [structurePlan, setStructurePlan] = useState<StructureInstruction[]>([]);
   const [status, setStatus] = useState('');
   const [isBusy, setIsBusy] = useState(false);
-  const [showReportMenu, setShowReportMenu] = useState(false);
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [createdPage, setCreatedPage] = useState<{ id: string; title: string } | null>(null);
   const [selectedContextId, setSelectedContextId] = useState('detected');
+  const promptInputRef = useRef<HTMLTextAreaElement>(null);
   const { handleAiChatResponse, refreshTable: requestRefresh } = useAiTableContext();
 
   useEffect(() => {
@@ -495,7 +518,6 @@ export function AiInlineCopilot({
       setOutput('');
       setStructurePlan([]);
       setStatus('');
-      setShowReportMenu(false);
       setShowContextMenu(false);
       setCreatedPage(null);
       setSelectedContextId('detected');
@@ -517,17 +539,12 @@ export function AiInlineCopilot({
         return;
       }
 
-      if (showReportMenu) {
-        setShowReportMenu(false);
-        return;
-      }
-
       onClose();
     };
 
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [isOpen, onClose, showContextMenu, showReportMenu]);
+  }, [isOpen, onClose, showContextMenu]);
 
   const contextOptions = useMemo(() => {
     const options: ContextOption[] = [
@@ -647,6 +664,17 @@ export function AiInlineCopilot({
     } finally {
       setIsBusy(false);
     }
+  };
+
+  const applyPromptSuggestion = (suggestion: string) => {
+    setPrompt((current) => {
+      const trimmed = current.trim();
+      return trimmed ? `${suggestion} ${trimmed}` : suggestion;
+    });
+
+    window.requestAnimationFrame(() => {
+      promptInputRef.current?.focus();
+    });
   };
 
   const refreshTable = (datasheetId: string) => {
@@ -1101,12 +1129,27 @@ export function AiInlineCopilot({
       return;
     }
 
-    if (activeContext.kind === 'table' && activeContext.datasheetId) {
-      if (isAnalysisPrompt(trimmed)) {
-        await runAnalyze();
-        return;
+    if (isStructurePrompt(trimmed)) {
+      await handleStructureDocument();
+      return;
+    }
+
+    if (isReportPrompt(trimmed)) {
+      if (shouldCreateNewReportDocument(trimmed)) {
+        await reportToNewFile();
+      } else {
+        await reportToCurrentFile();
       }
 
+      return;
+    }
+
+    if (isAnalysisPrompt(trimmed)) {
+      await runAnalyze();
+      return;
+    }
+
+    if (activeContext.kind === 'table' && activeContext.datasheetId) {
       await runTableWorkflow();
       return;
     }
@@ -1276,6 +1319,7 @@ export function AiInlineCopilot({
 
       <div className="mb-2 flex gap-2">
         <textarea
+          ref={promptInputRef}
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
           onKeyDown={(event) => {
@@ -1302,8 +1346,8 @@ export function AiInlineCopilot({
       <div className="mb-2 flex flex-wrap gap-2">
         <button
           type="button"
-          className="rounded-md border border-[#ffd9e1] bg-white px-2 py-1 text-xs text-[#5a6170] hover:bg-[#fff1f3] disabled:opacity-50"
-          onClick={() => void runAnalyze()}
+          className="rounded-md border border-[#ffd9e1] bg-white px-2 py-1 text-xs text-[#5a6170] transition-colors hover:bg-[#fff1f3] disabled:opacity-50"
+          onClick={() => applyPromptSuggestion('Проанализируй документ и дай краткие выводы:')}
           disabled={isBusy}
         >
           Анализ
@@ -1312,52 +1356,32 @@ export function AiInlineCopilot({
         {isDocumentStructureEnabled ? (
           <button
             type="button"
-            className="rounded-md border border-[#ffd9e1] bg-white px-2 py-1 text-xs text-[#5a6170] hover:bg-[#fff1f3] disabled:opacity-50"
-            onClick={() => {
-              setStructurePlan([]);
-              void handleStructureDocument();
-            }}
+            className="rounded-md border border-[#ffd9e1] bg-white px-2 py-1 text-xs text-[#5a6170] transition-colors hover:bg-[#fff1f3] disabled:opacity-50"
+            onClick={() => applyPromptSuggestion('Структуризируй документ: выдели заголовки, разделы и подзаголовки.')} 
             disabled={isBusy}
           >
             Структурировать
           </button>
         ) : null}
 
-        <div className="relative">
-          <button
-            type="button"
-            className="rounded-md border border-[#ffd9e1] bg-white px-2 py-1 text-xs text-[#5a6170] hover:bg-[#fff1f3] disabled:opacity-50"
-            onClick={() => setShowReportMenu((value) => !value)}
-            disabled={isBusy}
-          >
-            Отчет
-          </button>
+        <button
+          type="button"
+          className="rounded-md border border-[#ffd9e1] bg-white px-2 py-1 text-xs text-[#5a6170] transition-colors hover:bg-[#fff1f3] disabled:opacity-50"
+          onClick={() => applyPromptSuggestion('Сделай отчет по этому документу:')}
+          disabled={isBusy}
+        >
+          Отчет
+        </button>
 
-          {showReportMenu ? (
-            <div className="absolute left-0 top-8 z-[90] min-w-[180px] rounded-md border border-editor-border-subtle bg-white p-1 shadow-lg">
-              <button
-                type="button"
-                className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-editor-bg-control"
-                onClick={() => {
-                  setShowReportMenu(false);
-                  void reportToCurrentFile();
-                }}
-              >
-                В этот файл
-              </button>
-              <button
-                type="button"
-                className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-editor-bg-control"
-                onClick={() => {
-                  setShowReportMenu(false);
-                  void reportToNewFile();
-                }}
-              >
-                В новый файл
-              </button>
-            </div>
-          ) : null}
-        </div>
+        <button
+          type="button"
+          className="rounded-md border border-[#ffd9e1] bg-white px-2 py-1 text-xs text-[#5a6170] transition-colors hover:bg-[#fff1f3] disabled:opacity-50"
+          onClick={() => applyPromptSuggestion('Сделай глубокий анализ документа и предложи улучшения:')}
+          disabled={isBusy}
+        >
+          Улучшения
+        </button>
+
       </div>
 
       {status ? <p className="mb-2 text-xs text-editor-text-tertiary">{status}</p> : null}
