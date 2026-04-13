@@ -19,6 +19,7 @@ import { PageEditorToolbar } from './page-editor-toolbar';
 import { PagePickerModal } from './page-picker-modal';
 import { TemplateVariableModal } from './template-variable-modal';
 import { IframeModal } from './iframe-modal';
+import { CreateBookmarkModal, collectBookmarks, BookmarkPickerModal } from './bookmark-modal';
 
 type PageEditorProps = {
   spaceId: string;
@@ -440,6 +441,12 @@ function LivePageEditor({
           <PagePickerModal {...controller.pagePicker} />
           <TemplateVariableModal {...controller.templateVariableModal} />
           <WikiTablePickerModal {...controller.tablePicker} />
+          <CreateBookmarkModal
+            isOpen={controller.bookmarkModal.isOpen}
+            anchorRect={null}
+            onConfirm={controller.bookmarkModal.onConfirm}
+            onClose={controller.bookmarkModal.onClose}
+          />
           <AiInlineCopilot
             enabled={isAiInlineChatEnabled}
             isOpen={isCopilotOpen}

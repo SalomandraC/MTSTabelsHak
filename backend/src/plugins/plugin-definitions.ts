@@ -160,4 +160,19 @@ export const pluginDefinitions: PluginDefinition[] = [
       'slash-menu': true,
     },
   },
+  {
+    id: 'bookmarks',
+    title: 'Закладки',
+    description: 'Создавайте именованные закладки в тексте и вставляйте ссылки на них — как в Google Docs.',
+    category: 'core',
+    kind: 'optional',
+    defaultEnabled: true,
+    implemented: true,
+    placement: ['Редактор', 'Тулбар редактора'],
+    defaultSettings: {
+      'toolbar': true,
+      'floating-toolbar': true,
+      'slash-menu': true,
+    },
+  },
 ];

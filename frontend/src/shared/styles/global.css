@@ -303,6 +303,23 @@
     outline-offset: 2px;
   }
 
+  .tiptap .bookmark-anchor {
+    border-bottom: 2px solid #7b67ee;
+    border-radius: 0.1rem;
+    cursor: default;
+  }
+
+  .tiptap .bookmark-link {
+    color: #7b67ee;
+    border-bottom: 1px dashed #7b67ee;
+    cursor: pointer;
+    transition: opacity 120ms ease;
+  }
+
+  .tiptap .bookmark-link:hover {
+    opacity: 0.75;
+  }
+
   .tiptap .comment-anchor {
     border-radius: 0.2rem;
     background: color-mix(in srgb, #907ff0 13%, transparent);

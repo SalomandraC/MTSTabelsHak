@@ -1,14 +1,15 @@
 import type { Editor } from '@tiptap/core';
 import { useEditorState } from '@tiptap/react';
-import { Code2, List, ListOrdered, ListChecks, MessageSquare, MonitorPlay, Highlighter } from 'lucide-react';
+import { Code2, List, ListOrdered, ListChecks, MessageSquare, MonitorPlay, Highlighter, BookmarkPlus, Link } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { handleListAction } from '../model/list-actions';
 import { menuBarStateSelector } from '../model/menu-state';
-import { getCanvasDrawSettings, getIframeEmbedSettings } from '../../plugins/model/plugin-registry';
+import { getCanvasDrawSettings, getIframeEmbedSettings, getBookmarkSettings } from '../../plugins/model/plugin-registry';
 import { usePlugins } from '../../plugins';
 import { wikiliveApi } from '../../../shared/api/wikilive';
 import { HighlightColorPicker } from './highlight-color-picker';
+import { CreateBookmarkModal, BookmarkPickerModal, collectBookmarks } from './bookmark-modal';
 
 import B from '../../../app/images/B.svg';
 import Tk from '../../../app/images/Tk.svg';
@@ -96,12 +97,16 @@ export function FloatingToolbar({
   const { items: plugins } = usePlugins();
   const canvasSettings = getCanvasDrawSettings(plugins);
   const iframeSettings = getIframeEmbedSettings(plugins);
+  const bookmarkSettings = getBookmarkSettings(plugins);
   const showCanvasButton = plugins.some(p => p.id === 'canvas-draw' && p.enabled) && canvasSettings['floating-toolbar'];
   const showIframeButton = plugins.some(p => p.id === 'iframe-embed' && p.enabled) && iframeSettings['floating-toolbar'];
+  const showBookmarkButtons = plugins.some(p => p.id === 'bookmarks' && p.enabled) && bookmarkSettings['floating-toolbar'];
   const [visible, setVisible] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [highlightPickerAnchor, setHighlightPickerAnchor] = useState<DOMRect | null>(null);
+  const [createBookmarkAnchor, setCreateBookmarkAnchor] = useState<DOMRect | null>(null);
+  const [bookmarkPickerAnchor, setBookmarkPickerAnchor] = useState<DOMRect | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
 
   const state = useEditorState({
@@ -478,6 +483,52 @@ export function FloatingToolbar({
         anchorRect={highlightPickerAnchor}
         toolbarRef={toolbarRef}
         onClose={() => setHighlightPickerAnchor(null)}
+      />
+
+      {showBookmarkButtons && canEdit ? (
+        <>
+          <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+          <ToolbarButton
+            icon={<BookmarkPlus className="h-3.5 w-3.5" style={{ color: state.isBookmark ? '#7b67ee' : 'rgba(80,87,98,1)' }} />}
+            onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+              setCreateBookmarkAnchor(e.currentTarget.getBoundingClientRect());
+            }}
+            pressed={state.isBookmark}
+            isFirst={true}
+            isLast={false}
+            aria-label="Создать закладку"
+          />
+          <ToolbarButton
+            icon={<Link className="h-3.5 w-3.5" style={{ color: state.isBookmarkLink ? '#7b67ee' : 'rgba(80,87,98,1)' }} />}
+            onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+              setBookmarkPickerAnchor(e.currentTarget.getBoundingClientRect());
+            }}
+            pressed={state.isBookmarkLink}
+            isFirst={false}
+            isLast={true}
+            aria-label="Ссылка на закладку"
+          />
+        </>
+      ) : null}
+
+      <CreateBookmarkModal
+        isOpen={Boolean(createBookmarkAnchor)}
+        anchorRect={createBookmarkAnchor}
+        onConfirm={(label) => {
+          editor.chain().focus().setBookmark({ id: `bm-${Date.now()}`, label }).run();
+          setCreateBookmarkAnchor(null);
+        }}
+        onClose={() => setCreateBookmarkAnchor(null)}
+      />
+      <BookmarkPickerModal
+        isOpen={Boolean(bookmarkPickerAnchor)}
+        anchorRect={bookmarkPickerAnchor}
+        bookmarks={collectBookmarks(editor)}
+        onSelect={(id) => {
+          editor.chain().focus().setBookmarkLink({ bookmarkId: id }).run();
+          setBookmarkPickerAnchor(null);
+        }}
+        onClose={() => setBookmarkPickerAnchor(null)}
       />
     </div>
   );

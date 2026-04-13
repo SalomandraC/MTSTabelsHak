@@ -34,6 +34,9 @@ export const runtimePluginRegistry: RuntimePluginDefinition[] = [
     id: 'iframe-embed',
     editorSlots: ['slash_menu'],
   },
+  {
+    id: 'bookmarks',
+  },
 ];
 
 function isPluginRuntimeEnabled(items: PluginCatalogItem[], pluginId: string) {
@@ -79,4 +82,18 @@ export function isEditorSlotEnabled(items: PluginCatalogItem[], slot: EditorSlot
   return runtimePluginRegistry.some((definition) => {
     return definition.editorSlots?.includes(slot) && isPluginRuntimeEnabled(items, definition.id);
   });
+}
+
+/**
+ * Return settings map for the bookmarks plugin, or defaults if not found.
+ * Keys: 'toolbar', 'floating-toolbar', 'slash-menu'
+ */
+export function getBookmarkSettings(items: PluginCatalogItem[]): Record<string, boolean> {
+  const plugin = items.find((item) => item.id === 'bookmarks');
+  if (!plugin?.enabled) return {};
+  return plugin.settings ?? {
+    toolbar: true,
+    'floating-toolbar': true,
+    'slash-menu': true,
+  };
 }

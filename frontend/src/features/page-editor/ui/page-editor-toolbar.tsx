@@ -5,9 +5,10 @@ import { useState } from 'react';
 
 import { handleListAction } from '../model/list-actions';
 import { menuBarStateSelector } from '../model/menu-state';
-import { getCanvasDrawSettings, getIframeEmbedSettings } from '../../plugins/model/plugin-registry';
+import { getCanvasDrawSettings, getIframeEmbedSettings, getBookmarkSettings } from '../../plugins/model/plugin-registry';
 import { usePlugins } from '../../plugins';
 import { HighlightColorPicker } from './highlight-color-picker';
+import { CreateBookmarkModal, BookmarkPickerModal, collectBookmarks } from './bookmark-modal';
 
 import VectorLeft from '../../../app/images/VectorLeft.svg';
 import VectorRight from '../../../app/images/VectorRight.svg';
@@ -28,7 +29,7 @@ import BrushCleaning from '../../../app/images/brush-cleaning.svg';
 import AtSign from '../../../app/images/at-sign.svg';
 import Picture from '../../../app/images/Picture.svg';
 
-import { History, MessageSquare, MonitorPlay, Pencil, TextAlignCenter, TextAlignEnd, TextAlignStart, Highlighter } from 'lucide-react';
+import { History, MessageSquare, MonitorPlay, Pencil, TextAlignCenter, TextAlignEnd, TextAlignStart, Highlighter, BookmarkPlus, Link } from 'lucide-react';
 
 const redFilter = 'brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(2665%) hue-rotate(346deg) brightness(101%) contrast(97%)';
 
@@ -85,6 +86,8 @@ function areMenuStatesEqual(
     previous.canUnderline === next.canUnderline &&
     previous.isHighlight === next.isHighlight &&
     previous.canHighlight === next.canHighlight &&
+    previous.isBookmark === next.isBookmark &&
+    previous.isBookmarkLink === next.isBookmarkLink &&
     previous.canClearNodes === next.canClearNodes &&
     previous.isParagraph === next.isParagraph &&
     previous.isHeading1 === next.isHeading1 &&
@@ -191,9 +194,13 @@ export function PageEditorToolbar({
   const { items: plugins } = usePlugins();
   const canvasSettings = getCanvasDrawSettings(plugins);
   const iframeSettings = getIframeEmbedSettings(plugins);
+  const bookmarkSettings = getBookmarkSettings(plugins);
   const showCanvasButton = plugins.some(p => p.id === 'canvas-draw' && p.enabled) && canvasSettings['toolbar'];
   const showIframeButton = plugins.some(p => p.id === 'iframe-embed' && p.enabled) && iframeSettings['toolbar'];
+  const showBookmarkButtons = plugins.some(p => p.id === 'bookmarks' && p.enabled) && bookmarkSettings['toolbar'];
   const [highlightPickerAnchor, setHighlightPickerAnchor] = useState<DOMRect | null>(null);
+  const [createBookmarkAnchor, setCreateBookmarkAnchor] = useState<DOMRect | null>(null);
+  const [bookmarkPickerAnchor, setBookmarkPickerAnchor] = useState<DOMRect | null>(null);
   const state =
     useEditorState({
       editor,
@@ -213,6 +220,8 @@ export function PageEditorToolbar({
       canUnderline: false,
       isHighlight: false,
       canHighlight: false,
+      isBookmark: false,
+      isBookmarkLink: false,
       canClearNodes: false,
       isParagraph: false,
       isHeading1: false,
@@ -734,6 +743,38 @@ export function PageEditorToolbar({
           isInGroup={true}
           aria-label="Очистить форматирование"
         />
+
+        {showBookmarkButtons && (
+          <>
+            <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+            <ToolbarButton
+              icon={<BookmarkPlus className="h-4 w-4" style={state.isBookmark ? { color: '#7b67ee' } : { color: 'rgba(80,87,98,1)' }} />}
+              onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
+                if (!canEdit) return;
+                setCreateBookmarkAnchor(event.currentTarget.getBoundingClientRect());
+              }}
+              pressed={state.isBookmark}
+              disabled={!canEdit}
+              isFirst={true}
+              isLast={false}
+              isInGroup={true}
+              aria-label="Создать закладку"
+            />
+            <ToolbarButton
+              icon={<Link className="h-4 w-4" style={state.isBookmarkLink ? { color: '#7b67ee' } : { color: 'rgba(80,87,98,1)' }} />}
+              onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
+                if (!canEdit) return;
+                setBookmarkPickerAnchor(event.currentTarget.getBoundingClientRect());
+              }}
+              pressed={state.isBookmarkLink}
+              disabled={!canEdit}
+              isFirst={false}
+              isLast={true}
+              isInGroup={true}
+              aria-label="Ссылка на закладку"
+            />
+          </>
+        )}
       </div>
 
       <HighlightColorPicker
@@ -741,6 +782,25 @@ export function PageEditorToolbar({
         isOpen={Boolean(highlightPickerAnchor)}
         anchorRect={highlightPickerAnchor}
         onClose={() => setHighlightPickerAnchor(null)}
+      />
+      <CreateBookmarkModal
+        isOpen={Boolean(createBookmarkAnchor)}
+        anchorRect={createBookmarkAnchor}
+        onConfirm={(label) => {
+          editor.chain().focus().setBookmark({ id: `bm-${Date.now()}`, label }).run();
+          setCreateBookmarkAnchor(null);
+        }}
+        onClose={() => setCreateBookmarkAnchor(null)}
+      />
+      <BookmarkPickerModal
+        isOpen={Boolean(bookmarkPickerAnchor)}
+        anchorRect={bookmarkPickerAnchor}
+        bookmarks={collectBookmarks(editor)}
+        onSelect={(id) => {
+          editor.chain().focus().setBookmarkLink({ bookmarkId: id }).run();
+          setBookmarkPickerAnchor(null);
+        }}
+        onClose={() => setBookmarkPickerAnchor(null)}
       />
     </div>
   );
