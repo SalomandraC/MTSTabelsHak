@@ -531,6 +531,12 @@ export type AiChatPayload = {
   viewId?: string;
   pageTitle?: string;
   pageSnapshot?: Record<string, unknown>;
+  contextDocuments?: Array<{
+    pageId: string;
+    title: string;
+    markdown: string;
+  }>;
+  useVectorSearch?: boolean;
 };
 
 export type AiGenerateResponse = {

@@ -60,7 +60,7 @@
     --editor-text-secondary: #505762;
     --editor-text-tertiary: #969FA8;
     --link-color: #7b67ee;
-    --color-modal-primary-bg: #ff0037;
+    --color-modal-primary-bg: #d70032;
     --color-modal-primary-text: #ffffff;
     --color-modal-secondary-bg: #e8eaee;
     --color-modal-secondary-text: #2e3238;
@@ -711,7 +711,7 @@
   }
 
   .modal-action-primary:hover:not(:disabled) {
-    background: #e10031;
+    background: #b8002b;
   }
 
   .modal-action-primary:disabled {
