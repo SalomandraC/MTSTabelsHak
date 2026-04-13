@@ -13,6 +13,15 @@ export type LiveReferenceParseOptions = {
 
 const LIVE_REFERENCE_TOKEN = /\[Ref:([^:\]\s]+):([^:\]\s]+):([^:\]\s]+)\]/g;
 
+function looksLikeMarkdown(text: string): boolean {
+  const value = text.trim();
+  if (!value) {
+    return false;
+  }
+
+  return /(^#{1,6}\s)|(^[-*]\s)|(^\d+\.\s)|(```)|(`[^`]+`)|(\*\*[^*]+\*\*)|(^>\s)|(^(-{3,}|\*{3,}|_{3,})$)/m.test(value);
+}
+
 export function hasLiveReferenceToken(text: string): boolean {
   LIVE_REFERENCE_TOKEN.lastIndex = 0;
   return LIVE_REFERENCE_TOKEN.test(text);
@@ -120,8 +129,17 @@ export function parseMarkdownReportWithLiveReferences(text: string, options: Liv
 }
 
 export function insertAiTextWithLiveReferences(editor: Editor, text: string, options: LiveReferenceParseOptions = {}): boolean {
-  if (!hasLiveReferenceToken(text)) {
+  const hasLiveRef = hasLiveReferenceToken(text);
+  const hasMarkdown = looksLikeMarkdown(text);
+
+  if (!hasLiveRef && !hasMarkdown) {
     return editor.commands.insertContent(text);
+  }
+
+  if (!hasLiveRef && hasMarkdown) {
+    const from = editor.state.selection.from;
+    const to = editor.state.selection.to;
+    return editor.chain().focus().insertContentAt({ from, to }, text).run();
   }
 
   return editor

@@ -79,7 +79,7 @@ export function NavigationSidebar({ editor, enabled, onClose }: NavigationSideba
   const [isAutoMarkupRunning, setIsAutoMarkupRunning] = useState(false);
   const [autoMarkupStatus, setAutoMarkupStatus] = useState('');
   const [autoMarkupInstruction, setAutoMarkupInstruction] = useState('');
-  const { isAiAssistantFeatureEnabled } = usePlugins();
+  const { isAiAssistantFeatureEnabled, isPluginEnabled } = usePlugins();
 
   useEffect(() => {
     if (!editor) {
@@ -97,7 +97,7 @@ export function NavigationSidebar({ editor, enabled, onClose }: NavigationSideba
   }, [editor]);
 
   const outline = useMemo(() => collectNavigationOutline(editor), [editor, version]);
-  const isAutoMarkupEnabled = isAiAssistantFeatureEnabled('document_structure');
+  const isAutoMarkupEnabled = isPluginEnabled('ai-assistant') && isAiAssistantFeatureEnabled('document_structure');
   const activePos = useMemo(() => {
     if (!editor) {
       return null;

@@ -1,6 +1,6 @@
 import type { Content, Editor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { SlashMenu } from '../../slash-menu';
 import { AiInlineCopilot } from '../../plugins/ai-assistant';
@@ -43,6 +43,7 @@ type CopilotAnchor = {
   x: number;
   y: number;
   surfaceWidth?: number;
+  surfaceHeight?: number;
   target: 'table' | 'text';
   datasheetId?: string | null;
   viewId?: string | null;
@@ -261,22 +262,63 @@ function LivePageEditor({
   commentCount = 0,
   historyPreview = null,
 }: Omit<PageEditorProps, 'isLoading'> & { page: WikiPage }) {
-  const { isEditorSlotEnabled, isAiAssistantFeatureEnabled, isPluginEnabled } = usePlugins();
+  const { isEditorSlotEnabled, isAiAssistantFeatureEnabled, isPluginEnabled, isLoading: isPluginsLoading } = usePlugins();
   const canEdit = page.access?.capabilities.canEdit ?? true;
   const canComment = page.access?.capabilities.canComment ?? true;
   const canUseAi = page.access?.capabilities.canUseAi ?? true;
+  const isAiPluginEnabled = isPluginsLoading ? true : isPluginEnabled('ai-assistant');
   const isHistoryPreviewActive = Boolean(historyPreview);
   const effectiveCanEdit = canEdit && !isHistoryPreviewActive;
   const effectiveCanComment = canComment && !isHistoryPreviewActive;
-  const isAiSlashEnabled = isEditorSlotEnabled('slash_menu') && canUseAi;
-  const isAiToolbarEnabled = isEditorSlotEnabled('toolbar_bubble') && canUseAi;
-  const isAiGhostEnabled = isAiAssistantFeatureEnabled('ghost_text') && canUseAi;
-  const isAiInlineChatEnabled = isAiAssistantFeatureEnabled('inline_chat') && canUseAi;
+  const isAiSlashEnabled = isAiPluginEnabled && isEditorSlotEnabled('slash_menu') && canUseAi;
+  const isAiToolbarEnabled = isAiPluginEnabled && isEditorSlotEnabled('toolbar_bubble') && canUseAi;
+  const isAiGhostEnabled = isAiPluginEnabled && isAiAssistantFeatureEnabled('ghost_text') && canUseAi;
+  const isAiInlineChatEnabled = isAiPluginEnabled && isAiAssistantFeatureEnabled('inline_chat') && canUseAi;
   const isPageNavigationEnabled = isPluginEnabled('page-navigation');
-  const isDocumentStructureEnabled = isAiAssistantFeatureEnabled('document_structure') && canUseAi;
+  const isDocumentStructureEnabled = isAiPluginEnabled && isAiAssistantFeatureEnabled('document_structure') && canUseAi;
   const [copilotAnchor, setCopilotAnchor] = useState<CopilotAnchor | null>(null);
   const isCopilotOpen = Boolean(copilotAnchor);
   const editorSurfaceRef = useRef<HTMLDivElement | null>(null);
+
+  const reserveInlineCopilotBottomSpace = useCallback(
+    (coords: { bottom: number }, surfaceRect?: DOMRect | null) => {
+      const panelHeight = 360;
+      const gap = 8;
+      const margin = 8;
+      const requiredBelow = panelHeight + gap + margin;
+
+      const availableBelow = surfaceRect
+        ? surfaceRect.bottom - coords.bottom - margin
+        : window.innerHeight - coords.bottom - margin;
+
+      const deficit = Math.ceil(requiredBelow - availableBelow);
+      if (deficit <= 0) {
+        return;
+      }
+
+      const surface = editorSurfaceRef.current;
+      const canScrollSurface =
+        Boolean(surfaceRect) &&
+        Boolean(surface) &&
+        surface!.scrollHeight > surface!.clientHeight &&
+        surface!.scrollTop < surface!.scrollHeight - surface!.clientHeight;
+
+      if (canScrollSurface && surface) {
+        const surfaceSpaceLeft = Math.max(0, surface.scrollHeight - surface.clientHeight - surface.scrollTop);
+        const surfaceDelta = Math.min(deficit, surfaceSpaceLeft);
+        surface.scrollTop += surfaceDelta;
+
+        const remaining = deficit - surfaceDelta;
+        if (remaining > 0) {
+          window.scrollBy({ top: remaining, left: 0, behavior: 'auto' });
+        }
+        return;
+      }
+
+      window.scrollBy({ top: deficit, left: 0, behavior: 'auto' });
+    },
+    [],
+  );
 
   const controller = usePageEditorController({
     spaceId,
@@ -349,10 +391,15 @@ function LivePageEditor({
       const tableContext = getTableContextBySelection(controller.editor);
       const surfaceRect = editorSurfaceRef.current?.getBoundingClientRect();
 
+      reserveInlineCopilotBottomSpace(coords, surfaceRect);
+      const nextCoords = controller.editor.view.coordsAtPos(controller.editor.state.selection.from);
+      const nextSurfaceRect = editorSurfaceRef.current?.getBoundingClientRect();
+
       setCopilotAnchor({
-        x: coords.left - (surfaceRect?.left ?? 0),
-        y: coords.bottom - (surfaceRect?.top ?? 0),
-        surfaceWidth: surfaceRect?.width,
+        x: nextCoords.left - (nextSurfaceRect?.left ?? 0),
+        y: nextCoords.bottom - (nextSurfaceRect?.top ?? 0),
+        surfaceWidth: nextSurfaceRect?.width,
+        surfaceHeight: nextSurfaceRect?.height,
         target: tableContext?.datasheetId ? 'table' : 'text',
         datasheetId: tableContext?.datasheetId,
         viewId: tableContext?.viewId,
@@ -364,7 +411,41 @@ function LivePageEditor({
     return () => {
       window.removeEventListener('keydown', handleHotkey);
     };
-  }, [controller.editor, isAiInlineChatEnabled]);
+  }, [controller.editor, isAiInlineChatEnabled, reserveInlineCopilotBottomSpace]);
+
+  useEffect(() => {
+    const handleUndoRedoHotkeys = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest('.ProseMirror')) {
+        return;
+      }
+
+      const isUndo = (event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'z';
+      const isRedo =
+        (event.metaKey || event.ctrlKey) && ((event.shiftKey && event.key.toLowerCase() === 'z') || event.key.toLowerCase() === 'y');
+
+      if (!isUndo && !isRedo) {
+        return;
+      }
+
+      if (!controller.editor || !controller.editor.isFocused) {
+        return;
+      }
+
+      const executed = isUndo
+        ? controller.editor.chain().focus().undo().run()
+        : controller.editor.chain().focus().redo().run();
+
+      if (executed) {
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener('keydown', handleUndoRedoHotkeys, true);
+    return () => {
+      window.removeEventListener('keydown', handleUndoRedoHotkeys, true);
+    };
+  }, [controller.editor]);
 
   return (
     <main className="flex h-full min-h-0 flex-col bg-editor-bg-page px-0 py-0">
@@ -403,10 +484,14 @@ function LivePageEditor({
             const tableContext = getTableContextByDomTarget(event.target) ?? getTableContextBySelection(controller.editor);
             const surfaceRect = editorSurfaceRef.current?.getBoundingClientRect();
 
+            reserveInlineCopilotBottomSpace({ bottom: event.clientY }, surfaceRect);
+            const nextSurfaceRect = editorSurfaceRef.current?.getBoundingClientRect();
+
             setCopilotAnchor({
-              x: event.clientX - (surfaceRect?.left ?? 0),
-              y: event.clientY - (surfaceRect?.top ?? 0),
-              surfaceWidth: surfaceRect?.width,
+              x: event.clientX - (nextSurfaceRect?.left ?? 0),
+              y: event.clientY - (nextSurfaceRect?.top ?? 0),
+              surfaceWidth: nextSurfaceRect?.width,
+              surfaceHeight: nextSurfaceRect?.height,
               target: tableContext?.datasheetId ? 'table' : 'text',
               datasheetId: tableContext?.datasheetId,
               viewId: tableContext?.viewId,

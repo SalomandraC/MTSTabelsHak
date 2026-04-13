@@ -247,7 +247,7 @@ describe('PageEditor', () => {
     expect(usePageEditorControllerSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         canEdit: true,
-        isAiSlashEnabled: true,
+        isAiSlashEnabled: false,
         isAiGhostEnabled: false,
       }),
     );

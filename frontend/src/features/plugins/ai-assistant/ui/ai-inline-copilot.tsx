@@ -5,6 +5,7 @@ import type { Editor } from '@tiptap/core';
 import { type MwsField, type MwsRecord, wikiliveApi } from '../../../../shared/api/wikilive';
 import { insertAiTextWithLiveReferences, parseMarkdownReportWithLiveReferences } from '../../../page-editor/model/live-reference-parser';
 import { getEditorMarkdown } from '../model/editor-markdown';
+import { AiOutputView } from '../model/ai-output-renderer';
 import { useAiTableContext } from '../model/use-ai-table-context';
 
 type CopilotTarget = 'table' | 'text';
@@ -13,6 +14,7 @@ type Anchor = {
   x: number;
   y: number;
   surfaceWidth?: number;
+  surfaceHeight?: number;
   target: CopilotTarget;
   datasheetId?: string | null;
   viewId?: string | null;
@@ -572,9 +574,11 @@ export function AiInlineCopilot({
     }
 
     const panelWidth = 560;
+    const panelHeight = 360;
     const gap = 8;
     const margin = 8;
     const surfaceWidth = anchor.surfaceWidth ?? 1200;
+    const surfaceHeight = anchor.surfaceHeight ?? window.innerHeight;
 
     const preferRight = anchor.x + gap;
     const preferLeft = anchor.x - panelWidth - gap;
@@ -588,9 +592,12 @@ export function AiInlineCopilot({
       left = Math.min(Math.max(anchor.x + gap, margin), Math.max(margin, surfaceWidth - panelWidth - margin));
     }
 
+    const maxTop = Math.max(margin, surfaceHeight - panelHeight - margin);
+    const top = Math.min(anchor.y + gap, maxTop);
+
     return {
       left,
-      top: Math.max(8, anchor.y + 8),
+      top,
     };
   }, [anchor]);
 
@@ -1341,7 +1348,7 @@ export function AiInlineCopilot({
             </ol>
           </div>
         ) : output ? (
-          <div className="whitespace-pre-wrap text-xs leading-5 text-editor-text-primary">{output}</div>
+          <AiOutputView text={output} />
         ) : (
           <p>Ответ AI или статус выполнения появится здесь.</p>
         )}
