@@ -23,6 +23,46 @@ function isCopilotOpen(): boolean {
   return Boolean(globalFlags.__wikiliveCopilotOpen);
 }
 
+function isSlashMenuOpen(): boolean {
+  const globalFlags = window as unknown as { __wikiliveSlashMenuOpen?: boolean };
+  return Boolean(globalFlags.__wikiliveSlashMenuOpen);
+}
+
+function isWordChar(char: string): boolean {
+  return /[\p{L}\p{N}_]/u.test(char);
+}
+
+function isCursorInsideWord(editor: { state: any }): boolean {
+  const selection = editor.state.selection;
+
+  if (!selection.empty) {
+    return false;
+  }
+
+  const { doc } = editor.state;
+  const before = doc.textBetween(Math.max(0, selection.to - 1), selection.to, '', '');
+  const after = doc.textBetween(selection.to, Math.min(doc.content.size, selection.to + 1), '', '');
+
+  return isWordChar(before) && isWordChar(after);
+}
+
+function isSlashCommandActive(editor: { state: any }): boolean {
+  const selection = editor.state.selection;
+
+  if (!selection.empty) {
+    return false;
+  }
+
+  const textBeforeCursor = editor.state.doc.textBetween(
+    selection.$from.start(),
+    selection.to,
+    '\n',
+    ' ',
+  );
+
+  return /(?:^|\s)\/[^\n]*$/u.test(textBeforeCursor);
+}
+
 function clearSuggestion(instance: {
   storage: { suggestion: string; requestId: number; anchorPos: number | null };
   editor: { state: any; view: { dispatch: (transaction: any) => void } };
@@ -120,15 +160,17 @@ function scheduleGhostSuggestion(instance: {
     return;
   }
 
+  if (isSlashMenuOpen() || isSlashCommandActive(instance.editor) || isCursorInsideWord(instance.editor)) {
+    clearSuggestion(instance);
+    window.clearTimeout(instance.__aiGhostTimer);
+    return;
+  }
+
   const currentText = instance.editor.state.doc.textBetween(Math.max(0, selection.to - 1200), selection.to, '\n', ' ');
 
   if (currentText.trim().length < instance.options.minChars) {
-    if (instance.storage.suggestion) {
-      instance.storage.suggestion = '';
-      instance.storage.requestId += 1;
-      instance.storage.anchorPos = null;
-      instance.editor.view.dispatch(instance.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
-    }
+    clearSuggestion(instance);
+    window.clearTimeout(instance.__aiGhostTimer);
     return;
   }
 

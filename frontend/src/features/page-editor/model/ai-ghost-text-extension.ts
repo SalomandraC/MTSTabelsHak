@@ -16,8 +16,30 @@ type AIGhostTextStorage = {
 const ghostTextPluginKey = new PluginKey<DecorationSet>('aiGhostTextPlugin');
 
 function isTypingSlashCommand(textBeforeCursor: string): boolean {
-  // Slash command pattern: whitespace/start + slash + token without spaces.
-  return /(?:^|\s)\/[\p{L}\p{N}_-]*$/u.test(textBeforeCursor);
+  // Slash command pattern: start/whitespace + slash + anything until cursor (including spaces).
+  // This keeps ghost suggestions disabled even when user typed "/ " before selecting a command.
+  return /(?:^|\s)\/[^\n]*$/u.test(textBeforeCursor);
+}
+
+function isSlashMenuOpen(): boolean {
+  return Boolean((window as unknown as { __wikiliveSlashMenuOpen?: boolean }).__wikiliveSlashMenuOpen);
+}
+
+function isWordChar(char: string): boolean {
+  return /[\p{L}\p{N}_]/u.test(char);
+}
+
+function isCursorInsideWord(editor: any): boolean {
+  const selection = editor.state.selection;
+  if (!selection.empty) {
+    return false;
+  }
+
+  const { doc } = editor.state;
+  const before = doc.textBetween(Math.max(0, selection.to - 1), selection.to, '\n', '');
+  const after = doc.textBetween(selection.to, Math.min(doc.content.size, selection.to + 1), '\n', '');
+
+  return isWordChar(before) && isWordChar(after);
 }
 
 function buildDecorations(editor: any, suggestion: string): DecorationSet {
@@ -153,6 +175,28 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
   onUpdate() {
     const selection = this.editor.state.selection;
     if (!selection.empty) {
+      return;
+    }
+
+    if (isSlashMenuOpen()) {
+      if (this.storage.suggestion) {
+        this.storage.suggestion = '';
+        this.storage.requestId += 1;
+        this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
+      }
+
+      return;
+    }
+
+    if (isCursorInsideWord(this.editor)) {
+      if (this.storage.suggestion) {
+        this.storage.suggestion = '';
+        this.storage.requestId += 1;
+        this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
+      }
+
+      window.clearTimeout((this as unknown as { __aiGhostTimer?: number }).__aiGhostTimer);
+      this.storage.requestId += 1;
       return;
     }
 

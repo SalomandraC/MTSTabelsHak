@@ -524,10 +524,18 @@ export function usePageEditorController({
 
         const start = from - query.length - 1;
         const coords = currentEditor.view.coordsAtPos(from);
+        const surface = document.querySelector('[data-page-editor-surface]') as HTMLElement | null;
+        const surfaceRect = surface?.getBoundingClientRect();
+        const surfaceScrollLeft = surface?.scrollLeft ?? 0;
+        const surfaceScrollTop = surface?.scrollTop ?? 0;
         const menuWidth = 304;
         const menuHeight = 288;
-        const left = Math.min(coords.left, Math.max(12, window.innerWidth - menuWidth - 12));
-        const top = Math.min(coords.bottom + 8, Math.max(12, window.innerHeight - menuHeight - 12));
+        const left = surfaceRect
+          ? Math.min(coords.left - surfaceRect.left + surfaceScrollLeft, Math.max(12, surfaceRect.width - menuWidth - 12))
+          : Math.min(coords.left, Math.max(12, window.innerWidth - menuWidth - 12));
+        const top = surfaceRect
+          ? Math.min(coords.bottom - surfaceRect.top + surfaceScrollTop + 8, Math.max(12, surfaceRect.height - menuHeight - 12))
+          : Math.min(coords.bottom + 8, Math.max(12, window.innerHeight - menuHeight - 12));
 
         setSlashState({
           isOpen: true,
@@ -980,9 +988,55 @@ export function usePageEditorController({
 
   const applySlashItemRef = useRef(applySlashItem);
 
+  const recomputeSlashMenuPosition = useCallback(() => {
+    if (!editor || !slashStateRef.current.isOpen) {
+      return;
+    }
+
+    const anchorPos = Math.min(slashStateRef.current.to, editor.state.doc.content.size);
+    const coords = editor.view.coordsAtPos(anchorPos);
+    const surface = document.querySelector('[data-page-editor-surface]') as HTMLElement | null;
+    const surfaceRect = surface?.getBoundingClientRect();
+    const surfaceScrollLeft = surface?.scrollLeft ?? 0;
+    const surfaceScrollTop = surface?.scrollTop ?? 0;
+    const menuWidth = 304;
+    const menuHeight = 288;
+    const left = surfaceRect
+      ? Math.min(coords.left - surfaceRect.left + surfaceScrollLeft, Math.max(12, surfaceRect.width - menuWidth - 12))
+      : Math.min(coords.left, Math.max(12, window.innerWidth - menuWidth - 12));
+    const top = surfaceRect
+      ? Math.min(coords.bottom - surfaceRect.top + surfaceScrollTop + 8, Math.max(12, surfaceRect.height - menuHeight - 12))
+      : Math.min(coords.bottom + 8, Math.max(12, window.innerHeight - menuHeight - 12));
+
+    setSlashState((current) => {
+      if (!current.isOpen) {
+        return current;
+      }
+
+      if (Math.abs(current.left - left) < 1 && Math.abs(current.top - top) < 1) {
+        return current;
+      }
+
+      return {
+        ...current,
+        left,
+        top,
+      };
+    });
+  }, [editor]);
+
   useEffect(() => {
     applySlashItemRef.current = applySlashItem;
   });
+
+  useEffect(() => {
+    const globalFlags = window as unknown as { __wikiliveSlashMenuOpen?: boolean };
+    globalFlags.__wikiliveSlashMenuOpen = slashState.isOpen;
+
+    return () => {
+      globalFlags.__wikiliveSlashMenuOpen = false;
+    };
+  }, [slashState.isOpen]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
