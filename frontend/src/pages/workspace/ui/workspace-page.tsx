@@ -333,10 +333,16 @@ function WorkspaceTreeItem({
       }
     };
 
+    const handleWheel = () => {
+      closeActionsMenu();
+    };
+
     window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('wheel', handleWheel, { passive: true });
 
     return () => {
       window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('wheel', handleWheel);
     };
   }, [closeActionsMenu, isActionsMenuOpen]);
 
@@ -398,6 +404,26 @@ function WorkspaceTreeItem({
       setCreateError(error instanceof Error ? error.message : 'Не удалось создать папку');
       setIsCreatingFolder(false);
     }
+  };
+
+  const openActionsMenuAtButton = (event: React.MouseEvent<HTMLButtonElement>) => {
+    const menuWidth = 176;
+    const menuHeight = 224;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const left = Math.min(rect.right + 8, window.innerWidth - menuWidth - 8);
+    const top = Math.max(
+      8,
+      Math.min(
+        rect.top + rect.height / 2 - menuHeight / 2 + rect.height * 2,
+        window.innerHeight - menuHeight - 8,
+      ),
+    );
+
+    setCreateMode(null);
+    setCreateError('');
+    setCreateTitle('');
+    setContextMenuPosition({ left, top });
+    setIsActionsMenuOpen(true);
   };
 
   const openActionsMenuAtCursor = (event: React.MouseEvent) => {
@@ -582,11 +608,7 @@ function WorkspaceTreeItem({
                   return;
                 }
 
-                setCreateMode(null);
-                setCreateError('');
-                setCreateTitle('');
-                setContextMenuPosition(null);
-                setIsActionsMenuOpen(true);
+                openActionsMenuAtButton(event);
               }}
               className="flex h-6 w-6 items-center justify-center rounded text-[#b6b6b6] opacity-0 transition-opacity hover:bg-[#f2f3f5] hover:text-[#1f1f1f] group-hover:opacity-100"
               title="Действия"
@@ -2200,7 +2222,7 @@ export function WorkspacePage() {
                 <p className="mt-0.5 text-xs text-[#4b5563]">
                   Добавили стили для AI-улучшения текста: Обычный, Деловой, Военный, Средневековый, Церковнославянский,
                   Исправить ошибки и Дополнить. Также улучшили ghost-подсказки: стабильнее у курсора, аккуратные пробелы
-                  при принятии, скрытие при открытии inline-копилота. Протестите ребят.
+                  при принятии, скрытие при открытии inline-копилота.
                 </p>
                 <p className="mt-1 text-xs text-[#4b5563]">
                   Еще добавили Live переменные из таблиц: можно вставлять значение ячейки в текст, открывать подсказку по hover
@@ -2358,7 +2380,7 @@ export function WorkspacePage() {
               type="button"
             onClick={() => openTemplateMarketplace(null)}
               disabled={isTemplatesLoading}
-              className="flex h-9 w-full w-[calc(100%-10px)] mr-[10px]  items-center justify-center gap-2 rounded-lg border border-editor-border-subtle bg-white px-3 text-sm font-semibold text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa] disabled:cursor-wait disabled:opacity-60"
+              className="flex h-9 w-[calc(100%-10px)] mr-[10px]  items-center justify-center gap-2 rounded-lg border border-editor-border-subtle bg-white px-3 text-sm font-semibold text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa] disabled:cursor-wait disabled:opacity-60"
             >
               <FileDown size={16} strokeWidth={2.2} />
               {isTemplatesLoading ? 'Загружаем шаблоны...' : 'Маркетплейс шаблонов'}

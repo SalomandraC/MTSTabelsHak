@@ -74,8 +74,10 @@ export function WorkspacePageActionsMenu({
       role="menu"
       aria-label={isFolder ? `Действия для папки ${title}` : `Действия для страницы ${title}`}
       className={[
-        'z-60 w-44 overflow-hidden rounded-xl border border-editor-border-subtle bg-white py-1 shadow-[0_16px_40px_rgba(15,23,42,0.12)]',
-        contextMenuPosition ? 'fixed' : 'absolute right-0 top-7',
+        'z-[900] w-44 overflow-hidden rounded-xl border border-editor-border-subtle bg-white py-1 shadow-[0_16px_40px_rgba(15,23,42,0.12)]',
+        contextMenuPosition
+          ? 'fixed'
+          : 'absolute left-full top-1/2 -translate-y-1/2 ml-2',
       ].join(' ')}
       style={
         contextMenuPosition
