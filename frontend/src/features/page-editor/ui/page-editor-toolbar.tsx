@@ -1,11 +1,13 @@
 import type { Editor } from '@tiptap/core';
 import { useEditorState } from '@tiptap/react';
 import type { MouseEvent } from 'react';
+import { useState } from 'react';
 
 import { handleListAction } from '../model/list-actions';
 import { menuBarStateSelector } from '../model/menu-state';
 import { getCanvasDrawSettings, getIframeEmbedSettings } from '../../plugins/model/plugin-registry';
 import { usePlugins } from '../../plugins';
+import { HighlightColorPicker } from './highlight-color-picker';
 
 import VectorLeft from '../../../app/images/VectorLeft.svg';
 import VectorRight from '../../../app/images/VectorRight.svg';
@@ -191,6 +193,7 @@ export function PageEditorToolbar({
   const iframeSettings = getIframeEmbedSettings(plugins);
   const showCanvasButton = plugins.some(p => p.id === 'canvas-draw' && p.enabled) && canvasSettings['toolbar'];
   const showIframeButton = plugins.some(p => p.id === 'iframe-embed' && p.enabled) && iframeSettings['toolbar'];
+  const [highlightPickerAnchor, setHighlightPickerAnchor] = useState<DOMRect | null>(null);
   const state =
     useEditorState({
       editor,
@@ -363,7 +366,13 @@ export function PageEditorToolbar({
               style={state.isHighlight ? { color: '#d92c2c' } : { color: 'rgba(80, 87, 98, 1)' }}
             />
           }
-          onClick={() => editor.chain().focus().toggleHighlight().run()}
+          onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
+            if (!canEdit) {
+              return;
+            }
+            const rect = event.currentTarget.getBoundingClientRect();
+            setHighlightPickerAnchor(rect);
+          }}
           pressed={state.isHighlight}
           disabled={!canEdit || !state.canHighlight}
           noBorder={false}
@@ -726,6 +735,13 @@ export function PageEditorToolbar({
           aria-label="Очистить форматирование"
         />
       </div>
+
+      <HighlightColorPicker
+        editor={editor}
+        isOpen={Boolean(highlightPickerAnchor)}
+        anchorRect={highlightPickerAnchor}
+        onClose={() => setHighlightPickerAnchor(null)}
+      />
     </div>
   );
 }

@@ -128,7 +128,9 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
   return [
     Markdown,
     TextStyle,
-    Highlight,
+    Highlight.configure({
+      multicolor: true,
+    }),
     Typography,
     DashShortcut,
     Dropcursor.configure({

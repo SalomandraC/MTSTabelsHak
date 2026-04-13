@@ -199,6 +199,30 @@
     box-decoration-break: clone;
   }
 
+  .tiptap mark[data-color='#fef08a'] {
+    background-color: #fef08a;
+  }
+
+  .tiptap mark[data-color='#bbf7d0'] {
+    background-color: #bbf7d0;
+  }
+
+  .tiptap mark[data-color='#bfdbfe'] {
+    background-color: #bfdbfe;
+  }
+
+  .tiptap mark[data-color='#fecaca'] {
+    background-color: #fecaca;
+  }
+
+  .tiptap mark[data-color='#e9d5ff'] {
+    background-color: #e9d5ff;
+  }
+
+  .tiptap mark[data-color='#fed7aa'] {
+    background-color: #fed7aa;
+  }
+
   .tiptap pre {
     /* Styles moved to React component */
   }

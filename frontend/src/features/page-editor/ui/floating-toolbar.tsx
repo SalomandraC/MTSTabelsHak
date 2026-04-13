@@ -8,6 +8,7 @@ import { menuBarStateSelector } from '../model/menu-state';
 import { getCanvasDrawSettings, getIframeEmbedSettings } from '../../plugins/model/plugin-registry';
 import { usePlugins } from '../../plugins';
 import { wikiliveApi } from '../../../shared/api/wikilive';
+import { HighlightColorPicker } from './highlight-color-picker';
 
 import B from '../../../app/images/B.svg';
 import Tk from '../../../app/images/Tk.svg';
@@ -35,7 +36,7 @@ type ToolbarButtonProps = {
   disabled?: boolean;
   isFirst?: boolean;
   isLast?: boolean;
-  onClick: () => void;
+  onClick: ((event: React.MouseEvent<HTMLButtonElement>) => void) | (() => void);
   'aria-label'?: string;
 };
 
@@ -100,6 +101,7 @@ export function FloatingToolbar({
   const [visible, setVisible] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [highlightPickerAnchor, setHighlightPickerAnchor] = useState<DOMRect | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
 
   const state = useEditorState({
@@ -288,7 +290,13 @@ export function FloatingToolbar({
             style={state.isHighlight ? { color: '#d92c2c' } : { color: 'rgba(80, 87, 98, 1)' }} 
           />
         }
-        onClick={() => editor.chain().focus().toggleHighlight().run()}
+        onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
+          if (!canEdit) {
+            return;
+          }
+          const rect = event.currentTarget.getBoundingClientRect();
+          setHighlightPickerAnchor(rect);
+        }}
         pressed={state.isHighlight}
         disabled={!canEdit || !state.canHighlight}
         isFirst={false}
@@ -463,6 +471,14 @@ export function FloatingToolbar({
           />
         </>
       ) : null}
+      
+      <HighlightColorPicker
+        editor={editor}
+        isOpen={Boolean(highlightPickerAnchor)}
+        anchorRect={highlightPickerAnchor}
+        toolbarRef={toolbarRef}
+        onClose={() => setHighlightPickerAnchor(null)}
+      />
     </div>
   );
 }
