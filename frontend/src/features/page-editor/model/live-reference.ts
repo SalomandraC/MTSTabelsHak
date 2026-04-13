@@ -95,9 +95,9 @@ export const LiveReference = Node.create({
       mergeAttributes(HTMLAttributes, {
         'data-type': 'live-reference',
         class: 'live-reference-chip',
-        title: `${label}: ${displayValue}`,
+        title: `Живая переменная: ${label}\nЗначение: ${displayValue}`,
       }),
-      `${label}: ${displayValue}`,
+      displayValue,
     ];
   },
 

@@ -190,11 +190,9 @@ export function LiveReferenceChip({ node, updateAttributes }: NodeViewProps) {
         attrs.status === 'loading' || isRefreshing ? 'is-loading' : '',
         isChangedFlashVisible ? 'is-changed' : '',
       ].join(' ').trim()}
-      title={`${label}: ${value || 'пусто'}`}
+      title={`Живая переменная: ${label}\nЗначение: ${value || 'пусто'}`}
       contentEditable={false}
     >
-      <span className="live-reference-chip__label">{label}</span>
-      <span className="live-reference-chip__separator">:</span>
       <span className="live-reference-chip__value">{value || 'пусто'}</span>
     </NodeViewWrapper>
   );
