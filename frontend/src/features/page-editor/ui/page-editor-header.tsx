@@ -159,7 +159,7 @@ export function PageEditorHeader({
     <header
       ref={headerRef}
       data-page-editor-header
-      className="relative z-[20] flex flex-wrap sm:flex-nowrap items-start justify-between gap-3 border-b border-editor-border-subtle bg-editor-bg-page px-3 py-3 sm:px-4 sm:py-4"
+      className="relative z-[30] flex flex-wrap sm:flex-nowrap items-start justify-between gap-3 border-b border-editor-border-subtle bg-editor-bg-page px-3 py-3 sm:px-4 sm:py-4"
       style={fontFamilyStyle}
     >
       <div className="relative flex shrink-0 flex-col items-start gap-2">
@@ -189,7 +189,7 @@ export function PageEditorHeader({
               <div
                 role="menu"
                 aria-label="Выбор представления документа"
-                className="absolute left-0 top-[calc(100%+8px)] z-50 w-64 overflow-hidden rounded-2xl border border-editor-border-subtle bg-white p-1.5 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
+                className="absolute left-0 top-[calc(100%+8px)] z-[80] w-64 overflow-hidden rounded-2xl border border-editor-border-subtle bg-white p-1.5 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
               >
                 {VIEW_MODE_OPTIONS.map((option) => (
                   <button
