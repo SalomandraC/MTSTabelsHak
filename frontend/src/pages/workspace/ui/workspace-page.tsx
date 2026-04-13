@@ -794,6 +794,10 @@ export function WorkspacePage() {
     [visibleTree, pinnedPageIds],
   );
   const hasSearch = searchQuery.trim().length > 0;
+  const longestSpaceNameChars = useMemo(
+    () => Math.max(12, ...spaces.map((space) => space.name.length)),
+    [spaces],
+  );
   const canManageAccess = activePage?.access?.capabilities.canManageAccess ?? false;
   const canEditActivePage = activePage?.access?.capabilities.canEdit ?? true;
   const isHistoryPreviewActive = Boolean(historyPreviewCheckpoint);
@@ -1912,7 +1916,11 @@ export function WorkspacePage() {
                     id="workspace-space-select"
                     type="button"
                     onClick={() => setIsSpaceMenuOpen((value) => !value)}
-                    className="flex h-7 w-full max-w-[190px] items-center justify-between gap-2 rounded-md border border-[#ffd9e1] bg-white px-2 text-xs font-semibold text-[#d70032] outline-none transition-colors hover:bg-[#fff1f3] focus-visible:ring-2 focus-visible:ring-[#d70032]/25"
+                    className="flex h-7 w-full items-center justify-between gap-2 rounded-md border border-[#ffd9e1] bg-white px-2 text-xs font-semibold text-[#d70032] outline-none transition-colors hover:bg-[#fff1f3] focus-visible:ring-2 focus-visible:ring-[#d70032]/25"
+                    style={{
+                      minWidth: `${Math.min(longestSpaceNameChars + 6, 30)}ch`,
+                      maxWidth: '300px',
+                    }}
                     aria-haspopup="menu"
                     aria-expanded={isSpaceMenuOpen}
                     title="Пространство"
@@ -1921,7 +1929,7 @@ export function WorkspacePage() {
                     <ChevronDown size={13} strokeWidth={2.2} className={isSpaceMenuOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
                   </button>
                   {isSpaceMenuOpen ? (
-                    <div className="absolute left-0 top-8 z-[120] w-full max-w-[220px] rounded-lg border border-[#ffd9e1] bg-white p-1 shadow-[0_10px_30px_rgba(215,0,50,0.15)]">
+                    <div className="absolute left-0 top-8 z-[120] w-full rounded-lg border border-[#ffd9e1] bg-white p-1 shadow-[0_10px_30px_rgba(215,0,50,0.15)]">
                       <ul className="space-y-1">
                         {spaces.map((space) => {
                           const isSelected = space.id === selectedSpaceId;
