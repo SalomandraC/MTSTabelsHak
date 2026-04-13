@@ -241,6 +241,37 @@
     padding: 0.18rem 0.28rem;
   }
 
+  .tiptap mark {
+    background-color: #fef08a;
+    border-radius: 0.25rem;
+    padding: 0.1rem 0.2rem;
+    box-decoration-break: clone;
+  }
+
+  .tiptap mark[data-color='#fef08a'] {
+    background-color: #fef08a;
+  }
+
+  .tiptap mark[data-color='#bbf7d0'] {
+    background-color: #bbf7d0;
+  }
+
+  .tiptap mark[data-color='#bfdbfe'] {
+    background-color: #bfdbfe;
+  }
+
+  .tiptap mark[data-color='#fecaca'] {
+    background-color: #fecaca;
+  }
+
+  .tiptap mark[data-color='#e9d5ff'] {
+    background-color: #e9d5ff;
+  }
+
+  .tiptap mark[data-color='#fed7aa'] {
+    background-color: #fed7aa;
+  }
+
   .tiptap pre {
     /* Styles moved to React component */
   }
@@ -319,6 +350,23 @@
   .tiptap .template-variable-chip.ProseMirror-selectednode {
     outline: 2px solid #d70032;
     outline-offset: 2px;
+  }
+
+  .tiptap .bookmark-anchor {
+    border-bottom: 2px solid #7b67ee;
+    border-radius: 0.1rem;
+    cursor: default;
+  }
+
+  .tiptap .bookmark-link {
+    color: #7b67ee;
+    border-bottom: 1px dashed #7b67ee;
+    cursor: pointer;
+    transition: opacity 120ms ease;
+  }
+
+  .tiptap .bookmark-link:hover {
+    opacity: 0.75;
   }
 
   @keyframes live-reference-flash {

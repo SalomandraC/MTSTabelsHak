@@ -1,14 +1,16 @@
 import type { Editor } from '@tiptap/core';
 import { useEditorState } from '@tiptap/react';
-import { Code2, List, ListOrdered, ListChecks, MessageSquare, MonitorPlay } from 'lucide-react';
+import { Code2, List, ListOrdered, ListChecks, MessageSquare, MonitorPlay, Highlighter, BookmarkPlus, Link } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { handleListAction } from '../model/list-actions';
 import { menuBarStateSelector } from '../model/menu-state';
-import { getCanvasDrawSettings, getIframeEmbedSettings } from '../../plugins/model/plugin-registry';
+import { getCanvasDrawSettings, getIframeEmbedSettings, getBookmarkSettings } from '../../plugins/model/plugin-registry';
 import { usePlugins } from '../../plugins';
 import { type AiTransformStyleId, wikiliveApi } from '../../../shared/api/wikilive';
+import { HighlightColorPicker } from './highlight-color-picker';
+import { CreateBookmarkModal, BookmarkPickerModal, collectBookmarks } from './bookmark-modal';
 
 import B from '../../../app/images/B.svg';
 import Tk from '../../../app/images/Tk.svg';
@@ -50,7 +52,7 @@ type ToolbarButtonProps = {
   disabled?: boolean;
   isFirst?: boolean;
   isLast?: boolean;
-  onClick: () => void;
+  onClick: ((event: React.MouseEvent<HTMLButtonElement>) => void) | (() => void);
   'aria-label'?: string;
 };
 
@@ -110,11 +112,16 @@ export function FloatingToolbar({
   const { items: plugins } = usePlugins();
   const canvasSettings = getCanvasDrawSettings(plugins);
   const iframeSettings = getIframeEmbedSettings(plugins);
+  const bookmarkSettings = getBookmarkSettings(plugins);
   const showCanvasButton = plugins.some(p => p.id === 'canvas-draw' && p.enabled) && canvasSettings['floating-toolbar'];
   const showIframeButton = plugins.some(p => p.id === 'iframe-embed' && p.enabled) && iframeSettings['floating-toolbar'];
+  const showBookmarkButtons = plugins.some(p => p.id === 'bookmarks' && p.enabled) && bookmarkSettings['floating-toolbar'];
   const [visible, setVisible] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [highlightPickerAnchor, setHighlightPickerAnchor] = useState<DOMRect | null>(null);
+  const [createBookmarkAnchor, setCreateBookmarkAnchor] = useState<DOMRect | null>(null);
+  const [bookmarkPickerAnchor, setBookmarkPickerAnchor] = useState<DOMRect | null>(null);
   const [isImproveMenuOpen, setIsImproveMenuOpen] = useState(false);
   const [aiLoadingAction, setAiLoadingAction] = useState<'improve' | 'shorten' | null>(null);
   const [aiErrorMessage, setAiErrorMessage] = useState<string | null>(null);
@@ -430,6 +437,26 @@ export function FloatingToolbar({
       />
       <ToolbarButton
         icon={
+          <Highlighter
+            className="h-3.5 w-3.5"
+            style={state.isHighlight ? { color: '#d92c2c' } : { color: 'rgba(80, 87, 98, 1)' }}
+          />
+        }
+        onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
+          if (!canEdit) {
+            return;
+          }
+          const rect = event.currentTarget.getBoundingClientRect();
+          setHighlightPickerAnchor(rect);
+        }}
+        pressed={state.isHighlight}
+        disabled={!canEdit || !state.canHighlight}
+        isFirst={false}
+        isLast={false}
+        aria-label="Выделить маркером"
+      />
+      <ToolbarButton
+        icon={
           <Code2
             className="h-3.5 w-3.5"
             style={state.isCodeBlock ? { filter: redFilter } : { color: 'rgba(80, 87, 98, 1)' }}
@@ -646,6 +673,60 @@ export function FloatingToolbar({
           />
         </>
       ) : null}
+
+      <HighlightColorPicker
+        editor={editor}
+        isOpen={Boolean(highlightPickerAnchor)}
+        anchorRect={highlightPickerAnchor}
+        toolbarRef={toolbarRef}
+        onClose={() => setHighlightPickerAnchor(null)}
+      />
+
+      {showBookmarkButtons && canEdit ? (
+        <>
+          <span className="mx-0.5 h-4 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+          <ToolbarButton
+            icon={<BookmarkPlus className="h-3.5 w-3.5" style={{ color: state.isBookmark ? '#7b67ee' : 'rgba(80,87,98,1)' }} />}
+            onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+              setCreateBookmarkAnchor(e.currentTarget.getBoundingClientRect());
+            }}
+            pressed={state.isBookmark}
+            isFirst={true}
+            isLast={false}
+            aria-label="Создать закладку"
+          />
+          <ToolbarButton
+            icon={<Link className="h-3.5 w-3.5" style={{ color: state.isBookmarkLink ? '#7b67ee' : 'rgba(80,87,98,1)' }} />}
+            onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+              setBookmarkPickerAnchor(e.currentTarget.getBoundingClientRect());
+            }}
+            pressed={state.isBookmarkLink}
+            isFirst={false}
+            isLast={true}
+            aria-label="Ссылка на закладку"
+          />
+        </>
+      ) : null}
+
+      <CreateBookmarkModal
+        isOpen={Boolean(createBookmarkAnchor)}
+        anchorRect={createBookmarkAnchor}
+        onConfirm={(label) => {
+          editor.chain().focus().setBookmark({ id: `bm-${Date.now()}`, label }).run();
+          setCreateBookmarkAnchor(null);
+        }}
+        onClose={() => setCreateBookmarkAnchor(null)}
+      />
+      <BookmarkPickerModal
+        isOpen={Boolean(bookmarkPickerAnchor)}
+        anchorRect={bookmarkPickerAnchor}
+        bookmarks={collectBookmarks(editor)}
+        onSelect={(id) => {
+          editor.chain().focus().setBookmarkLink({ bookmarkId: id }).run();
+          setBookmarkPickerAnchor(null);
+        }}
+        onClose={() => setBookmarkPickerAnchor(null)}
+      />
 
       {aiErrorMessage ? (
         <div className="ml-2 max-w-[240px] text-[11px] font-medium text-[#b00025]" aria-live="polite">

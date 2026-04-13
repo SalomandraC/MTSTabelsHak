@@ -19,6 +19,7 @@ import { PageEditorToolbar } from './page-editor-toolbar';
 import { PagePickerModal } from './page-picker-modal';
 import { TemplateVariableModal } from './template-variable-modal';
 import { IframeModal } from './iframe-modal';
+import { CreateBookmarkModal, collectBookmarks, BookmarkPickerModal } from './bookmark-modal';
 import { LiveReferencePickerModal } from './live-reference-picker-modal';
 import {
   clampPageIndent,
@@ -741,6 +742,12 @@ function LivePageEditor({
           <TemplateVariableModal {...controller.templateVariableModal} />
           <LiveReferencePickerModal {...controller.liveReferencePicker} />
           <WikiTablePickerModal {...controller.tablePicker} />
+          <CreateBookmarkModal
+            isOpen={controller.bookmarkModal.isOpen}
+            anchorRect={null}
+            onConfirm={controller.bookmarkModal.onConfirm}
+            onClose={controller.bookmarkModal.onClose}
+          />
           {historyPreview ? (
             <ReadOnlyPreviewOverlay checkpoint={historyPreview} />
           ) : (
