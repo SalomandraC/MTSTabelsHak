@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import type { MwsTableEmbedController } from '../model/use-wiki-table-embed';
 import { MwsTableActionBar } from './mws-table-action-bar';
 import { TableGridCanvas } from './table-grid-canvas';
@@ -61,9 +62,9 @@ export function ExpandedTableModal({
     return null;
   }
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[102] bg-black/50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-[221] bg-black/50 flex items-center justify-center p-4"
       onMouseDown={onClose}
       onClick={onClose}
     >
@@ -71,10 +72,25 @@ export function ExpandedTableModal({
         role="dialog"
         aria-modal="true"
         aria-label={`Полноэкранная таблица ${tableTitle}`}
-        className="flex h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="relative flex h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
       >
+        <button
+          type="button"
+          aria-label="Закрыть"
+          className="absolute top-3 right-3 z-20 inline-flex h-8 w-8 items-center justify-center rounded-md bg-white text-editor-text-tertiary hover:bg-editor-surface hover:text-editor-text-primary shadow"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
         <div className="border-b border-editor-border-subtle bg-[#f8fafc] px-5 py-4">
           <div className="min-w-0">
             <h2 className="truncate font-wide text-lg font-semibold text-editor-text-primary leading-none">
@@ -136,6 +152,7 @@ export function ExpandedTableModal({
           />
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

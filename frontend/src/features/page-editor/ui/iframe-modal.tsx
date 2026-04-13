@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { ModalActionButton } from '../../../shared/ui';
 
 type IframeModalProps = {
@@ -15,9 +16,9 @@ export function IframeModal({ isOpen, url, onUrlChange, onSubmit, onClose }: Ifr
 
   const canSubmit = url.trim().length > 0;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[101] flex items-center justify-center bg-black/30 p-4"
+      className="fixed inset-0 z-[220] flex items-center justify-center bg-black/30 p-4"
       onClick={onClose}
     >
       <div
@@ -67,6 +68,7 @@ export function IframeModal({ isOpen, url, onUrlChange, onSubmit, onClose }: Ifr
           </ModalActionButton>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
