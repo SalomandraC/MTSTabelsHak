@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   type CreateMwsFieldPayload,
+  getCurrentUser,
   type MwsField,
   type MwsRecord,
   type ResolveTableEmbedResponse,
@@ -96,6 +97,23 @@ export type GroupRule = {
   desc: boolean;
 };
 
+type PersistedTableViewPreferences = {
+  hiddenFieldIds?: string[];
+  sortRules?: Array<{
+    fieldId: string;
+    desc?: boolean;
+  }>;
+  filterRules?: Array<{
+    fieldId: string;
+    operator: FilterOperator;
+    value?: string;
+  }>;
+  groupRule?: {
+    fieldId: string;
+    desc?: boolean;
+  } | null;
+};
+
 export type TableRow =
   | {
       kind: 'group';
@@ -128,6 +146,61 @@ function createSortRuleId(seed: number) {
 
 function createFilterRuleId(seed: number) {
   return `filter-rule-${seed}`;
+}
+
+function getTableViewPreferencesStorageKey(attrs: {
+  nodeId?: string | null;
+  datasheetId?: string | null;
+  viewId?: string | null;
+}) {
+  if (!attrs.datasheetId) {
+    return null;
+  }
+
+  const userId = getCurrentUser()?.userId ?? 'anonymous';
+  return [
+    'wikilive',
+    'table-view-prefs',
+    userId,
+    attrs.datasheetId,
+    attrs.viewId ?? 'default',
+    attrs.nodeId ?? 'node'
+  ].join(':');
+}
+
+function readPersistedTableViewPreferences(
+  key: string | null
+): PersistedTableViewPreferences | null {
+  if (!key || typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as PersistedTableViewPreferences;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedTableViewPreferences(
+  key: string | null,
+  value: PersistedTableViewPreferences
+) {
+  if (!key || typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Ignore storage errors so table interactions keep working.
+  }
 }
 
 function getInitialFieldValue(field: MwsField) {
@@ -663,6 +736,8 @@ export function useWikiTableEmbed(
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const hasLoadedDataRef = useRef(false);
+  const activePreferencesKeyRef = useRef<string | null>(null);
+  const hasHydratedPreferencesRef = useRef(false);
   const pageSize = attrs.pageSize ?? 50;
 
   const registerScrollElement = useCallback(
@@ -675,6 +750,62 @@ export function useWikiTableEmbed(
 
   const nextPollDelay = () =>
     Math.floor(Math.random() * (POLL_MAX_MS - POLL_MIN_MS + 1)) + POLL_MIN_MS;
+
+  useEffect(() => {
+    const nextKey = getTableViewPreferencesStorageKey({
+      nodeId: attrs.nodeId,
+      datasheetId: attrs.datasheetId,
+      viewId: attrs.viewId
+    });
+    activePreferencesKeyRef.current = nextKey;
+    hasHydratedPreferencesRef.current = false;
+
+    const preferences = readPersistedTableViewPreferences(nextKey);
+    const timestampSeed = Date.now();
+
+    setHiddenFieldIds(preferences?.hiddenFieldIds ?? []);
+    setSortRules(
+      (preferences?.sortRules ?? []).map((rule, index) => ({
+        id: createSortRuleId(timestampSeed + index),
+        fieldId: rule.fieldId,
+        desc: Boolean(rule.desc)
+      }))
+    );
+    setFilterRules(
+      (preferences?.filterRules ?? []).map((rule, index) => ({
+        id: createFilterRuleId(timestampSeed + index),
+        fieldId: rule.fieldId,
+        operator: rule.operator,
+        value: rule.value ?? ''
+      }))
+    );
+    setGroupRule(
+      preferences?.groupRule?.fieldId
+        ? {
+            fieldId: preferences.groupRule.fieldId,
+            desc: Boolean(preferences.groupRule.desc)
+          }
+        : null
+    );
+    hasHydratedPreferencesRef.current = true;
+  }, [attrs.datasheetId, attrs.nodeId, attrs.viewId]);
+
+  useEffect(() => {
+    if (!hasHydratedPreferencesRef.current) {
+      return;
+    }
+
+    writePersistedTableViewPreferences(activePreferencesKeyRef.current, {
+      hiddenFieldIds,
+      sortRules: sortRules.map(({ fieldId, desc }) => ({ fieldId, desc })),
+      filterRules: filterRules.map(({ fieldId, operator, value }) => ({
+        fieldId,
+        operator,
+        value
+      })),
+      groupRule
+    });
+  }, [filterRules, groupRule, hiddenFieldIds, sortRules]);
 
   const loadEmbed = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -736,6 +867,17 @@ export function useWikiTableEmbed(
 
           return isSame ? current : next;
         });
+        setFilterRules((current) =>
+          current.filter((rule) =>
+            response.embed.fields.some((field) => field.id === rule.fieldId)
+          )
+        );
+        setGroupRule((current) =>
+          current &&
+          response.embed.fields.some((field) => field.id === current.fieldId)
+            ? current
+            : null
+        );
         if (!silent) {
           setSelection(null);
           setEditingCell(null);

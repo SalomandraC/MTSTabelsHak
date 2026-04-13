@@ -7,6 +7,7 @@ import { MwsTableActionBar } from './mws-table-action-bar';
 import { AttachmentUploadModal } from './attachment-upload-modal';
 import { CreateFieldModal } from './create-field-modal';
 import { ExpandedTableModal } from './expanded-table-modal';
+import { FieldActionsMenu } from './field-actions-menu';
 import { FilterRecordsModal } from './filter-records-modal';
 import { GroupRecordsModal } from './group-records-modal';
 import { HideFieldsModal } from './hide-fields-modal';
@@ -139,6 +140,11 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     []
   );
   const [attachmentUploadError, setAttachmentUploadError] = useState('');
+  const [activeFieldMenu, setActiveFieldMenu] = useState<{
+    field: MwsField;
+    x: number;
+    y: number;
+  } | null>(null);
   const selectEditorRef = useRef<HTMLDivElement | null>(null);
 
   const selectColorToCss = (color: string) => {
@@ -472,6 +478,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     controller.setSelection(null);
     controller.setEditingCell(null);
     controller.setEditingSelectCell(null);
+    setActiveFieldMenu(null);
   };
 
   const openAttachmentUploadModal = () => {
@@ -502,10 +509,75 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         controller.setSelection(null);
         controller.setEditingCell(null);
         controller.setEditingSelectCell(null);
+        setActiveFieldMenu(null);
       }
 
       return next;
     });
+  };
+
+  const openFieldMenu = ({
+    fieldIndex,
+    clientX,
+    clientY
+  }: {
+    fieldIndex: number;
+    clientX: number;
+    clientY: number;
+  }) => {
+    const field = controller.visibleFields[fieldIndex];
+    if (!field) {
+      return;
+    }
+
+    setActiveFieldMenu({
+      field,
+      x: clientX,
+      y: clientY + 8
+    });
+  };
+
+  const applySingleFieldSort = (field: MwsField, desc: boolean) => {
+    controller.setSortRules((current) => [
+      {
+        id: `sort-rule-${Date.now()}`,
+        fieldId: field.id,
+        desc
+      },
+      ...current.filter((rule) => rule.fieldId !== field.id)
+    ]);
+  };
+
+  const addFieldFilter = (field: MwsField) => {
+    controller.setFilterRules((current) => {
+      if (current.some((rule) => rule.fieldId === field.id)) {
+        return current;
+      }
+
+      return [
+        ...current,
+        {
+          id: `filter-rule-${Date.now()}`,
+          fieldId: field.id,
+          operator: 'contains',
+          value: ''
+        }
+      ];
+    });
+    setIsFilterRecordsModalOpen(true);
+  };
+
+  const applyFieldGrouping = (field: MwsField, desc: boolean) => {
+    controller.setGroupRule({
+      fieldId: field.id,
+      desc
+    });
+  };
+
+  const hideField = (field: MwsField) => {
+    controller.setHiddenFieldIds((current) =>
+      current.includes(field.id) ? current : [...current, field.id]
+    );
   };
 
   const downloadAllAttachments = async () => {
@@ -713,6 +785,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
               onDownloadAllAttachments={
                 isCollapsed ? undefined : () => void downloadAllAttachments()
               }
+              onOpenFieldMenu={isCollapsed ? undefined : openFieldMenu}
               onAddColumn={
                 isCollapsed ? undefined : () => setIsCreateFieldModalOpen(true)
               }
@@ -755,6 +828,48 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
           ) : null}
         </div>
       </div>
+      <FieldActionsMenu
+        fieldName={activeFieldMenu?.field.name ?? ''}
+        position={
+          activeFieldMenu
+            ? {
+                x: activeFieldMenu.x,
+                y: activeFieldMenu.y
+              }
+            : null
+        }
+        onClose={() => setActiveFieldMenu(null)}
+        onSortAsc={() => {
+          if (activeFieldMenu) {
+            applySingleFieldSort(activeFieldMenu.field, false);
+          }
+        }}
+        onSortDesc={() => {
+          if (activeFieldMenu) {
+            applySingleFieldSort(activeFieldMenu.field, true);
+          }
+        }}
+        onAddFilter={() => {
+          if (activeFieldMenu) {
+            addFieldFilter(activeFieldMenu.field);
+          }
+        }}
+        onGroupAsc={() => {
+          if (activeFieldMenu) {
+            applyFieldGrouping(activeFieldMenu.field, false);
+          }
+        }}
+        onGroupDesc={() => {
+          if (activeFieldMenu) {
+            applyFieldGrouping(activeFieldMenu.field, true);
+          }
+        }}
+        onHideField={() => {
+          if (activeFieldMenu) {
+            hideField(activeFieldMenu.field);
+          }
+        }}
+      />
       <CreateFieldModal
         isOpen={isCreateFieldModalOpen}
         isSubmitting={controller.isMutating}
@@ -802,6 +917,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         selectColorToCss={selectColorToCss}
         selectEditorRef={selectEditorRef}
         onClose={() => setIsExpandedViewOpen(false)}
+        onOpenFieldMenu={openFieldMenu}
         onSearchQueryChange={handleSearchQueryChange}
         onCreateField={() => setIsCreateFieldModalOpen(true)}
         onHideFields={() => setIsHideFieldsModalOpen(true)}
