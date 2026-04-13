@@ -57,6 +57,7 @@ type UsePageEditorControllerOptions = {
   page: WikiPage | null;
   canEdit: boolean;
   onRenamePage: (title: string) => Promise<void>;
+  onToggleHeadingNumbering: (enabled: boolean) => Promise<void>;
   onCheckpoint: () => Promise<void>;
   onOpenCommentThread?: (threadId: string) => void;
   isAiSlashEnabled: boolean;
@@ -156,6 +157,7 @@ export function usePageEditorController({
   page,
   canEdit,
   onRenamePage,
+  onToggleHeadingNumbering,
   onCheckpoint,
   onOpenCommentThread,
   isAiSlashEnabled,
@@ -669,6 +671,21 @@ export function usePageEditorController({
     void onRenamePage(newTitle).catch((error) => {
       setSaveStatus(error instanceof Error ? error.message : 'Не удалось переименовать страницу');
     });
+  };
+
+  const handleToggleHeadingNumbering = (enabled: boolean) => {
+    if (!canEdit) {
+      return;
+    }
+
+    setSaveStatus('Сохраняем настройки документа');
+    void onToggleHeadingNumbering(enabled)
+      .then(() => {
+        setSaveStatus('Настройки документа сохранены');
+      })
+      .catch((error) => {
+        setSaveStatus(error instanceof Error ? error.message : 'Не удалось обновить автонумерацию заголовков');
+      });
   };
 
   const slashItems = useMemo(() => getSlashCommandItems(plugins), [plugins]);
@@ -1271,6 +1288,7 @@ export function usePageEditorController({
     recoveryMessage,
     activeUsers,
     handleSaveMeta,
+    handleToggleHeadingNumbering,
     slashState,
     selectedIndex,
     setSelectedIndex,

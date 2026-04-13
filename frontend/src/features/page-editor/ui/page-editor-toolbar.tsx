@@ -33,6 +33,8 @@ const redFilter = 'brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(
 type PageEditorToolbarProps = {
   editor: Editor | null;
   canEdit?: boolean;
+  headingNumberingEnabled?: boolean;
+  onToggleHeadingNumbering: (enabled: boolean) => void;
   onOpenLinkModal: (position?: { top: number; left: number }) => void;
   onOpenImageModal: () => void;
   onOpenIframeModal: () => void;
@@ -168,6 +170,7 @@ function ToolbarButton({
       disabled={disabled} 
       className={className}
       aria-label={ariaLabel}
+      title={ariaLabel}
     >
       {icon || label}
     </button>
@@ -177,6 +180,8 @@ function ToolbarButton({
 export function PageEditorToolbar({
   editor,
   canEdit = true,
+  headingNumberingEnabled = false,
+  onToggleHeadingNumbering,
   onOpenLinkModal,
   onOpenImageModal,
   onOpenIframeModal,
@@ -425,6 +430,37 @@ export function PageEditorToolbar({
           isLast={true}
           isInGroup={true}
           aria-label="Заголовок 3"
+        />
+        <ToolbarButton
+          icon={(
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4 w-4"
+            >
+              <path d="M10 6H21" />
+              <path d="M10 12H21" />
+              <path d="M10 18H21" />
+              <path d="M3 6h2" />
+              <path d="M3 12h2" />
+              <path d="M3 18h2" />
+              <path d="M7 6h.01" />
+              <path d="M7 12h.01" />
+              <path d="M7 18h.01" />
+            </svg>
+          )}
+          onClick={() => onToggleHeadingNumbering(!headingNumberingEnabled)}
+          pressed={headingNumberingEnabled}
+          disabled={!canEdit}
+          noBorder
+          aria-label="Автонумерация заголовков"
         />
 
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />

@@ -111,6 +111,7 @@ describe('PageEditor', () => {
       recoveryMessage: '',
       activeUsers: [],
       handleSaveMeta: vi.fn(),
+      handleToggleHeadingNumbering: vi.fn(),
       slashState: { isOpen: true, top: 10, left: 10 },
       selectedIndex: 0,
       setSelectedIndex: vi.fn(),
@@ -141,6 +142,7 @@ describe('PageEditor', () => {
           createdAt: '2026-04-12T10:00:00.000Z',
           updatedAt: '2026-04-12T10:00:00.000Z',
           plainTextPreview: 'Описание',
+          headingNumberingEnabled: false,
           outgoingLinksCount: 0,
           backlinksCount: 0,
           embeds: [],
@@ -167,6 +169,7 @@ describe('PageEditor', () => {
           },
         }}
         onRenamePage={vi.fn(async () => undefined)}
+        onToggleHeadingNumbering={vi.fn(async () => undefined)}
         onCheckpoint={vi.fn(async () => undefined)}
         onCreateComment={vi.fn()}
         onOpenTimeMachine={vi.fn()}
@@ -207,6 +210,7 @@ describe('PageEditor', () => {
           createdAt: '2026-04-12T10:00:00.000Z',
           updatedAt: '2026-04-12T10:00:00.000Z',
           plainTextPreview: 'Описание',
+          headingNumberingEnabled: false,
           outgoingLinksCount: 0,
           backlinksCount: 0,
           embeds: [],
@@ -256,6 +260,7 @@ describe('PageEditor', () => {
           },
         }}
         onRenamePage={vi.fn(async () => undefined)}
+        onToggleHeadingNumbering={vi.fn(async () => undefined)}
         onCheckpoint={vi.fn(async () => undefined)}
       />,
     );
@@ -293,6 +298,7 @@ describe('PageEditor', () => {
           createdAt: '2026-04-12T10:00:00.000Z',
           updatedAt: '2026-04-12T10:00:00.000Z',
           plainTextPreview: 'Описание',
+          headingNumberingEnabled: false,
           outgoingLinksCount: 0,
           backlinksCount: 0,
           embeds: [],
@@ -319,6 +325,7 @@ describe('PageEditor', () => {
           },
         }}
         onRenamePage={vi.fn(async () => undefined)}
+        onToggleHeadingNumbering={vi.fn(async () => undefined)}
         onCheckpoint={vi.fn(async () => undefined)}
       />,
     );
@@ -363,6 +370,7 @@ describe('PageEditor', () => {
           createdAt: '2026-04-12T10:00:00.000Z',
           updatedAt: '2026-04-12T10:00:00.000Z',
           plainTextPreview: 'Описание',
+          headingNumberingEnabled: false,
           outgoingLinksCount: 0,
           backlinksCount: 0,
           embeds: [],
@@ -389,6 +397,7 @@ describe('PageEditor', () => {
           },
         }}
         onRenamePage={vi.fn(async () => undefined)}
+        onToggleHeadingNumbering={vi.fn(async () => undefined)}
         onCheckpoint={vi.fn(async () => undefined)}
       />,
     );

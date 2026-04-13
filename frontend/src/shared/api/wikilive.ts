@@ -247,6 +247,7 @@ export type WikiPage = {
   createdAt: string;
   updatedAt: string;
   plainTextPreview: string | null;
+  headingNumberingEnabled: boolean;
   outgoingLinksCount: number;
   backlinksCount: number;
   access?: DocumentAccessSummary;
@@ -346,6 +347,11 @@ export type WorkspaceRealtimeEvent =
     }
   | {
       type: 'page_access_updated';
+      spaceId: string;
+      pageId: string;
+    }
+  | {
+      type: 'page_updated';
       spaceId: string;
       pageId: string;
     };
@@ -980,7 +986,10 @@ export const wikiliveApi = {
   getPageAccess(pageId: string) {
     return request<{ access: DocumentAccessSummary }>(`/api/v1/pages/${pageId}/access`);
   },
-  updatePage(pageId: string, payload: { title?: string; icon?: string | null }) {
+  updatePage(
+    pageId: string,
+    payload: { title?: string; icon?: string | null; headingNumberingEnabled?: boolean },
+  ) {
     return request<{ page: WikiPage }>(`/api/v1/pages/${pageId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),

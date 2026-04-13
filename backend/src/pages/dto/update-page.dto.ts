@@ -13,4 +13,8 @@ export class UpdatePageDto {
   @IsOptional()
   @IsBoolean()
   isArchived?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  headingNumberingEnabled?: boolean;
 }

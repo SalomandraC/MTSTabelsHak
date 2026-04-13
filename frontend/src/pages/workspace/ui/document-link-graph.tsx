@@ -441,7 +441,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
       const layout = cy.layout({
         ...(layoutOptions as any),
         fit: true,
-      });
+      } as ColaLayoutOptions);
       layout.on('layoutstop', () => {
         updateSelection(cy, activePageId, edges);
         if (cy.elements().nonempty()) {
