@@ -168,6 +168,7 @@ export function usePageEditorController({
   const [connectionStatus, setConnectionStatus] = useState('offline');
   const [recoveryMessage, setRecoveryMessage] = useState('');
   const [activeUsers, setActiveUsers] = useState<PresenceUser[]>([]);
+  const [manualDescription, setManualDescription] = useState('');
 
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
   const [linkText, setLinkText] = useState('');
@@ -201,6 +202,20 @@ export function usePageEditorController({
   const userDisplayName = currentUser?.displayName ?? 'WikiLive User';
   const userId = currentUser?.userId ?? userDisplayName;
   const userColor = getCollaborationColor(userId);
+
+  useEffect(() => {
+    if (!page?.id) {
+      setManualDescription('');
+      return;
+    }
+
+    try {
+      const stored = localStorage.getItem(`wikilive:page-description:${page.id}`);
+      setManualDescription(stored ?? '');
+    } catch {
+      setManualDescription('');
+    }
+  }, [page?.id]);
 
   useEffect(() => {
     if (!page) {
@@ -632,9 +647,23 @@ export function usePageEditorController({
     };
   }, [canEdit, collabState, onCheckpoint, page?.documentState?.checkpointId, page?.documentState?.serverVersion]);
 
-  const handleSaveMeta = (newTitle: string) => {
+  const handleSaveMeta = (newTitle: string, newDescription: string) => {
     if (!canEdit) {
       return;
+    }
+
+    if (page?.id) {
+      const normalizedDescription = newDescription.trim();
+      setManualDescription(normalizedDescription);
+      try {
+        if (normalizedDescription) {
+          localStorage.setItem(`wikilive:page-description:${page.id}`, normalizedDescription);
+        } else {
+          localStorage.removeItem(`wikilive:page-description:${page.id}`);
+        }
+      } catch {
+        // ignore localStorage errors
+      }
     }
 
     void onRenamePage(newTitle).catch((error) => {
@@ -1236,7 +1265,7 @@ export function usePageEditorController({
   return {
     editor,
     title: page?.title ?? 'Новая страница',
-    description: page?.plainTextPreview || recoveryMessage || saveStatus,
+    description: manualDescription,
     saveStatus,
     connectionStatus,
     recoveryMessage,
