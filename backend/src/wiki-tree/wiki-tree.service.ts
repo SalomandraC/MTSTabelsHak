@@ -6,6 +6,7 @@ import {
 import { WikiNodeType } from '@prisma/client';
 import { UserContext } from 'src/auth/user-context';
 import { PrismaService } from 'src/infra/prisma/prisma.service';
+import { MwsService } from 'src/mws/mws.service';
 import { CreateFolderDto } from './dto/create-folder.dto';
 import { MoveNodeDto } from './dto/move-node.dto';
 import { UpdateFolderDto } from './dto/update-folder.dto';
@@ -24,7 +25,10 @@ export interface TreeNode {
 
 @Injectable()
 export class WikiTreeService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mwsService: MwsService,
+  ) {}
 
   async getTree(spaceId: string): Promise<TreeNode[]> {
     const nodes = await this.prisma.wikiNode.findMany({
@@ -55,7 +59,7 @@ export class WikiTreeService {
     }
 
     const sortRecursive = (items: TreeNode[]) => {
-      items.sort((a, b) => a.position - b.position || a.title.localeCompare(b.title));
+      items.sort((a, b) => a.title.localeCompare(b.title, 'ru', { sensitivity: 'base' }));
       items.forEach((item) => sortRecursive(item.children));
     };
 
@@ -65,17 +69,18 @@ export class WikiTreeService {
   }
 
   async createFolder(dto: CreateFolderDto, user: UserContext) {
-    await this.assertParentFolder(dto.parentNodeId);
-    const position = await this.nextPosition(dto.spaceId, dto.parentNodeId ?? null);
+    const { parentId, externalParentNodeId } = await this.resolveParent(dto.spaceId, dto.parentNodeId, dto.externalParentNodeId, user);
+    const position = await this.nextPosition(dto.spaceId, parentId);
 
     return this.prisma.wikiNode.create({
       data: {
         spaceId: dto.spaceId,
         type: WikiNodeType.folder,
-        parentId: dto.parentNodeId ?? null,
+        parentId,
         title: dto.title,
         icon: dto.icon,
         position,
+        mwsParentNodeId: externalParentNodeId,
         createdBy: user.userId,
         updatedBy: user.userId,
       },
@@ -132,25 +137,29 @@ export class WikiTreeService {
       throw new NotFoundException('Node not found');
     }
 
-    if (dto.targetParentId) {
-      const parent = await this.prisma.wikiNode.findUnique({ where: { id: dto.targetParentId } });
-      if (!parent || parent.type !== WikiNodeType.folder) {
-        throw new BadRequestException('Target parent must be an existing folder');
-      }
+    if (node.type === WikiNodeType.mws_folder || node.type === WikiNodeType.mws_table) {
+      throw new BadRequestException('External MWS nodes are read-only and cannot be moved');
+    }
 
-      if (parent.spaceId !== node.spaceId) {
+    const { parentId, externalParentNodeId } = await this.resolveParent(
+      node.spaceId,
+      dto.targetParentId ?? undefined,
+      dto.targetExternalParentNodeId ?? undefined,
+      user,
+    );
+
+    if (parentId) {
+      const parent = await this.prisma.wikiNode.findUnique({ where: { id: parentId } });
+      if (parent && parent.spaceId !== node.spaceId) {
         throw new BadRequestException('Cannot move node between spaces');
       }
     }
 
-    const position =
-      dto.position ?? (await this.nextPosition(node.spaceId, dto.targetParentId ?? null));
-
     return this.prisma.wikiNode.update({
       where: { id: nodeId },
       data: {
-        parentId: dto.targetParentId ?? null,
-        position,
+        parentId,
+        mwsParentNodeId: externalParentNodeId,
         updatedBy: user.userId,
       },
     });
@@ -162,8 +171,8 @@ export class WikiTreeService {
     }
 
     const parent = await this.prisma.wikiNode.findUnique({ where: { id: parentId } });
-    if (!parent || parent.type !== WikiNodeType.folder) {
-      throw new BadRequestException('Parent node must be an existing folder');
+    if (!parent || (parent.type !== WikiNodeType.folder && parent.type !== WikiNodeType.mws_folder)) {
+      throw new BadRequestException('Parent node must be an existing local or MWS folder');
     }
   }
 
@@ -175,5 +184,42 @@ export class WikiTreeService {
     });
 
     return sibling ? sibling.position + 1 : 0;
+  }
+
+  private async resolveParent(
+    spaceId: string,
+    parentNodeId: string | undefined,
+    externalParentNodeId: string | undefined,
+    user: UserContext,
+  ) {
+    if (parentNodeId && externalParentNodeId) {
+      throw new BadRequestException('Use either parentNodeId or externalParentNodeId');
+    }
+
+    if (parentNodeId) {
+      await this.assertParentFolder(parentNodeId);
+      const parent = await this.prisma.wikiNode.findUnique({ where: { id: parentNodeId } });
+      return {
+        parentId: parentNodeId,
+        externalParentNodeId: parent?.sourceNodeId ?? parent?.mwsSourceNodeId ?? null,
+      };
+    }
+
+    if (!externalParentNodeId) {
+      return {
+        parentId: null,
+        externalParentNodeId: null,
+      };
+    }
+
+    const shadowParent = await this.mwsService.resolveShadowNode(spaceId, externalParentNodeId, user);
+    if (shadowParent.type !== WikiNodeType.mws_folder) {
+      throw new BadRequestException('External parent must be an MWS folder');
+    }
+
+    return {
+      parentId: shadowParent.id,
+      externalParentNodeId,
+    };
   }
 }

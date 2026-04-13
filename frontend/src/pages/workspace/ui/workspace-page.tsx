@@ -281,7 +281,7 @@ function WorkspaceTreeItem({
   const [createError, setCreateError] = useState('');
   const [contextMenuPosition, setContextMenuPosition] = useState<{ left: number; top: number } | null>(null);
   const hasChildren = node.children.length > 0;
-  const isExpandable = node.kind === 'mwsFolder' || hasChildren;
+  const isExpandable = node.kind === 'mwsFolder' || node.kind === 'wikiFolder' || hasChildren;
   const isExpanded = isExpandable ? expandedFolderIds.has(node.id) : false;
   const isActivePage = node.linkedPageId === activePageId;
   const isSelectedTable = node.kind === 'mwsTable' && node.id === selectedTableNodeId;
@@ -502,9 +502,8 @@ function WorkspaceTreeItem({
         >
           <span
             className={[
-              node.kind === 'mwsFolder' ? 'text-[#df9b50]' : '',
+              node.kind === 'mwsFolder' || node.kind === 'wikiFolder' ? 'text-[#df9b50]' : '',
               node.kind === 'mwsTable' ? 'text-[#d70032]' : '',
-              node.kind === 'mwsNode' ? 'text-[#8d8d8d]' : '',
               node.kind === 'wikiPage' ? 'text-[#7a7f88]' : '',
             ].join(' ')}
           >

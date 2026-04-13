@@ -6,11 +6,13 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { NodeSourceType, NodeSyncState, WikiNodeType } from '@prisma/client';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import FormData from 'form-data';
 import { firstValueFrom } from 'rxjs';
 import { UserContext } from 'src/auth/user-context';
+import { PrismaService } from 'src/infra/prisma/prisma.service';
 import { RedisService } from 'src/infra/redis/redis.service';
 import {
   CreateMwsDatasheetDto,
@@ -57,6 +59,7 @@ export class MwsService {
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
   ) {
     this.baseUrl = this.configService.get<string>(
@@ -118,10 +121,182 @@ export class MwsService {
     return { item: this.normalizeNode(payload.item ?? payload.node ?? payload, null, []) };
   }
 
+  async syncSpaceNodes(spaceId: string, user: UserContext) {
+    const tree = await this.listNodes(spaceId, undefined, true, user);
+    const flatNodes = this.flattenNodes(tree.items);
+    const seenIds = new Set(flatNodes.map((node) => node.id));
+    const syncedAt = new Date();
+
+    const existingShadowNodes = await this.prisma.wikiNode.findMany({
+      where: {
+        spaceId,
+        sourceType: NodeSourceType.mws,
+      },
+      select: {
+        id: true,
+        sourceNodeId: true,
+      },
+    });
+    const existingShadowNodeIdsBySourceId = new Map(
+      existingShadowNodes
+        .filter((node): node is { id: string; sourceNodeId: string } => Boolean(node.sourceNodeId))
+        .map((node) => [node.sourceNodeId, node.id]),
+    );
+
+    const localIdsBySourceId = new Map<string, string>();
+
+    for (const node of flatNodes) {
+      const existingShadowId = existingShadowNodeIdsBySourceId.get(node.id);
+      const shadow = existingShadowId
+        ? await this.prisma.wikiNode.update({
+            where: { id: existingShadowId },
+            data: {
+              type: this.toShadowNodeType(node),
+              sourceParentNodeId: node.parentId,
+              title: node.name,
+              icon: node.icon ?? null,
+              isArchived: false,
+              isExternalReadonly: true,
+              syncState: NodeSyncState.synced,
+              lastSeenInSourceAt: syncedAt,
+              mwsSpaceId: node.spaceId ?? spaceId,
+              mwsDatasheetId: node.datasheetId ?? node.dstId,
+              updatedBy: user.userId,
+            },
+            select: {
+              id: true,
+            },
+          })
+        : await this.prisma.wikiNode.create({
+            data: {
+              spaceId,
+              type: this.toShadowNodeType(node),
+              sourceType: NodeSourceType.mws,
+              sourceNodeId: node.id,
+              sourceParentNodeId: node.parentId,
+              title: node.name,
+              icon: node.icon ?? null,
+              isArchived: false,
+              isExternalReadonly: true,
+              syncState: NodeSyncState.synced,
+              lastSeenInSourceAt: syncedAt,
+              mwsSpaceId: node.spaceId ?? spaceId,
+              mwsDatasheetId: node.datasheetId ?? node.dstId,
+              createdBy: user.userId,
+              updatedBy: user.userId,
+            },
+            select: {
+              id: true,
+            },
+          });
+
+      localIdsBySourceId.set(node.id, shadow.id);
+    }
+
+    for (const node of flatNodes) {
+      await this.prisma.wikiNode.update({
+        where: {
+          id: localIdsBySourceId.get(node.id),
+        },
+        data: {
+          parentId: node.parentId ? localIdsBySourceId.get(node.parentId) ?? null : null,
+        },
+      });
+    }
+
+    const seenExternalIds = [...localIdsBySourceId.keys()];
+    const localNodesBoundToExternalParents = await this.prisma.wikiNode.findMany({
+      where: {
+        spaceId,
+        sourceType: NodeSourceType.local,
+        mwsParentNodeId: {
+          in: seenExternalIds,
+        },
+      },
+      select: {
+        id: true,
+        mwsParentNodeId: true,
+      },
+    });
+
+    for (const node of localNodesBoundToExternalParents) {
+      await this.prisma.wikiNode.update({
+        where: { id: node.id },
+        data: {
+          parentId: node.mwsParentNodeId ? localIdsBySourceId.get(node.mwsParentNodeId) ?? null : null,
+        },
+      });
+    }
+
+    const staleShadowIds = existingShadowNodes
+      .filter((node) => node.sourceNodeId && !seenIds.has(node.sourceNodeId))
+      .map((node) => node.id);
+
+    if (staleShadowIds.length > 0) {
+      await this.prisma.wikiNode.updateMany({
+        where: {
+          id: {
+            in: staleShadowIds,
+          },
+        },
+        data: {
+          syncState: NodeSyncState.stale,
+          updatedBy: user.userId,
+        },
+      });
+    }
+
+    return {
+      items: flatNodes.length,
+      syncedAt,
+    };
+  }
+
+  async resolveShadowNode(spaceId: string, sourceNodeId: string, user: UserContext) {
+    let node = await this.prisma.wikiNode.findFirst({
+      where: {
+        spaceId,
+        sourceType: NodeSourceType.mws,
+        sourceNodeId,
+        isArchived: false,
+      },
+    });
+
+    if (!node) {
+      await this.syncSpaceNodes(spaceId, user);
+      node = await this.prisma.wikiNode.findFirst({
+        where: {
+          spaceId,
+          sourceType: NodeSourceType.mws,
+          sourceNodeId,
+          isArchived: false,
+        },
+      });
+    }
+
+    if (!node) {
+      throw new NotFoundException('MWS folder was not found in synchronized tree');
+    }
+
+    return node;
+  }
+
+  buildOpenInMwsUrlFromIds(spaceId: string | null, nodeId: string, datasheetId?: string | null) {
+    if (!spaceId || !nodeId) {
+      return null;
+    }
+
+    return this.nodeUrlTemplate
+      .replaceAll('{spaceId}', encodeURIComponent(spaceId))
+      .replaceAll('{nodeId}', encodeURIComponent(nodeId))
+      .replaceAll('{datasheetId}', encodeURIComponent(String(datasheetId ?? '')));
+  }
+
   async createDatasheet(spaceId: string, dto: CreateMwsDatasheetDto, user: UserContext) {
     const data = await this.request(user, 'POST', `/spaces/${spaceId}/datasheets`, dto);
     const payload = this.unwrapPayload(data);
     await this.invalidateNodeCache(spaceId);
+    await this.syncSpaceNodes(spaceId, user);
 
     return {
       datasheet: {
@@ -369,6 +544,7 @@ export class MwsService {
       this.invalidateNodeCache(spaceId),
       this.invalidateDatasheetCache(datasheetId),
     ]);
+    await this.syncSpaceNodes(spaceId, user);
 
     return {
       deleted: Boolean(this.unwrapPayload(data) ?? true),
@@ -575,6 +751,15 @@ export class MwsService {
 
   private isFolderNode(node: NormalizedMwsNode) {
     return node.type.toLowerCase().includes('folder');
+  }
+
+  private toShadowNodeType(node: NormalizedMwsNode): WikiNodeType {
+    return this.isTableNode(node) ? WikiNodeType.mws_table : WikiNodeType.mws_folder;
+  }
+
+  private isTableNode(node: NormalizedMwsNode) {
+    const normalizedType = node.type.toLowerCase();
+    return Boolean(node.datasheetId ?? node.dstId) || normalizedType.includes('datasheet') || normalizedType.includes('table');
   }
 
   private normalizeNodes(

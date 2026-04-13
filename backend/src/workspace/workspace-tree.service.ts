@@ -2,17 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { WikiNode, WikiNodeType } from '@prisma/client';
 import { UserContext } from 'src/auth/user-context';
 import { PrismaService } from 'src/infra/prisma/prisma.service';
-import { MwsService, NormalizedMwsNode } from 'src/mws/mws.service';
+import { MwsService } from 'src/mws/mws.service';
 import { DocumentRole, PageAccessService } from 'src/page-access/page-access.service';
 
-type WikiPageNode = WikiNode & {
+type TreeRecord = WikiNode & {
   page: {
     plainTextPreview: string | null;
   } | null;
   targetLinks: unknown[];
 };
 
-export type WorkspaceTreeNodeKind = 'mwsFolder' | 'mwsTable' | 'mwsNode' | 'wikiPage';
+export type WorkspaceTreeNodeKind = 'mwsFolder' | 'mwsTable' | 'wikiFolder' | 'wikiPage';
 
 export type WorkspaceTreeNode = {
   id: string;
@@ -21,7 +21,18 @@ export type WorkspaceTreeNode = {
   spaceId: string;
   parentId: string | null;
   children: WorkspaceTreeNode[];
-  mwsNode?: NormalizedMwsNode;
+  mwsNode?: {
+    id: string;
+    name: string;
+    type: string;
+    spaceId: string | null;
+    parentId: string | null;
+    path: string[];
+    datasheetId: string | null;
+    dstId: string | null;
+    openInMwsUrl: string | null;
+    children: [];
+  };
   wikiPage?: {
     id: string;
     title: string;
@@ -49,171 +60,125 @@ export class WorkspaceTreeService {
   ) {}
 
   async getTree(spaceId: string, user: UserContext) {
-    const [mwsTree, wikiPages] = await Promise.all([
-      this.mwsService.listNodes(spaceId, undefined, true, user),
-      this.prisma.wikiNode.findMany({
-        where: {
-          spaceId,
-          type: WikiNodeType.page,
-          isArchived: false,
-        },
-        include: {
-          page: {
-            select: {
-              plainTextPreview: true,
-            },
+    await this.mwsService.syncSpaceNodes(spaceId, user);
+
+    const records = await this.prisma.wikiNode.findMany({
+      where: {
+        spaceId,
+        isArchived: false,
+      },
+      include: {
+        page: {
+          select: {
+            plainTextPreview: true,
           },
-          targetLinks: true,
         },
-        orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
-      }),
-    ]);
+        targetLinks: true,
+      },
+    });
 
-    return {
-      items: await this.overlayWikiPages(spaceId, mwsTree.items, wikiPages, user),
-    };
-  }
-
-  private overlayWikiPages(
-    spaceId: string,
-    mwsNodes: NormalizedMwsNode[],
-    wikiPages: WikiPageNode[],
-    user: UserContext,
-  ): Promise<WorkspaceTreeNode[]> {
-    return this.overlayWikiPagesInternal(spaceId, mwsNodes, wikiPages, user);
-  }
-
-  private async overlayWikiPagesInternal(
-    spaceId: string,
-    mwsNodes: NormalizedMwsNode[],
-    wikiPages: WikiPageNode[],
-    user: UserContext,
-  ): Promise<WorkspaceTreeNode[]> {
     const accessByPageId = new Map(
       await Promise.all(
-        wikiPages.map(async (page) => [page.id, await this.pageAccessService.resolvePageAccess(page.id, user)] as const),
+        records
+          .filter((record) => record.type === WikiNodeType.page)
+          .map(async (record) => [record.id, await this.pageAccessService.resolvePageAccess(record.id, user)] as const),
       ),
     );
 
-    const pagesBySourceNodeId = new Map<string, WikiPageNode[]>();
-    const pagesByMwsParentNodeId = new Map<string | null, WikiPageNode[]>();
-    const attachedPageIds = new Set<string>();
-    const knownMwsNodeIds = new Set(this.flattenMwsNodes(mwsNodes).map((node) => node.id));
+    return {
+      items: this.buildTree(records, accessByPageId),
+    };
+  }
 
-    for (const page of wikiPages) {
-      if (page.mwsSourceNodeId && knownMwsNodeIds.has(page.mwsSourceNodeId)) {
-        const items = pagesBySourceNodeId.get(page.mwsSourceNodeId) ?? [];
-        items.push(page);
-        pagesBySourceNodeId.set(page.mwsSourceNodeId, items);
-        attachedPageIds.add(page.id);
-        continue;
-      }
+  private buildTree(
+    records: TreeRecord[],
+    accessByPageId: Map<string, Awaited<ReturnType<PageAccessService['resolvePageAccess']>>>,
+  ): WorkspaceTreeNode[] {
+    const byParentId = new Map<string | null, TreeRecord[]>();
 
-      if (page.mwsParentNodeId && knownMwsNodeIds.has(page.mwsParentNodeId)) {
-        const items = pagesByMwsParentNodeId.get(page.mwsParentNodeId) ?? [];
-        items.push(page);
-        pagesByMwsParentNodeId.set(page.mwsParentNodeId, items);
-        attachedPageIds.add(page.id);
-      }
+    for (const record of records) {
+      const items = byParentId.get(record.parentId ?? null) ?? [];
+      items.push(record);
+      byParentId.set(record.parentId ?? null, items);
     }
 
-    const toMwsTreeNode = (node: NormalizedMwsNode): WorkspaceTreeNode => {
-      const children = node.children.flatMap((child) => {
-        const childTreeNode = toMwsTreeNode(child);
-        const tablePages = pagesBySourceNodeId.get(child.id) ?? [];
+    const toNode = (record: TreeRecord): WorkspaceTreeNode => {
+      const children = (byParentId.get(record.id) ?? [])
+        .map(toNode)
+        .sort((left, right) => left.title.localeCompare(right.title, 'ru', { sensitivity: 'base' }));
 
-        return [
-          childTreeNode,
-          ...tablePages.map((page) => this.toWikiTreeNode(spaceId, page, child.parentId, accessByPageId.get(page.id))),
-        ];
-      });
+      if (record.type === WikiNodeType.page) {
+        const access = accessByPageId.get(record.id);
+        return {
+          id: record.id,
+          kind: 'wikiPage',
+          title: record.title,
+          spaceId: record.spaceId,
+          parentId: record.parentId,
+          children,
+          linkedPageId: record.id,
+          datasheetId: record.mwsDatasheetId,
+          wikiPage: {
+            id: record.id,
+            title: record.title,
+            icon: record.icon,
+            excerpt: record.page?.plainTextPreview ?? null,
+            createdAt: record.createdAt,
+            updatedAt: record.updatedAt,
+            backlinksCount: record.targetLinks.length,
+            role: access?.role ?? null,
+            canView: access?.capabilities.canView ?? false,
+            canEdit: access?.capabilities.canEdit ?? false,
+            isLocked: !(access?.capabilities.canView ?? false),
+          },
+        };
+      }
 
-      const parentOnlyPages = pagesByMwsParentNodeId.get(node.id) ?? [];
-      children.push(...parentOnlyPages.map((page) => this.toWikiTreeNode(spaceId, page, node.id, accessByPageId.get(page.id))));
+      if (record.type === WikiNodeType.folder) {
+        return {
+          id: record.id,
+          kind: 'wikiFolder',
+          title: record.title,
+          spaceId: record.spaceId,
+          parentId: record.parentId,
+          children,
+        };
+      }
+
+      const nodeId = record.sourceNodeId ?? record.mwsSourceNodeId ?? record.id;
+      const openInMwsUrl = this.mwsService.buildOpenInMwsUrlFromIds(
+        record.mwsSpaceId ?? record.spaceId,
+        nodeId,
+        record.mwsDatasheetId,
+      );
+      const mwsType = record.type === WikiNodeType.mws_table ? 'table' : 'folder';
 
       return {
-        id: this.mwsTreeId(node.id),
-        kind: this.getMwsNodeKind(node),
-        title: node.name,
-        spaceId,
-        parentId: node.parentId ? this.mwsTreeId(node.parentId) : null,
+        id: record.id,
+        kind: record.type === WikiNodeType.mws_table ? 'mwsTable' : 'mwsFolder',
+        title: record.title,
+        spaceId: record.spaceId,
+        parentId: record.parentId,
         children,
-        mwsNode: node,
-        datasheetId: node.datasheetId ?? node.dstId,
-        openInMwsUrl: node.openInMwsUrl,
+        datasheetId: record.mwsDatasheetId,
+        openInMwsUrl,
+        mwsNode: {
+          id: nodeId,
+          name: record.title,
+          type: mwsType,
+          spaceId: record.mwsSpaceId ?? record.spaceId,
+          parentId: record.sourceParentNodeId ?? null,
+          path: [],
+          datasheetId: record.mwsDatasheetId,
+          dstId: record.mwsDatasheetId,
+          openInMwsUrl,
+          children: [],
+        },
       };
     };
 
-    const roots = mwsNodes.flatMap((node) => {
-      const treeNode = toMwsTreeNode(node);
-      const siblingPages = pagesBySourceNodeId.get(node.id) ?? [];
-
-      return [
-        treeNode,
-        ...siblingPages.map((page) => this.toWikiTreeNode(spaceId, page, node.parentId, accessByPageId.get(page.id))),
-      ];
-    });
-
-    const unattachedPages = wikiPages.filter((page) => !attachedPageIds.has(page.id));
-    roots.push(...unattachedPages.map((page) => this.toWikiTreeNode(spaceId, page, null, accessByPageId.get(page.id))));
-
-    return roots;
-  }
-
-  private flattenMwsNodes(nodes: NormalizedMwsNode[]): NormalizedMwsNode[] {
-    return nodes.flatMap((node) => [node, ...this.flattenMwsNodes(node.children)]);
-  }
-
-  private getMwsNodeKind(node: NormalizedMwsNode): WorkspaceTreeNodeKind {
-    if (this.isTableNode(node)) {
-      return 'mwsTable';
-    }
-
-    const type = node.type.toLowerCase();
-    if (type.includes('folder') || node.children.length > 0) {
-      return 'mwsFolder';
-    }
-
-    return 'mwsNode';
-  }
-
-  private isTableNode(node: NormalizedMwsNode) {
-    const type = node.type.toLowerCase();
-    return Boolean(node.datasheetId ?? node.dstId) || type.includes('datasheet') || type.includes('table');
-  }
-
-  private toWikiTreeNode(
-    spaceId: string,
-    page: WikiPageNode,
-    mwsParentNodeId: string | null,
-    access?: Awaited<ReturnType<PageAccessService['resolvePageAccess']>>,
-  ): WorkspaceTreeNode {
-    return {
-      id: page.id,
-      kind: 'wikiPage',
-      title: page.title,
-      spaceId,
-      parentId: mwsParentNodeId ? this.mwsTreeId(mwsParentNodeId) : null,
-      children: [],
-      linkedPageId: page.id,
-      wikiPage: {
-        id: page.id,
-        title: page.title,
-        icon: page.icon,
-        excerpt: page.page?.plainTextPreview ?? null,
-        createdAt: page.createdAt,
-        updatedAt: page.updatedAt,
-        backlinksCount: page.targetLinks.length,
-        role: access?.role ?? null,
-        canView: access?.capabilities.canView ?? false,
-        canEdit: access?.capabilities.canEdit ?? false,
-        isLocked: !(access?.capabilities.canView ?? false),
-      },
-      datasheetId: page.mwsDatasheetId,
-    };
-  }
-
-  private mwsTreeId(nodeId: string) {
-    return `mws:${nodeId}`;
+    return (byParentId.get(null) ?? [])
+      .map(toNode)
+      .sort((left, right) => left.title.localeCompare(right.title, 'ru', { sensitivity: 'base' }));
   }
 }
