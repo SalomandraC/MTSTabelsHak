@@ -25,7 +25,13 @@ const STYLE_SYSTEM_PROMPTS: Record<TextStyleId, string> = {
 };
 
 const SAME_LANGUAGE_RULE =
-  'Always answer in the same language as the input text. If the input text is Russian, the output must be only in Russian.';
+  'Always answer in the same language as the input text. If language is ambiguous or missing, default to Russian. If the input text is Russian, the output must be only in Russian.';
+
+const PROFESSIONAL_TONE_RULE =
+  'Always maintain a professional, concise Wiki-system tone.';
+
+const LIVE_REFERENCE_STRICT_RULE =
+  'When mentioning any numeric values, statuses, or dates that exist in provided MWS table context, you MUST use live reference token format [Ref:tableId:rowId:colId]. Never output a plain numeric/status/date value if it can be bound to a table cell. This keeps documents dynamic.';
 
 const TRANSFORM_OUTPUT_RULES = [
   'Return only the transformed selected fragment text, without comments or explanations.',
@@ -110,7 +116,12 @@ export class AiAssistantService {
           'For create_records args must include datasheetId, fieldKey:"id", records:[{fields:{...}}].',
           'For add_table_column args must include spaceId, datasheetId, name, type, optional property.',
           'If tableSnapshot has missing or empty records, assume caller will fetch data with get_records before execution and still produce a valid command.',
+          'Prioritize updating existing records over creating new rows when the prompt asks to fill or modify existing data.',
+          'Use create_records only for clearly new unique entities.',
+          'If prompt includes row ranges (for example "rows 1-3" or "строки 1-3"), treat it as UPDATE_RECORDS intent for existing rows.',
           'Never ask clarifying questions. Use table snapshot and user prompt directly.',
+          SAME_LANGUAGE_RULE,
+          PROFESSIONAL_TONE_RULE,
         ].join(' '),
       },
       {
@@ -226,11 +237,15 @@ export class AiAssistantService {
           'For UPDATE_RECORDS output {"type":"UPDATE_RECORDS","records":[{"recordId":"...","fields":{...}}]}.',
           'When user asks to fill or enrich existing rows, prefer UPDATE_RECORDS and do not create duplicate rows.',
           'If user specifies row indexes or ranges (for example 1-6), treat it as updating existing rows via UPDATE_RECORDS.',
+          'If user specifies row ranges (for example "rows 1-3" or "строки 1-3"), always treat it as direct UPDATE_RECORDS intent.',
+          'Use ADD_ROW only for new unique entities that do not already exist in the current rows.',
           'Do not use ADD_ROW for tasks that target existing rows.',
           'Prefer creating columns first when existing columns do not match the task.',
           'If the snapshot is empty or insufficient, infer the needed schema from the prompt and still propose valid commands.',
           'Use fieldKey id compatible row values.',
           'Never ask clarifying questions.',
+          SAME_LANGUAGE_RULE,
+          PROFESSIONAL_TONE_RULE,
         ].join(' '),
       },
       {
@@ -637,6 +652,8 @@ export class AiAssistantService {
           'Continue the current text with a short, natural continuation.',
           'Do not explain your reasoning.',
           'Keep the output brief, relevant, and ready to insert directly into the editor.',
+          SAME_LANGUAGE_RULE,
+          PROFESSIONAL_TONE_RULE,
         ].join(' '),
       },
       {
@@ -660,6 +677,9 @@ export class AiAssistantService {
           'The document must have type "doc" and a content array.',
           'Use only paragraph, heading, bulletList, orderedList, listItem, blockquote, and text nodes unless the context requires another common ProseMirror node.',
           'If user asks to reference a live MWS cell, insert token [Ref:tableId:rowId:colId] directly in text, without extra markup.',
+          LIVE_REFERENCE_STRICT_RULE,
+          SAME_LANGUAGE_RULE,
+          PROFESSIONAL_TONE_RULE,
         ].join(' '),
       },
       {
@@ -684,7 +704,7 @@ export class AiAssistantService {
     return [
       {
         role: 'system',
-        content: `${prompt} ${SAME_LANGUAGE_RULE} ${TRANSFORM_OUTPUT_RULES}`,
+        content: `${prompt} ${SAME_LANGUAGE_RULE} ${PROFESSIONAL_TONE_RULE} ${TRANSFORM_OUTPUT_RULES}`,
       },
       {
         role: 'user',
