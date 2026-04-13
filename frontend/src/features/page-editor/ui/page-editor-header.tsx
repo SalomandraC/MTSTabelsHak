@@ -159,20 +159,14 @@ export function PageEditorHeader({
     <header
       ref={headerRef}
       data-page-editor-header
-      className="relative z-[30] flex flex-wrap sm:flex-nowrap items-start justify-between gap-3 border-b border-editor-border-subtle bg-editor-bg-page px-3 py-3 sm:px-4 sm:py-4"
+      className="relative z-[30] flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 border-b border-editor-border-subtle bg-editor-bg-page px-3 py-3 sm:px-4 sm:py-4"
       style={fontFamilyStyle}
     >
-      <div className="relative flex shrink-0 flex-col items-start gap-2">
-        <span className="inline-flex h-7 w-7 items-center justify-center text-[0.65rem] font-semibold text-editor-brand mt-0.5">
-          <img
-            src={DOC}
-            alt="Иконка страницы"
-            className="h-4 w-4"
-          />
-        </span>
+      <div className="relative flex shrink-0 flex-row items-start gap-10">
 
         {showViewModeControls ? (
           <div ref={viewMenuRef} className="relative">
+            <div className="mb-2 text-[8px]  font-semibold uppercase text-center tracking-[0.16em] text-editor-text-tertiary">Вид страницы</div>
             <button
               type="button"
               onClick={() => setIsViewMenuOpen((current) => !current)}
@@ -216,6 +210,13 @@ export function PageEditorHeader({
             ) : null}
           </div>
         ) : null}
+        <span className="inline-flex h-7 w-7 items-center justify-center text-[0.65rem] font-semibold text-editor-brand mt-0.5">
+          <img
+            src={DOC}
+            alt="Иконка страницы"
+            className="h-6 w-6"
+          />
+        </span>
       </div>
 
       <div className="relative z-50 min-w-0 flex-1">
@@ -284,7 +285,7 @@ export function PageEditorHeader({
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-editor-text-tertiary justify-end w-full sm:w-auto">
             <PresenceStrip users={activeUsers} />
             {connectionStatus ? (
-              <span className="rounded-lg bg-[#d70032] px-2 py-1 font-semibold text-white">collab: {connectionStatus}</span>
+              <span className="rounded-lg bg-[#d70032] px-2 py-1 font-semibold text-white">кооперация: {connectionStatus}</span>
             ) : null}
             {saveStatus ? <span>{saveStatus}</span> : null}
             {recoveryMessage ? (
