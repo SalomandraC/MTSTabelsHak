@@ -2346,7 +2346,7 @@ export function WorkspacePage() {
             <button
               type="button"
               onClick={() => void handleCreatePage()}
-              className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-[#d70032] px-3 text-sm font-semibold text-white transition-colors hover:bg-[#b8002b]"
+              className="flex h-9 w-[calc(100%-10px)] mr-[10px] items-center justify-center gap-2 rounded-lg bg-[#d70032] px-3 text-sm font-semibold text-white transition-colors hover:bg-[#b8002b]"
             >
               <Plus size={16} strokeWidth={2.4} />
               Создать страницу
@@ -2358,7 +2358,7 @@ export function WorkspacePage() {
               type="button"
             onClick={() => openTemplateMarketplace(null)}
               disabled={isTemplatesLoading}
-              className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-editor-border-subtle bg-white px-3 text-sm font-semibold text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa] disabled:cursor-wait disabled:opacity-60"
+              className="flex h-9 w-full w-[calc(100%-10px)] mr-[10px]  items-center justify-center gap-2 rounded-lg border border-editor-border-subtle bg-white px-3 text-sm font-semibold text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa] disabled:cursor-wait disabled:opacity-60"
             >
               <FileDown size={16} strokeWidth={2.2} />
               {isTemplatesLoading ? 'Загружаем шаблоны...' : 'Маркетплейс шаблонов'}
