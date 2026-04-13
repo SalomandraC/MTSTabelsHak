@@ -217,5 +217,19 @@ export function getSlashCommandItems(plugins: PluginCatalogItem[]): PageEditorSl
     });
   }
 
+  const bookmarksEnabled = plugins.some(p => p.id === 'bookmarks' && p.enabled)
+    && (plugins.find(p => p.id === 'bookmarks')?.settings?.['slash-menu'] ?? true);
+
+  if (bookmarksEnabled) {
+    items.push({
+      id: 'bookmark',
+      label: 'Закладка',
+      hint: 'Создать именованную закладку в тексте',
+      keywords: ['bookmark', 'anchor', 'закладка', 'якорь', 'метка'],
+      icon: '🔖',
+      run: (_editor: Editor) => { /* handled by controller via id */ },
+    });
+  }
+
   return items;
 }

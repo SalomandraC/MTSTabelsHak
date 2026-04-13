@@ -195,6 +195,7 @@ export function usePageEditorController({
   const [isTemplateVariableModalOpen, setIsTemplateVariableModalOpen] = useState(false);
   const [templateVariableLabel, setTemplateVariableLabel] = useState('');
   const [templateVariableDescription, setTemplateVariableDescription] = useState('');
+  const [isBookmarkModalOpen, setIsBookmarkModalOpen] = useState(false);
   const [collabState, setCollabState] = useState<CollabState | null>(null);
 
   const slashStateRef = useRef(baseSlashState);
@@ -867,6 +868,20 @@ export function usePageEditorController({
     setIsTemplateVariableModalOpen(false);
   };
 
+  const openBookmarkModal = () => {
+    setIsBookmarkModalOpen(true);
+  };
+
+  const closeBookmarkModal = () => {
+    setIsBookmarkModalOpen(false);
+  };
+
+  const handleInsertBookmark = (label: string) => {
+    if (!editor || !canEdit) return;
+    editor.chain().focus().setBookmark({ id: `bm-${Date.now()}`, label }).run();
+    closeBookmarkModal();
+  };
+
   const handleInsertTemplateVariable = () => {
     if (!editor || !canEdit) {
       return;
@@ -973,6 +988,12 @@ export function usePageEditorController({
     if (item.id === 'template-variable') {
       setSlashState(baseSlashState);
       openTemplateVariableModal('', '');
+      return;
+    }
+
+    if (item.id === 'bookmark') {
+      setSlashState(baseSlashState);
+      openBookmarkModal();
       return;
     }
 
@@ -1361,6 +1382,11 @@ export function usePageEditorController({
       onDescriptionChange: setTemplateVariableDescription,
       onSubmit: handleInsertTemplateVariable,
       onClose: closeTemplateVariableModal,
+    },
+    bookmarkModal: {
+      isOpen: isBookmarkModalOpen,
+      onConfirm: handleInsertBookmark,
+      onClose: closeBookmarkModal,
     },
     getCurrentDocumentStateValue,
     applyDocumentStateValue,
