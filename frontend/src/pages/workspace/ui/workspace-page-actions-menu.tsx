@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { RefObject } from 'react';
 
 type WorkspacePageActionsMenuProps = {
@@ -39,6 +40,8 @@ export function WorkspacePageActionsMenu({
   onSelectPage,
   onDeletePage,
 }: WorkspacePageActionsMenuProps) {
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+
   if (!isOpen) {
     return null;
   }
@@ -48,7 +51,7 @@ export function WorkspacePageActionsMenu({
       role="menu"
       aria-label={`Действия для страницы ${title}`}
       className={[
-        'z-30 w-44 overflow-hidden rounded-xl border border-editor-border-subtle bg-white py-1 shadow-[0_16px_40px_rgba(15,23,42,0.12)]',
+        'z-60 w-44 overflow-hidden rounded-xl border border-editor-border-subtle bg-white py-1 shadow-[0_16px_40px_rgba(15,23,42,0.12)]',
         contextMenuPosition ? 'fixed' : 'absolute right-0 top-7',
       ].join(' ')}
       style={
@@ -132,14 +135,45 @@ export function WorkspacePageActionsMenu({
               role="menuitem"
               onClick={(event) => {
                 event.stopPropagation();
-                onCloseActionsMenu();
-                onDeletePage();
+                setIsConfirmDeleteOpen(true);
               }}
               className="flex w-full items-center px-3 py-2 text-left text-sm text-[#d70032] hover:bg-[#fff1f3]"
             >
               Удалить
             </button>
           ) : null}
+          {isConfirmDeleteOpen && (
+            <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/30 p-4">
+              <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-lg">
+                <p className="text-sm leading-6 text-[#1f1f1f]">
+                  Удалить страницу «{title}»? Таблицы MWS при этом не удаляются.
+                </p>
+                <div className="mt-6 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsConfirmDeleteOpen(false);
+                      onCloseActionsMenu();
+                    }}
+                    className="rounded-lg border border-editor-border-subtle bg-white px-4 py-2 text-sm font-semibold text-[#505762] hover:bg-[#f7f8fa]"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsConfirmDeleteOpen(false);
+                      onCloseActionsMenu();
+                      onDeletePage();
+                    }}
+                    className="rounded-lg bg-[#d70032] px-4 py-2 text-sm font-semibold text-white hover:bg-[#b8002b]"
+                  >
+                    Удалить
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
