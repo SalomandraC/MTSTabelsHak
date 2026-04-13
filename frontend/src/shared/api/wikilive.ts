@@ -530,6 +530,7 @@ export type AiChatPayload = {
   viewId?: string;
   pageTitle?: string;
   pageSnapshot?: Record<string, unknown>;
+  useVectorSearch?: boolean;
 };
 
 export type AiGenerateResponse = {

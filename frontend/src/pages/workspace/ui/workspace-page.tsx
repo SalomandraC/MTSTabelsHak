@@ -27,7 +27,7 @@ import { usePageComments, type CommentThreadView } from '../../../features/page-
 import { usePageHistory } from '../../../features/page-editor/model/use-page-history';
 import { CommentsPanel } from '../../../features/page-editor/ui/comments-panel';
 import { TimeMachinePanel } from '../../../features/page-editor/ui/time-machine-panel';
-import { AiChatSidebar } from '../../../features/plugins/ai-assistant';
+import { AiSidebarChat } from '../../../features/plugins/ai-assistant';
 import { NavigationSidebar, PluginsModal, usePlugins } from '../../../features/plugins';
 import { ScrollArea } from '../../../shared/ui';
 import workspaceLogo from '../../../app/images/logo.svg';
@@ -179,7 +179,7 @@ function WorkspaceTreeSkeleton() {
   );
 }
 
-type RightPanelMode = 'links' | 'comments' | 'timeMachine' | 'navigation';
+type RightPanelMode = 'toolbar' | 'comments' | 'timeMachine' | 'navigation' | 'chat';
 
 function BlankAreaMenuItem({
   icon,
@@ -733,7 +733,7 @@ export function WorkspacePage() {
   const [activeEditor, setActiveEditor] = useState<Editor | null>(null);
   const [documentStateEncoder, setDocumentStateEncoder] = useState<(() => string | null) | null>(null);
   const [documentStateRestorer, setDocumentStateRestorer] = useState<((value: string) => boolean) | null>(null);
-  const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>('links');
+  const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>('toolbar');
   const [historyPreviewCheckpoint, setHistoryPreviewCheckpoint] = useState<PageHistoryCheckpoint | null>(null);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -1051,9 +1051,15 @@ export function WorkspacePage() {
 
   useEffect(() => {
     if (!isNavigationEnabled && rightPanelMode === 'navigation') {
-      setRightPanelMode('links');
+      setRightPanelMode('toolbar');
     }
   }, [isNavigationEnabled, rightPanelMode]);
+
+  useEffect(() => {
+    if (!isAiSidebarEnabled && rightPanelMode === 'chat') {
+      setRightPanelMode('toolbar');
+    }
+  }, [isAiSidebarEnabled, rightPanelMode]);
 
   useEffect(() => {
     setHistoryPreviewCheckpoint(null);
@@ -1280,7 +1286,7 @@ export function WorkspacePage() {
     if (!activePageId) {
       setActivePage(null);
       setIsPageLoading(false);
-      setRightPanelMode('links');
+      setRightPanelMode('toolbar');
       return;
     }
 
@@ -1793,7 +1799,7 @@ export function WorkspacePage() {
 
   const handleCloseComments = useCallback(() => {
     closeCommentsPanel();
-    setRightPanelMode('links');
+    setRightPanelMode('toolbar');
   }, [closeCommentsPanel]);
 
   const handleOpenTimeMachine = useCallback(() => {
@@ -2241,7 +2247,7 @@ export function WorkspacePage() {
             <button
               type="button"
               onClick={() => {
-                setRightPanelMode('links');
+                setRightPanelMode('toolbar');
                 rightSidebar.expand();
               }}
               className="absolute right-3 top-[136px] z-40 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
@@ -2254,14 +2260,38 @@ export function WorkspacePage() {
               <button
                 type="button"
                 onClick={() => {
-                  setRightPanelMode('navigation');
+                  setRightPanelMode((current) => (current === 'navigation' ? 'toolbar' : 'navigation'));
                   rightSidebar.expand();
                 }}
-                className="absolute right-3 top-[176px] z-40 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
-                aria-label="Показать навигацию по заголовкам"
-                title="Навигация по заголовкам"
+                className={[
+                  'absolute right-3 top-[176px] z-40 flex h-8 w-8 items-center justify-center rounded-full border shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d70032]/40',
+                  rightPanelMode === 'navigation'
+                    ? 'border-[#d70032] bg-[#fff1f3] text-[#d70032]'
+                    : 'border-editor-border-subtle bg-white text-editor-text-primary hover:bg-editor-bg-control',
+                ].join(' ')}
+                aria-label={rightPanelMode === 'navigation' ? 'Скрыть навигацию по заголовкам' : 'Показать навигацию по заголовкам'}
+                title={rightPanelMode === 'navigation' ? 'Скрыть навигацию по заголовкам' : 'Навигация по заголовкам'}
               >
                 <List size={16} strokeWidth={2.2} />
+              </button>
+            ) : null}
+            {isAiSidebarEnabled ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setRightPanelMode((current) => (current === 'chat' ? 'toolbar' : 'chat'));
+                  rightSidebar.expand();
+                }}
+                className={[
+                  'absolute right-3 top-[216px] z-40 flex h-8 w-8 items-center justify-center rounded-full border shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d70032]/40',
+                  rightPanelMode === 'chat'
+                    ? 'border-[#d70032] bg-[#fff1f3] text-[#d70032]'
+                    : 'border-editor-border-subtle bg-white text-editor-text-primary hover:bg-editor-bg-control',
+                ].join(' ')}
+                aria-label={rightPanelMode === 'chat' ? 'Скрыть чат ИИ-ассистента' : 'Показать чат ИИ-ассистента'}
+                title={rightPanelMode === 'chat' ? 'Скрыть чат ИИ-ассистента' : 'Чат ИИ-ассистента'}
+              >
+                <MessageSquare size={16} strokeWidth={2.2} />
               </button>
             ) : null}
           </>
@@ -2322,7 +2352,7 @@ export function WorkspacePage() {
           {isNavigationEnabled ? (
             <button
               type="button"
-              onClick={() => setRightPanelMode((current) => (current === 'navigation' ? 'links' : 'navigation'))}
+              onClick={() => setRightPanelMode((current) => (current === 'navigation' ? 'toolbar' : 'navigation'))}
               className={[
                 'absolute -left-5 top-[176px] z-30 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d70032]/40',
                 rightPanelMode === 'navigation'
@@ -2370,7 +2400,7 @@ export function WorkspacePage() {
                 canRestore={canEditActivePage}
                 restoreDisabledReason="У вас недостаточно прав для восстановления версии"
                 onRetry={() => void history.refreshHistory()}
-                onClose={() => setRightPanelMode('links')}
+                onClose={() => setRightPanelMode('toolbar')}
               />
             </div>
           ) : isNavigationEnabled && rightPanelMode === 'navigation' ? (
@@ -2378,7 +2408,17 @@ export function WorkspacePage() {
               <NavigationSidebar
                 editor={activeEditor}
                 enabled={isNavigationEnabled}
-                onClose={() => setRightPanelMode('links')}
+                onClose={() => setRightPanelMode('toolbar')}
+              />
+            </div>
+          ) : isAiSidebarEnabled && rightPanelMode === 'chat' ? (
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+              <AiSidebarChat
+                pageId={activePageId}
+                pageTitle={activePage?.title}
+                editor={activeEditor}
+                enabled={isAiSidebarEnabled}
+                onClose={() => setRightPanelMode('toolbar')}
               />
             </div>
           ) : (
@@ -2573,13 +2613,6 @@ export function WorkspacePage() {
                 )}
               </div>
             </section>
-
-            <AiChatSidebar
-              pageId={activePageId}
-              pageTitle={activePage?.title}
-              editor={activeEditor}
-              enabled={isAiSidebarEnabled}
-            />
 
             <section>
               <h3 className="text-sm font-semibold">Backlinks ({backlinks.length})</h3>
