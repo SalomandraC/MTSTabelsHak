@@ -2383,7 +2383,6 @@ export function WorkspacePage() {
                         onCreatePage={async (title, parentNodeId) => {
                           await handleCreatePage(title, parentNodeId);
                         }}
-<<<<<<< HEAD
                         onMoveNode={moveTreeNode}
                         dragSourceId={dragSourceId}
                         dragOverNodeId={dragOverNodeId}
