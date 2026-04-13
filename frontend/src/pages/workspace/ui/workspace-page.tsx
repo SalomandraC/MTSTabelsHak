@@ -1899,12 +1899,12 @@ export function WorkspacePage() {
                       autoFocus
                     />
                   ) : (
-                    <p className="truncate text-[15px] font-semibold text-[#1f1f1f]">{displayName}</p>
+                    <p className="truncate text-[15px] font-semibold text-[#1f1f1f] ml-[8px]">{displayName}</p>
                   )}
                   <button
                     type="button"
                     onClick={() => setIsEditingDisplayName(true)}
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#8d8d8d] transition-colors hover:bg-[#f2f3f5] hover:text-[#1f1f1f]"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#8d8d8d] transition-colors hover:bg-[#f2f3f5] hover:text-[#1f1f1f] "
                     aria-label="Изменить отображаемое имя"
                     title="Изменить отображаемое имя"
                   >

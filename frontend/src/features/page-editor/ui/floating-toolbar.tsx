@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 
 import { handleListAction } from '../model/list-actions';
 import { menuBarStateSelector } from '../model/menu-state';
+import { ensureBoundaryBlocksAfterInsert } from '../model/boundary-block-utils';
 import { getCanvasDrawSettings, getIframeEmbedSettings } from '../../plugins/model/plugin-registry';
 import { usePlugins } from '../../plugins';
 import { type AiTransformStyleId, wikiliveApi } from '../../../shared/api/wikilive';
@@ -558,7 +559,10 @@ export function FloatingToolbar({
       {showCanvasButton && (
         <ToolbarButton
           icon={<span className="px-1 text-[11px] font-semibold">🎨</span>}
-          onClick={() => editor.chain().focus().insertCanvasBlock().run()}
+          onClick={() => {
+            editor.chain().focus().insertCanvasBlock().run();
+            ensureBoundaryBlocksAfterInsert(editor);
+          }}
           isFirst={false}
           isLast={false}
           aria-label="Вставить блок для рисования"

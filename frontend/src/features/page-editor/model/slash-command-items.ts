@@ -213,7 +213,9 @@ export function getSlashCommandItems(plugins: PluginCatalogItem[]): PageEditorSl
       hint: 'Встроить YouTube, карту или другой внешний контент',
       keywords: ['iframe', 'embed', 'video', 'youtube', 'встраивание', 'видео', 'карта'],
       icon: '▶',
-      run: (editor: Editor) => { editor.chain().focus().setIframe({ src: '' }).run(); },
+      run: () => {
+        // Handled in PageEditor with iframe modal flow.
+      },
     });
   }
 
