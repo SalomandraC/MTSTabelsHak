@@ -502,6 +502,33 @@ export function AiInlineCopilot({
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+
+      if (showContextMenu) {
+        setShowContextMenu(false);
+        return;
+      }
+
+      if (showReportMenu) {
+        setShowReportMenu(false);
+        return;
+      }
+
+      onClose();
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose, showContextMenu, showReportMenu]);
+
   const contextOptions = useMemo(() => {
     const options: ContextOption[] = [
       { id: 'text', kind: 'text', label: 'Текст страницы' },
