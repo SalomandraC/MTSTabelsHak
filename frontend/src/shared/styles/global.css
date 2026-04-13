@@ -688,3 +688,16 @@
 .time-machine-panel * {
   font-family: 'MTSWide', var(--editor-font-sans);
 }
+
+.tiptap h1.page-editor-heading,
+.tiptap h2.page-editor-heading,
+.tiptap h3.page-editor-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35em;
+  flex-wrap: wrap;
+  min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
