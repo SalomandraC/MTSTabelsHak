@@ -202,7 +202,7 @@ export function PluginsModal({
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgba(17,24,39,0.38)] p-3 sm:p-6"
+      className="fixed inset-0 z-[101] flex items-center justify-center bg-[rgba(17,24,39,0.38)] p-3 sm:p-6"
       onClick={onClose}
     >
       <div

@@ -271,7 +271,7 @@ export function LiveReferencePickerModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[90] bg-black/35" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[101] bg-black/35" onMouseDown={onClose}>
       <div
         className="fixed left-1/2 top-1/2 flex max-h-[calc(100vh-2rem)] w-[min(60rem,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 flex-col gap-3 overflow-hidden rounded-lg bg-white p-5 shadow-[0_24px_70px_rgba(17,25,40,0.22)]"
         role="dialog"

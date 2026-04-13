@@ -281,7 +281,7 @@ export function CommentsPanel({
       ) : null}
 
       {isResolveConfirmOpen && activeThread ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+        <div className="fixed inset-0 z-[101] flex items-center justify-center px-4">
           <div className="absolute inset-0 bg-black/30" onClick={() => setIsResolveConfirmOpen(false)} />
           <div className="relative z-10 w-full max-w-md rounded-[1rem] border border-[#d70032] bg-white p-6 shadow-xl">
             <div className="mb-4 rounded-lg border border-[#ffb3ba] bg-[#fff1f3] p-4 text-sm text-[#991b1b]">

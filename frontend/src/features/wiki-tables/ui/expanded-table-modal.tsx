@@ -63,7 +63,7 @@ export function ExpandedTableModal({
 
   return (
     <div
-      className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-[102] bg-black/50 flex items-center justify-center p-4"
       onMouseDown={onClose}
       onClick={onClose}
     >

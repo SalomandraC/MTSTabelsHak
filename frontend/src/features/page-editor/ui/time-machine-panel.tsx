@@ -234,7 +234,7 @@ export function TimeMachinePanel({
       </aside>
 
       {isConfirmOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6">
+        <div className="fixed inset-0 z-[101] flex items-center justify-center bg-black/40 px-4 py-6">
           <div className="w-full max-w-md overflow-hidden rounded-3xl border border-[#d81f55] bg-white shadow-2xl">
             <div className="px-6 py-5">
               <div className="flex flex-col gap-4">
