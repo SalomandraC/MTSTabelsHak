@@ -67,12 +67,12 @@ export function CreateBookmarkModal({
           value={label}
           onChange={(e) => setLabel(e.target.value)}
           placeholder="Например, Введение"
-          className="h-8 flex-1 rounded-md border border-editor-border-control px-2 text-sm outline-none focus:border-[#7b67ee]"
+          className="h-8 flex-1 rounded-md border border-editor-border-control px-2 text-sm outline-none focus:border-[#ff0037]"
         />
         <button
           type="submit"
           disabled={!label.trim()}
-          className="h-8 rounded-md bg-[#7b67ee] px-3 text-xs font-semibold text-white disabled:opacity-40"
+          className="h-8 rounded-md bg-[#ff0037] px-3 text-xs font-semibold text-white disabled:opacity-40"
         >
           OK
         </button>
