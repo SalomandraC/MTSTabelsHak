@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import type { Editor } from '@tiptap/core';
 import {
   ChevronLeft,
@@ -219,6 +219,13 @@ function WorkspaceTreeItem({
   onToggleFolder,
   onDeletePage,
   onCreatePage,
+  onMoveNode,
+  dragSourceId,
+  dragOverNodeId,
+  dragOverPosition,
+  setDragSourceId,
+  setDragOverNodeId,
+  setDragOverPosition,
   spaceId,
 }: {
   node: WorkspaceTreeNode;
@@ -231,6 +238,13 @@ function WorkspaceTreeItem({
   onToggleFolder: (folderId: string) => void;
   onDeletePage: (pageId: string, title: string) => void;
   onCreatePage: (title: string, parentNodeId?: string | null) => Promise<void>;
+  onMoveNode: (sourceId: string, targetId: string, after?: boolean) => void;
+  dragSourceId: string | null;
+  dragOverNodeId: string | null;
+  dragOverPosition: 'before' | 'after' | null;
+  setDragSourceId?: Dispatch<SetStateAction<string | null>>;
+  setDragOverNodeId?: Dispatch<SetStateAction<string | null>>;
+  setDragOverPosition?: Dispatch<SetStateAction<'before' | 'after' | null>>;
   spaceId: string;
 }) {
   const actionsMenuRef = useRef<HTMLDivElement>(null);
@@ -327,12 +341,19 @@ function WorkspaceTreeItem({
 
   return (
     <li className="treeItemRoot relative" tabIndex={-1}>
+      {dragOverNodeId === node.id && dragOverPosition === 'before' ? (
+        <div className="pointer-events-none absolute left-0 right-0 top-0 h-[2px] bg-[#d70032]" />
+      ) : null}
+      {dragOverNodeId === node.id && dragOverPosition === 'after' ? (
+        <div className="pointer-events-none absolute left-0 right-0 bottom-0 h-[2px] bg-[#d70032]" />
+      ) : null}
       <div
         className={[
           'group flex h-8 items-center rounded-md pr-1 text-sm transition-colors',
           node.kind === 'wikiPage' ? 'text-[#303030] hover:bg-[#f2f3f5]' : 'text-[#4d4d4d] hover:bg-[#f2f3f5]',
           isActivePage ? 'bg-[#fff1f3] font-semibold text-[#d70032]' : '',
           isSelectedTable ? 'bg-[#f2f3f5] font-semibold text-[#1f1f1f]' : '',
+          dragOverNodeId === node.id ? 'bg-[#ffe7ec] ring-1 ring-[#d70032]' : '',
         ].join(' ')}
         style={{ paddingLeft: itemPadding }}
         data-test-id="workspaceTreeNodeItem"
@@ -364,16 +385,68 @@ function WorkspaceTreeItem({
 
         <button
           type="button"
-          draggable={Boolean(shareUrl)}
+          draggable
           onDragStart={(event) => {
-            if (!shareUrl) {
+            setDragSourceId?.(node.id);
+            event.dataTransfer.setData('application/x-wikilive-node-id', node.id);
+
+            if (shareUrl) {
+              event.dataTransfer.setData('text/uri-list', shareUrl);
+              event.dataTransfer.setData('text/plain', shareUrl);
+              event.dataTransfer.setData('text/html', `<a href="${shareUrl}">${node.title}</a>`);
+              event.dataTransfer.effectAllowed = 'copyMove';
+            } else {
+              event.dataTransfer.effectAllowed = 'move';
+            }
+          }}
+          onDragOver={(event) => {
+            if (!dragSourceId || dragSourceId === node.id) {
               return;
             }
 
-            event.dataTransfer.setData('text/uri-list', shareUrl);
-            event.dataTransfer.setData('text/plain', shareUrl);
-            event.dataTransfer.setData('text/html', `<a href="${shareUrl}">${node.title}</a>`);
-            event.dataTransfer.effectAllowed = 'copyLink';
+            const targetRect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+            const position = event.clientY - targetRect.top < targetRect.height / 2 ? 'before' : 'after';
+
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            setDragOverNodeId?.(node.id);
+            setDragOverPosition?.(position);
+          }}
+          onDragEnter={(event) => {
+            if (!dragSourceId || dragSourceId === node.id) {
+              return;
+            }
+
+            const targetRect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+            const position = event.clientY - targetRect.top < targetRect.height / 2 ? 'before' : 'after';
+
+            event.preventDefault();
+            setDragOverNodeId?.(node.id);
+            setDragOverPosition?.(position);
+          }}
+          onDragLeave={() => {
+            if (dragOverNodeId === node.id) {
+              setDragOverNodeId?.(null);
+              setDragOverPosition?.(null);
+            }
+          }}
+          onDrop={(event) => {
+            const sourceId = dragSourceId ?? event.dataTransfer.getData('application/x-wikilive-node-id');
+            if (!sourceId || sourceId === node.id) {
+              return;
+            }
+
+            const targetRect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+            const after = event.clientY - targetRect.top >= targetRect.height / 2;
+
+            event.preventDefault();
+            event.stopPropagation();
+            onMoveNode(sourceId, node.id, after);
+          }}
+          onDragEnd={() => {
+            setDragSourceId?.(null);
+            setDragOverNodeId?.(null);
+            setDragOverPosition?.(null);
           }}
           onClick={() => {
             if (node.kind === 'wikiPage' && node.wikiPage?.isLocked) {
@@ -481,6 +554,13 @@ function WorkspaceTreeItem({
               onToggleFolder={onToggleFolder}
               onDeletePage={onDeletePage}
               onCreatePage={onCreatePage}
+              onMoveNode={onMoveNode}
+              dragSourceId={dragSourceId}
+              dragOverNodeId={dragOverNodeId}
+              dragOverPosition={dragOverPosition}
+              setDragSourceId={setDragSourceId}
+              setDragOverNodeId={setDragOverNodeId}
+              setDragOverPosition={setDragOverPosition}
               spaceId={spaceId}
             />
           ))}
@@ -656,9 +736,88 @@ export function WorkspacePage() {
   const [tree, setTree] = useState<WorkspaceTreeNode[]>([]);
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
+  const [dragSourceId, setDragSourceId] = useState<string | null>(null);
+  const [dragOverNodeId, setDragOverNodeId] = useState<string | null>(null);
+  const [dragOverPosition, setDragOverPosition] = useState<'before' | 'after' | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [workbenchTab, setWorkbenchTab] = useState<'catalog' | 'favorite'>('catalog');
   const workbenchTreeWrapperRef = useRef<HTMLDivElement>(null);
+
+  const findNodeAndParent = useCallback(
+    (
+      nodes: WorkspaceTreeNode[],
+      needle: string,
+      parent: WorkspaceTreeNode | null = null,
+      parentList: WorkspaceTreeNode[] | null = null,
+    ): { node: WorkspaceTreeNode; parent: WorkspaceTreeNode | null; parentList: WorkspaceTreeNode[] | null } | null => {
+      for (const node of nodes) {
+        if (node.id === needle) {
+          return { node, parent, parentList: parentList ?? nodes };
+        }
+
+        const childMatch = findNodeAndParent(node.children, needle, node, node.children);
+        if (childMatch) {
+          return childMatch;
+        }
+      }
+
+      return null;
+    },
+    [],
+  );
+
+  const moveTreeNode = useCallback(
+    (sourceId: string, targetId: string, after = false) => {
+      if (sourceId === targetId) {
+        return;
+      }
+
+      setTree((currentTree) => {
+        const nextTree = structuredClone(currentTree) as WorkspaceTreeNode[];
+        const sourceInfo = findNodeAndParent(nextTree, sourceId);
+        const targetInfo = findNodeAndParent(nextTree, targetId);
+
+        if (!sourceInfo || !targetInfo || !sourceInfo.parentList) {
+          return currentTree;
+        }
+
+        const sourceIndex = sourceInfo.parentList.findIndex((item) => item.id === sourceId);
+        if (sourceIndex === -1) {
+          return currentTree;
+        }
+
+        sourceInfo.parentList.splice(sourceIndex, 1);
+
+        const targetList = targetInfo.parentList ?? nextTree;
+        let targetIndex = targetList.findIndex((item) => item.id === targetId);
+        if (targetIndex === -1) {
+          return currentTree;
+        }
+
+        if (sourceInfo.parentList === targetList && sourceIndex < targetIndex) {
+          targetIndex -= 1;
+        }
+
+        if (after) {
+          targetIndex += 1;
+        }
+
+        sourceInfo.node.parentId = targetInfo.parent?.id ?? null;
+        targetList.splice(targetIndex, 0, sourceInfo.node);
+
+        setDragOverNodeId(null);
+        setDragOverPosition(null);
+
+        return nextTree;
+      });
+    },
+    [findNodeAndParent],
+  );
+
+  const clearTreeDragState = useCallback(() => {
+    setDragOverNodeId(null);
+    setDragOverPosition(null);
+  }, []);
   const blankAreaCreateRef = useRef<HTMLDivElement>(null);
   const blankAreaCreateInputRef = useRef<HTMLInputElement>(null);
   const [activePageId, setActivePageId] = useState<string | null>(null);
@@ -1943,6 +2102,13 @@ export function WorkspacePage() {
                         onCreatePage={async (title, parentNodeId) => {
                           await handleCreatePage(title, parentNodeId);
                         }}
+                        onMoveNode={moveTreeNode}
+                        dragSourceId={dragSourceId}
+                        dragOverNodeId={dragOverNodeId}
+                        dragOverPosition={dragOverPosition}
+                        setDragSourceId={setDragSourceId}
+                        setDragOverNodeId={setDragOverNodeId}
+                        setDragOverPosition={setDragOverPosition}
                         spaceId={selectedSpaceId}
                       />
                     ))}

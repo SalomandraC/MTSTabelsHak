@@ -224,6 +224,8 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
       return;
     }
 
+    let didCleanup = false;
+
     const cy = cytoscape({
       container: containerRef.current,
       elements,
@@ -343,9 +345,17 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
 
     const scheduleLayout = () => {
       window.requestAnimationFrame(() => {
+        if (didCleanup || cy.destroyed()) {
+          return;
+        }
+
         cy.resize();
         const layout = cy.layout(layoutOptions);
         layout.on('layoutstop', () => {
+          if (didCleanup || cy.destroyed()) {
+            return;
+          }
+
           if (cy.elements().nonempty() && !initialLayoutDoneRef.current) {
             cy.fit(cy.elements(), 25);
             initialLayoutDoneRef.current = true;
@@ -363,8 +373,11 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
     updateSelection(cy, activePageId, edges);
 
     return () => {
+      didCleanup = true;
       resizeObserver.disconnect();
-      cy.destroy();
+      if (!cy.destroyed()) {
+        cy.destroy();
+      }
       cytoscapeRef.current = null;
     };
   }, [pages.length]);
@@ -426,7 +439,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
     window.requestAnimationFrame(() => {
       cy.resize();
       const layout = cy.layout({
-        ...layoutOptions,
+        ...(layoutOptions as any),
         fit: true,
       });
       layout.on('layoutstop', () => {
