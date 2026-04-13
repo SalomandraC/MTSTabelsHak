@@ -8,12 +8,15 @@ import * as Y from 'yjs';
 import { UserContext } from 'src/auth/user-context';
 import { decodeBase64ToBuffer } from 'src/common/utils';
 import { PrismaService } from 'src/infra/prisma/prisma.service';
+import { MwsService } from 'src/mws/mws.service';
 import { PageAccessService } from 'src/page-access/page-access.service';
 import { RealtimeService } from 'src/realtime/realtime.service';
 import { SearchService } from 'src/search/search.service';
 import { UpdatePageAccessDto } from './dto/update-page-access.dto';
 import { CreatePageDto } from './dto/create-page.dto';
 import { UpdatePageDto } from './dto/update-page.dto';
+
+const WIKI_NODE_TYPE_MWS_FOLDER = 'mws_folder';
 
 @Injectable()
 export class PagesService {
@@ -22,6 +25,7 @@ export class PagesService {
     private readonly searchService: SearchService,
     private readonly pageAccessService: PageAccessService,
     private readonly realtimeService: RealtimeService,
+    private readonly mwsService: MwsService,
   ) {}
 
   async listPages(spaceId: string, query?: string, limit = 20) {
@@ -45,14 +49,9 @@ export class PagesService {
   }
 
   async createPage(dto: CreatePageDto, user: UserContext, db: Prisma.TransactionClient | PrismaService = this.prisma) {
-    if (dto.parentNodeId) {
-      const parent = await db.wikiNode.findUnique({ where: { id: dto.parentNodeId } });
-      if (!parent || parent.type !== WikiNodeType.folder) {
-        throw new BadRequestException('Pages can only be created inside folders or at root');
-      }
-    }
+    const { parentId, externalParentNodeId } = await this.resolveParentId(dto, user, db);
 
-    const position = await this.nextPosition(dto.spaceId, dto.parentNodeId ?? null, db);
+    const position = await this.nextPosition(dto.spaceId, parentId, db);
 
     const snapshot = dto.initialContent
       ? decodeBase64ToBuffer(dto.initialContent.value)
@@ -64,11 +63,12 @@ export class PagesService {
     const node = await db.wikiNode.create({
       data: {
         spaceId: dto.spaceId,
-        parentId: dto.parentNodeId ?? null,
+        parentId,
         type: WikiNodeType.page,
         title: dto.title,
         icon: dto.icon,
         position,
+        mwsParentNodeId: externalParentNodeId,
         createdBy: user.userId,
         updatedBy: user.userId,
       },
@@ -254,6 +254,42 @@ export class PagesService {
     });
 
     return sibling ? sibling.position + 1 : 0;
+  }
+
+  private async resolveParentId(
+    dto: CreatePageDto,
+    user: UserContext,
+    db: Prisma.TransactionClient | PrismaService,
+  ) {
+    if (dto.parentNodeId && dto.externalParentNodeId) {
+      throw new BadRequestException('Use either parentNodeId or externalParentNodeId');
+    }
+
+    if (dto.parentNodeId) {
+      const parent = await db.wikiNode.findUnique({ where: { id: dto.parentNodeId } });
+      if (!parent || (parent.type !== WikiNodeType.folder && parent.type !== WIKI_NODE_TYPE_MWS_FOLDER)) {
+        throw new BadRequestException('Pages can only be created inside local or MWS folders');
+      }
+
+      return {
+        parentId: parent.id,
+        externalParentNodeId: parent.sourceNodeId ?? parent.mwsSourceNodeId ?? null,
+      };
+    }
+
+    if (!dto.externalParentNodeId) {
+      return {
+        parentId: null,
+        externalParentNodeId: null,
+      };
+    }
+
+    const shadowParent = await this.mwsService.resolveShadowFolderNode(dto.spaceId, dto.externalParentNodeId, user);
+
+    return {
+      parentId: shadowParent.id,
+      externalParentNodeId: dto.externalParentNodeId,
+    };
   }
 
   private fromSnapshot(snapshot: Buffer): Y.Doc {

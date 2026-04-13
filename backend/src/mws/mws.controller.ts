@@ -55,6 +55,11 @@ export class MwsController {
     return this.mwsService.getNode(nodeId, user);
   }
 
+  @Post('spaces/:spaceId/sync-tree')
+  async syncTree(@Param('spaceId') spaceId: string, @CurrentUser() user: UserContext) {
+    return this.mwsService.syncSpaceNodes(spaceId, user);
+  }
+
   @Post('spaces/:spaceId/datasheets')
   async createDatasheet(
     @Param('spaceId') spaceId: string,

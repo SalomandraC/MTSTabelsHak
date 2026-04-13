@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsUUID, Min } from 'class-validator';
+import { IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class MoveNodeDto {
   @IsOptional()
@@ -6,7 +6,6 @@ export class MoveNodeDto {
   targetParentId?: string | null;
 
   @IsOptional()
-  @IsInt()
-  @Min(0)
-  position?: number;
+  @IsString()
+  targetExternalParentNodeId?: string | null;
 }

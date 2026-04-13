@@ -8,6 +8,10 @@ export class CreateFolderDto {
   @IsUUID()
   parentNodeId?: string;
 
+  @IsOptional()
+  @IsString()
+  externalParentNodeId?: string;
+
   @IsString()
   @MaxLength(255)
   title!: string;

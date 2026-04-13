@@ -162,7 +162,14 @@ export function PageEditorHeader({
       className="relative z-[30] flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 border-b border-editor-border-subtle bg-editor-bg-page px-3 py-3 sm:px-4 sm:py-4"
       style={fontFamilyStyle}
     >
-      <div className="relative flex shrink-0 flex-row items-start gap-10">
+      <div className="relative flex shrink-0 flex-col items-start gap-2">
+        <span className="inline-flex h-8 w-8 items-center justify-center text-[0.65rem] font-semibold text-editor-brand mt-0.5">
+          <img
+            src={DOC}
+            alt="Иконка страницы"
+            className="h-6 w-6"
+          />
+        </span>
 
         {showViewModeControls ? (
           <div ref={viewMenuRef} className="relative">
