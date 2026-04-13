@@ -9,12 +9,21 @@ export interface AiChatToolDefinition {
 
 export interface ChatQuestionInput {
   question: string;
+  spaceId?: string;
   pageId?: string;
   pageTitle?: string;
   pageSnapshot?: Record<string, unknown> | string;
   datasheetId?: string;
   viewId?: string;
   fieldKey?: 'id' | 'name';
+  selectedPageIds?: string[];
+  selectedFolderIds?: string[];
+  contextDocuments?: Array<{
+    pageId: string;
+    title: string;
+    markdown: string;
+  }>;
+  useVectorSearch?: boolean;
 }
 
 export interface ChatQuestionResponse {

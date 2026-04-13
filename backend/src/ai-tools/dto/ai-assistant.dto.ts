@@ -1,4 +1,4 @@
-import { IsBoolean, IsObject, IsOptional, IsString, IsIn } from 'class-validator';
+import { IsArray, IsBoolean, IsObject, IsOptional, IsString, IsIn } from 'class-validator';
 
 export class CompletionRequestDto {
   @IsString()
@@ -56,6 +56,10 @@ export class ChatRequestDto {
 
   @IsOptional()
   @IsString()
+  spaceId?: string;
+
+  @IsOptional()
+  @IsString()
   pageId?: string;
 
   @IsOptional()
@@ -73,4 +77,26 @@ export class ChatRequestDto {
   @IsOptional()
   @IsObject()
   pageSnapshot?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  selectedPageIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  selectedFolderIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  contextDocuments?: Array<{
+    pageId: string;
+    title: string;
+    markdown: string;
+  }>;
+
+  @IsOptional()
+  @IsBoolean()
+  useVectorSearch?: boolean;
 }

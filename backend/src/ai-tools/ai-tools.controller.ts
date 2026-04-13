@@ -64,11 +64,16 @@ export class AiToolsController {
     return this.aiChatService.askQuestion(
       {
         question: dto.question,
+        spaceId: dto.spaceId,
         pageId: dto.pageId,
         datasheetId: dto.datasheetId,
         viewId: dto.viewId,
         pageTitle: dto.pageTitle,
         pageSnapshot: dto.pageSnapshot,
+        selectedPageIds: dto.selectedPageIds,
+        selectedFolderIds: dto.selectedFolderIds,
+        contextDocuments: dto.contextDocuments,
+        useVectorSearch: dto.useVectorSearch,
       },
       user,
     );

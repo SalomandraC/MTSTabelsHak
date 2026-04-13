@@ -17,6 +17,11 @@ type AvailableContextPage = {
   title: string;
 };
 
+type AvailableContextFolder = {
+  id: string;
+  title: string;
+};
+
 type SelectedContextDocument = {
   pageId: string;
   title: string;
@@ -24,13 +29,20 @@ type SelectedContextDocument = {
   isLoading?: boolean;
 };
 
+type SelectedContextFolder = {
+  folderId: string;
+  title: string;
+};
+
 type AiSidebarChatProps = {
   pageId: string | null;
+  spaceId: string;
   pageTitle?: string;
   editor: Editor | null;
   enabled: boolean;
   onClose: () => void;
   availablePages?: AvailableContextPage[];
+  availableFolders?: AvailableContextFolder[];
 };
 
 function normalizeMarkdownSnippet(text: string, maxLength = 6000) {
@@ -116,17 +128,20 @@ function ContextChip({
 
 export function AiSidebarChat({
   pageId,
+  spaceId,
   pageTitle,
   editor,
   enabled,
   onClose,
   availablePages = [],
+  availableFolders = [],
 }: AiSidebarChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedDocuments, setSelectedDocuments] = useState<SelectedContextDocument[]>([]);
+  const [selectedFolders, setSelectedFolders] = useState<SelectedContextFolder[]>([]);
   const [isContextMenuOpen, setIsContextMenuOpen] = useState(false);
   const [contextSearch, setContextSearch] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -153,6 +168,22 @@ export function AiSidebarChat({
     return Array.from(unique.values());
   }, [availablePages, pageId, selectedDocuments]);
 
+  const contextFolders = useMemo(() => {
+    const unique = new Map<string, AvailableContextFolder>();
+
+    availableFolders.forEach((folder) => {
+      if (folder.id && folder.title) {
+        unique.set(folder.id, folder);
+      }
+    });
+
+    selectedFolders.forEach((folder) => {
+      unique.delete(folder.folderId);
+    });
+
+    return Array.from(unique.values());
+  }, [availableFolders, selectedFolders]);
+
   const filteredContextPages = useMemo(() => {
     const normalizedQuery = contextSearch.trim().toLowerCase();
 
@@ -162,6 +193,16 @@ export function AiSidebarChat({
 
     return contextPages.filter((page) => page.title.toLowerCase().includes(normalizedQuery));
   }, [contextPages, contextSearch]);
+
+  const filteredContextFolders = useMemo(() => {
+    const normalizedQuery = contextSearch.trim().toLowerCase();
+
+    if (!normalizedQuery) {
+      return contextFolders;
+    }
+
+    return contextFolders.filter((folder) => folder.title.toLowerCase().includes(normalizedQuery));
+  }, [contextFolders, contextSearch]);
 
   const currentMarkdown = useMemo(() => getEditorMarkdown(editor), [editor]);
 
@@ -200,6 +241,7 @@ export function AiSidebarChat({
 
   useEffect(() => {
     setSelectedDocuments([]);
+    setSelectedFolders([]);
     setIsContextMenuOpen(false);
     setContextSearch('');
   }, [pageId]);
@@ -257,6 +299,21 @@ export function AiSidebarChat({
     setSelectedDocuments((current) => current.filter((document) => document.pageId !== pageIdToRemove));
   };
 
+  const handleAddFolder = (folder: AvailableContextFolder) => {
+    setIsContextMenuOpen(false);
+    setContextSearch('');
+
+    if (selectedFolders.some((current) => current.folderId === folder.id)) {
+      return;
+    }
+
+    setSelectedFolders((current) => [...current, { folderId: folder.id, title: folder.title }]);
+  };
+
+  const handleRemoveFolder = (folderIdToRemove: string) => {
+    setSelectedFolders((current) => current.filter((folder) => folder.folderId !== folderIdToRemove));
+  };
+
   const handleSend = async () => {
     const trimmed = draft.trim();
     if (!trimmed || isSending || hasPendingContext) {
@@ -271,12 +328,15 @@ export function AiSidebarChat({
     try {
       const response = await wikiliveApi.aiChat({
         question: trimmed,
+        spaceId,
         pageId: pageId ?? undefined,
         pageTitle,
         pageSnapshot: {
           markdown: markdownContext,
           contextDocuments: selectedContextPayload,
         },
+        selectedPageIds: selectedDocuments.map((document) => document.pageId),
+        selectedFolderIds: selectedFolders.map((folder) => folder.folderId),
         contextDocuments: selectedContextPayload,
         useVectorSearch: true,
       });
@@ -352,7 +412,15 @@ export function AiSidebarChat({
                     onRemove={() => handleRemoveDocument(document.pageId)}
                   />
                 ))}
-                {!pageId && selectedDocuments.length === 0 ? (
+                {selectedFolders.map((folder) => (
+                  <ContextChip
+                    key={folder.folderId}
+                    title={`Папка: ${folder.title}`}
+                    removable
+                    onRemove={() => handleRemoveFolder(folder.folderId)}
+                  />
+                ))}
+                {!pageId && selectedDocuments.length === 0 && selectedFolders.length === 0 ? (
                   <span className="text-[11px] text-editor-text-tertiary">Контекст не выбран</span>
                 ) : null}
               </div>
@@ -370,7 +438,7 @@ export function AiSidebarChat({
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">Добавить в контекст</p>
-                      <p className="mt-1 text-xs text-editor-text-tertiary">Текущая страница уже включена. Можно добавить еще документы для сравнения.</p>
+                      <p className="mt-1 text-xs text-editor-text-tertiary">Можно добавлять документы как явный контекст и папки как область поиска для ИИ.</p>
                     </div>
                     <button
                       type="button"
@@ -393,7 +461,10 @@ export function AiSidebarChat({
                         />
                       </div>
                     </div>
-                    <div className="max-h-44 overflow-y-auto p-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                    <div className="max-h-56 overflow-y-auto p-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                      <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-editor-text-tertiary">
+                        Документы
+                      </div>
                       {filteredContextPages.length > 0 ? (
                         filteredContextPages.map((page) => (
                           <button
@@ -407,7 +478,25 @@ export function AiSidebarChat({
                           </button>
                         ))
                       ) : (
-                        <div className="px-3 py-4 text-sm text-editor-text-tertiary">Документы не найдены</div>
+                        <div className="px-3 py-2 text-sm text-editor-text-tertiary">Документы не найдены</div>
+                      )}
+                      <div className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-editor-text-tertiary">
+                        Папки
+                      </div>
+                      {filteredContextFolders.length > 0 ? (
+                        filteredContextFolders.map((folder) => (
+                          <button
+                            key={folder.id}
+                            type="button"
+                            onClick={() => handleAddFolder(folder)}
+                            className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm text-editor-text-primary transition-colors hover:bg-editor-bg-control"
+                          >
+                            <span className="min-w-0 truncate">{folder.title}</span>
+                            <span className="shrink-0 text-[11px] text-editor-text-tertiary">Ограничить</span>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="px-3 py-2 text-sm text-editor-text-tertiary">Папки не найдены</div>
                       )}
                     </div>
                   </div>

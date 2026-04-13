@@ -526,17 +526,38 @@ export type AiTransformPayload = {
 
 export type AiChatPayload = {
   question: string;
+  spaceId?: string;
   pageId?: string;
   datasheetId?: string;
   viewId?: string;
   pageTitle?: string;
   pageSnapshot?: Record<string, unknown>;
+  selectedPageIds?: string[];
+  selectedFolderIds?: string[];
   contextDocuments?: Array<{
     pageId: string;
     title: string;
     markdown: string;
   }>;
   useVectorSearch?: boolean;
+};
+
+export type SearchDocumentsPayload = {
+  spaceId: string;
+  query: string;
+  pageIds?: string[];
+  folderIds?: string[];
+  topK?: number;
+};
+
+export type SearchDocumentsResponse = {
+  items: Array<{
+    pageId: string;
+    title: string;
+    snippet: string;
+    score: number;
+    chunkIndex: number;
+  }>;
 };
 
 export type AiGenerateResponse = {
@@ -1357,6 +1378,12 @@ export const wikiliveApi = {
   },
   aiChat(payload: AiChatPayload) {
     return requestWithAuth<AiChatResponse>('/api/v1/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  searchDocuments(payload: SearchDocumentsPayload) {
+    return requestWithAuth<SearchDocumentsResponse>('/api/v1/search/documents', {
       method: 'POST',
       body: JSON.stringify(payload),
     });

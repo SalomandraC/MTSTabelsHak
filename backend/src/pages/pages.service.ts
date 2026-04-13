@@ -8,6 +8,7 @@ import * as Y from 'yjs';
 import { UserContext } from 'src/auth/user-context';
 import { decodeBase64ToBuffer } from 'src/common/utils';
 import { PrismaService } from 'src/infra/prisma/prisma.service';
+import { ContextIndexingService } from 'src/context-engine/context-indexing.service';
 import { MwsService } from 'src/mws/mws.service';
 import { PageAccessService } from 'src/page-access/page-access.service';
 import { RealtimeService } from 'src/realtime/realtime.service';
@@ -26,6 +27,7 @@ export class PagesService {
     private readonly pageAccessService: PageAccessService,
     private readonly realtimeService: RealtimeService,
     private readonly mwsService: MwsService,
+    private readonly contextIndexingService: ContextIndexingService,
   ) {}
 
   async listPages(spaceId: string, query?: string, limit = 20) {
@@ -244,6 +246,8 @@ export class PagesService {
         updatedBy: user.userId,
       },
     });
+
+    await this.contextIndexingService.deletePage(pageId);
   }
 
   private async nextPosition(spaceId: string, parentId: string | null, db: Prisma.TransactionClient | PrismaService = this.prisma): Promise<number> {

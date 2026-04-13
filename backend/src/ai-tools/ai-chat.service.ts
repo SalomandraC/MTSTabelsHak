@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { UserContext } from 'src/auth/user-context';
+import { ContextSearchService } from 'src/context-engine/context-search.service';
 import { AiProviderClientService, AiChatMessage } from './ai-provider-client.service';
 import { ChatQuestionInput, ChatQuestionResponse } from './ai-chat.types';
 import { AiToolRegistryService } from './ai-tool-registry.service';
@@ -12,18 +13,35 @@ export class AiChatService {
   constructor(
     private readonly aiProviderClientService: AiProviderClientService,
     private readonly aiToolRegistryService: AiToolRegistryService,
+    private readonly contextSearchService: ContextSearchService,
   ) {}
 
   async askQuestion(input: ChatQuestionInput, user: UserContext): Promise<ChatQuestionResponse> {
     const contextMarkdown = this.snapshotToMarkdown(input.pageSnapshot);
-    const messages = this.buildMessages(input.question, contextMarkdown, input);
+    const explicitContextMarkdown = this.buildExplicitContextMarkdown(input.contextDocuments);
+    const retrievedContext = await this.searchRelevantContext(input, user);
+    const messages = this.buildMessages(
+      input.question,
+      contextMarkdown,
+      explicitContextMarkdown,
+      retrievedContext.items,
+      input,
+    );
 
     const toolDefinitions = this.aiToolRegistryService
       .getToolDefinitions()
       .filter((definition) => ['create_records', 'patch_records', 'get_records', 'add_table_column'].includes(definition.function.name));
     const conversation: AiChatMessage[] = [...messages];
     const usedTools: Array<{ toolName: string; args: Record<string, unknown> }> = [];
-    const references: Array<Record<string, unknown>> = [];
+    const references: Array<Record<string, unknown>> = [
+      ...retrievedContext.items.map((item) => ({
+        type: 'page_chunk',
+        pageId: item.pageId,
+        title: item.title,
+        score: item.score,
+        snippet: item.snippet,
+      })),
+    ];
     let needsRefresh = false;
 
     let response = await this.aiProviderClientService.complete({
@@ -120,7 +138,13 @@ export class AiChatService {
     });
   }
 
-  private buildMessages(question: string, contextMarkdown: string, input: ChatQuestionInput): AiChatMessage[] {
+  private buildMessages(
+    question: string,
+    contextMarkdown: string,
+    explicitContextMarkdown: string,
+    retrievedContext: Array<{ pageId: string; title: string; snippet: string; score: number }>,
+    input: ChatQuestionInput,
+  ): AiChatMessage[] {
     const tableContextLines = [
       input.datasheetId ? `Target MWS datasheetId: ${input.datasheetId}` : null,
       input.viewId ? `Target MWS viewId: ${input.viewId}` : null,
@@ -128,6 +152,15 @@ export class AiChatService {
     ]
       .filter(Boolean)
       .join('\n');
+
+    const retrievedContextMarkdown = retrievedContext.length
+      ? retrievedContext
+          .map(
+            (item, index) =>
+              `### Контекст ${index + 1}: ${item.title}\n\n${item.snippet}\n\nscore=${item.score.toFixed(3)} pageId=${item.pageId}`,
+          )
+          .join('\n\n')
+      : '';
 
     return [
       {
@@ -152,9 +185,45 @@ export class AiChatService {
           `Question: ${question}`,
           tableContextLines || null,
           contextMarkdown ? `Page context:\n${contextMarkdown}` : null,
+          explicitContextMarkdown ? `Selected document context:\n${explicitContextMarkdown}` : null,
+          retrievedContextMarkdown ? `Retrieved workspace context:\n${retrievedContextMarkdown}` : null,
         ].filter(Boolean).join('\n\n'),
       },
     ];
+  }
+
+  private buildExplicitContextMarkdown(
+    documents?: Array<{
+      pageId: string;
+      title: string;
+      markdown: string;
+    }>,
+  ): string {
+    if (!documents?.length) {
+      return '';
+    }
+
+    return documents
+      .map((document) => `## ${document.title || document.pageId}\n\n${document.markdown?.trim() || 'Контекст недоступен'}`)
+      .join('\n\n---\n\n');
+  }
+
+  private async searchRelevantContext(input: ChatQuestionInput, user: UserContext) {
+    if (input.useVectorSearch === false || !input.spaceId) {
+      return { items: [] as Array<{ pageId: string; title: string; snippet: string; score: number }> };
+    }
+
+    try {
+      return await this.contextSearchService.searchInSpace(user, {
+        spaceId: input.spaceId,
+        query: input.question,
+        pageIds: input.selectedPageIds,
+        folderIds: input.selectedFolderIds,
+        topK: 5,
+      });
+    } catch {
+      return { items: [] as Array<{ pageId: string; title: string; snippet: string; score: number }> };
+    }
   }
 
   private snapshotToMarkdown(snapshot?: Record<string, unknown> | string): string {
