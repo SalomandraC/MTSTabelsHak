@@ -9,6 +9,7 @@ import type { LiveReferenceSelection } from '../model/live-reference';
 type LiveReferencePickerModalProps = {
   isOpen: boolean;
   initialSpaceId: string;
+  initialSelection?: LiveReferenceSelection | null;
   onSelect: (payload: LiveReferenceSelection) => void;
   onClose: () => void;
 };
@@ -76,6 +77,7 @@ function getRecordLabel(record: MwsRecord, fields: MwsField[]): string {
 export function LiveReferencePickerModal({
   isOpen,
   initialSpaceId,
+  initialSelection = null,
   onSelect,
   onClose,
 }: LiveReferencePickerModalProps) {
@@ -141,7 +143,8 @@ export function LiveReferencePickerModal({
 
         const items = response.items.length > 0 ? response.items : [{ id: initialSpaceId, name: initialSpaceId }];
         setSpaces(items);
-        setSelectedSpaceId(items.some((item) => item.id === initialSpaceId) ? initialSpaceId : items[0]?.id ?? initialSpaceId);
+        const targetSpaceId = initialSelection?.spaceId || initialSpaceId;
+        setSelectedSpaceId(items.some((item) => item.id === targetSpaceId) ? targetSpaceId : items[0]?.id ?? targetSpaceId);
       } catch (error) {
         if (!cancelled) {
           setSpaces([{ id: initialSpaceId, name: initialSpaceId }]);
@@ -183,6 +186,16 @@ export function LiveReferencePickerModal({
         }
 
         setNodes(response.items);
+
+        if (initialSelection?.datasheetId) {
+          const existingNode = flattenTableNodes(filterNodesForPicker(response.items)).find(
+            (node) => getDatasheetId(node) === initialSelection.datasheetId || node.id === initialSelection.datasheetId,
+          );
+
+          if (existingNode) {
+            setSelectedNodeId(existingNode.id);
+          }
+        }
       } catch (error) {
         if (!cancelled) {
           setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить таблицы MWS');
@@ -199,7 +212,7 @@ export function LiveReferencePickerModal({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, selectedSpaceId]);
+  }, [initialSelection?.datasheetId, isOpen, selectedSpaceId]);
 
   useEffect(() => {
     if (!selectedNode) {
@@ -225,8 +238,16 @@ export function LiveReferencePickerModal({
 
         setFields(fieldsResponse.items);
         setRecords(recordsResponse.items);
-        setSelectedFieldId(fieldsResponse.items[0]?.id ?? '');
-        setSelectedRecordId(recordsResponse.items[0]?.recordId ?? '');
+        setSelectedFieldId(
+          initialSelection?.fieldId && fieldsResponse.items.some((field) => field.id === initialSelection.fieldId)
+            ? initialSelection.fieldId
+            : fieldsResponse.items[0]?.id ?? '',
+        );
+        setSelectedRecordId(
+          initialSelection?.recordId && recordsResponse.items.some((record) => record.recordId === initialSelection.recordId)
+            ? initialSelection.recordId
+            : recordsResponse.items[0]?.recordId ?? '',
+        );
       } catch (error) {
         if (!cancelled) {
           setErrorMessage(error instanceof Error ? error.message : 'Не удалось загрузить строки и колонки');
@@ -243,7 +264,7 @@ export function LiveReferencePickerModal({
     return () => {
       cancelled = true;
     };
-  }, [selectedNode]);
+  }, [initialSelection?.fieldId, initialSelection?.recordId, selectedNode]);
 
   if (!isOpen) {
     return null;
@@ -366,6 +387,7 @@ export function LiveReferencePickerModal({
               }
 
               onSelect({
+                spaceId: selectedSpaceId,
                 datasheetId: getDatasheetId(selectedNode),
                 recordId: selectedRecord.recordId,
                 fieldId: selectedField.id,

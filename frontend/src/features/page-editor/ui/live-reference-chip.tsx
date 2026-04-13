@@ -52,8 +52,9 @@ function normalizeDisplayValue(value: unknown): string {
   return '';
 }
 
-export function LiveReferenceChip({ node, updateAttributes }: NodeViewProps) {
+export function LiveReferenceChip({ node, updateAttributes, getPos }: NodeViewProps) {
   const attrs = node.attrs as {
+    spaceId?: string;
     datasheetId?: string;
     recordId?: string;
     fieldId?: string;
@@ -181,6 +182,7 @@ export function LiveReferenceChip({ node, updateAttributes }: NodeViewProps) {
     <NodeViewWrapper
       as="span"
       data-type="live-reference"
+      data-space-id={attrs.spaceId ?? ''}
       data-datasheet-id={datasheetId ?? ''}
       data-record-id={recordId ?? ''}
       data-field-id={fieldId ?? ''}
@@ -192,6 +194,22 @@ export function LiveReferenceChip({ node, updateAttributes }: NodeViewProps) {
       ].join(' ').trim()}
       title={`Живая переменная: ${label}\nЗначение: ${value || 'пусто'}`}
       contentEditable={false}
+      onDoubleClick={() => {
+        const customEvent = new CustomEvent('wikilive:edit-live-reference', {
+          detail: {
+            pos: typeof getPos === 'function' ? getPos() : null,
+            attrs: {
+              spaceId: attrs.spaceId ?? '',
+              datasheetId: datasheetId ?? '',
+              recordId: recordId ?? '',
+              fieldId: fieldId ?? '',
+              label,
+            },
+          },
+        });
+
+        window.dispatchEvent(customEvent);
+      }}
     >
       <span className="live-reference-chip__value">{value || 'пусто'}</span>
     </NodeViewWrapper>

@@ -4,6 +4,7 @@ import { ReactNodeViewRenderer } from '@tiptap/react';
 import { LiveReferenceChip } from '../ui/live-reference-chip';
 
 export type LiveReferenceAttrs = {
+  spaceId: string;
   datasheetId: string;
   recordId: string;
   fieldId: string;
@@ -15,6 +16,7 @@ export type LiveReferenceAttrs = {
 };
 
 export type LiveReferenceSelection = {
+  spaceId: string;
   datasheetId: string;
   recordId: string;
   fieldId: string;
@@ -42,6 +44,11 @@ export const LiveReference = Node.create({
         default: null,
         parseHTML: (element) => element.getAttribute('data-datasheet-id'),
         renderHTML: (attributes) => ({ 'data-datasheet-id': attributes.datasheetId }),
+      },
+      spaceId: {
+        default: null,
+        parseHTML: (element) => element.getAttribute('data-space-id'),
+        renderHTML: (attributes) => ({ 'data-space-id': attributes.spaceId }),
       },
       recordId: {
         default: null,

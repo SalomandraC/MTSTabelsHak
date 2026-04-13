@@ -37,6 +37,12 @@ type ModalPosition = {
   left: number;
 };
 
+type LiveReferenceEditTarget = {
+  pos: number;
+  nodeSize: number;
+  selection: LiveReferenceSelection;
+};
+
 type CollabState = {
   pageId: string;
   ydoc: Y.Doc;
@@ -182,6 +188,7 @@ export function usePageEditorController({
   const [isPagePickerOpen, setIsPagePickerOpen] = useState(false);
   const [isTablePickerOpen, setIsTablePickerOpen] = useState(false);
   const [isLiveReferencePickerOpen, setIsLiveReferencePickerOpen] = useState(false);
+  const [liveReferenceEditTarget, setLiveReferenceEditTarget] = useState<LiveReferenceEditTarget | null>(null);
   const [isTemplateVariableModalOpen, setIsTemplateVariableModalOpen] = useState(false);
   const [templateVariableLabel, setTemplateVariableLabel] = useState('');
   const [templateVariableDescription, setTemplateVariableDescription] = useState('');
@@ -982,7 +989,21 @@ export function usePageEditorController({
       return;
     }
 
-    editor.chain().focus().insertLiveReference(selection).run();
+    if (liveReferenceEditTarget) {
+      editor
+        .chain()
+        .focus()
+        .deleteRange({
+          from: liveReferenceEditTarget.pos,
+          to: liveReferenceEditTarget.pos + liveReferenceEditTarget.nodeSize,
+        })
+        .insertLiveReference(selection)
+        .run();
+      setLiveReferenceEditTarget(null);
+    } else {
+      editor.chain().focus().insertLiveReference(selection).run();
+    }
+
     setIsLiveReferencePickerOpen(false);
   };
 
@@ -1028,6 +1049,57 @@ export function usePageEditorController({
   useEffect(() => {
     applySlashItemRef.current = applySlashItem;
   });
+
+  useEffect(() => {
+    const handleEditLiveReference = (event: Event) => {
+      if (!editor || !canEdit) {
+        return;
+      }
+
+      const customEvent = event as CustomEvent<{
+        pos?: number | null;
+        attrs?: Partial<LiveReferenceSelection>;
+      }>;
+      const pos = customEvent.detail?.pos;
+
+      if (typeof pos !== 'number' || pos < 0) {
+        return;
+      }
+
+      const node = editor.state.doc.nodeAt(pos);
+      const nodeSize = node?.nodeSize ?? 0;
+      if (!node || node.type.name !== 'liveReference' || nodeSize <= 0) {
+        return;
+      }
+
+      const attrs = node.attrs as {
+        spaceId?: string;
+        datasheetId?: string;
+        recordId?: string;
+        fieldId?: string;
+        label?: string;
+      };
+
+      setLiveReferenceEditTarget({
+        pos,
+        nodeSize,
+        selection: {
+          spaceId: String(attrs.spaceId ?? customEvent.detail?.attrs?.spaceId ?? spaceId),
+          datasheetId: String(attrs.datasheetId ?? customEvent.detail?.attrs?.datasheetId ?? ''),
+          recordId: String(attrs.recordId ?? customEvent.detail?.attrs?.recordId ?? ''),
+          fieldId: String(attrs.fieldId ?? customEvent.detail?.attrs?.fieldId ?? ''),
+          label: String(attrs.label ?? customEvent.detail?.attrs?.label ?? ''),
+        },
+      });
+      setIsLiveReferencePickerOpen(true);
+    };
+
+    window.addEventListener('wikilive:edit-live-reference', handleEditLiveReference);
+
+    return () => {
+      window.removeEventListener('wikilive:edit-live-reference', handleEditLiveReference);
+    };
+  }, [canEdit, editor, spaceId]);
 
   useEffect(() => {
     const globalFlags = window as unknown as { __wikiliveSlashMenuOpen?: boolean };
@@ -1168,8 +1240,12 @@ export function usePageEditorController({
     liveReferencePicker: {
       isOpen: isLiveReferencePickerOpen,
       initialSpaceId: spaceId,
+      initialSelection: liveReferenceEditTarget?.selection ?? null,
       onSelect: handleSelectLiveReference,
-      onClose: () => setIsLiveReferencePickerOpen(false),
+      onClose: () => {
+        setIsLiveReferencePickerOpen(false);
+        setLiveReferenceEditTarget(null);
+      },
     },
     linkModal: {
       isOpen: isLinkModalOpen,
