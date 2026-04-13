@@ -43,6 +43,12 @@ vi.mock('@tiptap/react', () => ({
   }),
 }));
 
+vi.mock('../../plugins', () => ({
+  usePlugins: () => ({
+    items: [],
+  }),
+}));
+
 function createEditorMock() {
   const chainResult = {
     focus: vi.fn(() => chainResult),
@@ -70,11 +76,14 @@ function createEditorMock() {
 describe('PageEditorToolbar', () => {
   it('disables editing controls but keeps commenting available in read-only mode', () => {
     const onCreateComment = vi.fn();
+    const onToggleHeadingNumbering = vi.fn();
 
     render(
       <PageEditorToolbar
         editor={createEditorMock()}
         canEdit={false}
+        headingNumberingEnabled={false}
+        onToggleHeadingNumbering={onToggleHeadingNumbering}
         onOpenLinkModal={vi.fn()}
         onOpenIframeModal={vi.fn()}
         onOpenImageModal={vi.fn()}
@@ -86,11 +95,32 @@ describe('PageEditorToolbar', () => {
     expect(screen.getByLabelText('Вставить ссылку')).toBeDisabled();
     expect(screen.getByLabelText('Блок кода')).toBeDisabled();
     expect(screen.getByLabelText('Вставить изображение')).toBeDisabled();
+    expect(screen.getByLabelText('Автонумерация заголовков')).toBeDisabled();
 
     const commentButton = screen.getByLabelText('Комментировать выделение');
     expect(commentButton).not.toBeDisabled();
 
     fireEvent.click(commentButton);
     expect(onCreateComment).toHaveBeenCalled();
+    expect(onToggleHeadingNumbering).not.toHaveBeenCalled();
+  });
+
+  it('toggles heading numbering for the whole document', () => {
+    const onToggleHeadingNumbering = vi.fn();
+
+    render(
+      <PageEditorToolbar
+        editor={createEditorMock()}
+        canEdit
+        headingNumberingEnabled={false}
+        onToggleHeadingNumbering={onToggleHeadingNumbering}
+        onOpenLinkModal={vi.fn()}
+        onOpenIframeModal={vi.fn()}
+        onOpenImageModal={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Автонумерация заголовков'));
+    expect(onToggleHeadingNumbering).toHaveBeenCalledWith(true);
   });
 });

@@ -97,6 +97,7 @@ model WikiNode {
 model WikiPage {
   nodeId              String           @id @map("node_id")
   plainTextPreview    String?          @map("plain_text_preview")
+  headingNumberingEnabled Boolean      @default(false) @map("heading_numbering_enabled")
   lastSnapshotVersion BigInt           @default(0) @map("last_snapshot_version")
   latestCheckpointId  String?          @map("latest_checkpoint_id")
   lastCompactedAt     DateTime?        @map("last_compacted_at")

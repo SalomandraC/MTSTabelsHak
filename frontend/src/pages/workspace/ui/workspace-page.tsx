@@ -1007,6 +1007,21 @@ export function WorkspacePage() {
     [activePageId, refreshTree, selectedSpaceId],
   );
 
+  const applyPageUpdate = useCallback(
+    async (pageId: string) => {
+      await refreshTree(selectedSpaceId, activePageId);
+
+      if (activePageId === pageId) {
+        try {
+          await refreshActivePage(pageId);
+        } catch (error) {
+          setErrorMessage(error instanceof Error ? error.message : 'Не удалось обновить настройки документа');
+        }
+      }
+    },
+    [activePageId, refreshTree, selectedSpaceId],
+  );
+
   const history = usePageHistory({
     pageId: activePageId,
     enabled: isTimeMachineEnabled && Boolean(activePage) && rightPanelMode === 'timeMachine',
@@ -1237,13 +1252,17 @@ export function WorkspacePage() {
         if (event.type === 'page_access_updated') {
           void applyPageAccessUpdate(event.pageId);
         }
+
+        if (event.type === 'page_updated') {
+          void applyPageUpdate(event.pageId);
+        }
       },
     });
 
     return () => {
       channel.close();
     };
-  }, [applyPageAccessUpdate, selectedSpaceId]);
+  }, [applyPageAccessUpdate, applyPageUpdate, selectedSpaceId]);
 
   useEffect(() => {
     if (!selectedSpaceId) {
@@ -1710,6 +1729,16 @@ export function WorkspacePage() {
     }
 
     const response = await wikiliveApi.updatePage(activePageId, { title });
+    setActivePage(response.page);
+    await refreshTree(selectedSpaceId, activePageId);
+  };
+
+  const handleToggleHeadingNumbering = async (headingNumberingEnabled: boolean) => {
+    if (!activePageId) {
+      return;
+    }
+
+    const response = await wikiliveApi.updatePage(activePageId, { headingNumberingEnabled });
     setActivePage(response.page);
     await refreshTree(selectedSpaceId, activePageId);
   };
@@ -2244,6 +2273,7 @@ export function WorkspacePage() {
             page={isPageLoading ? null : activePage}
             isLoading={isPageLoading}
             onRenamePage={handleRenamePage}
+            onToggleHeadingNumbering={handleToggleHeadingNumbering}
             onCheckpoint={handleCheckpoint}
             onEditorChange={setActiveEditor}
             onDocumentStateEncoderChange={handleDocumentStateEncoderChange}

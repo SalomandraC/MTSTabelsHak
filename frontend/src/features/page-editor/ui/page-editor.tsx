@@ -33,6 +33,7 @@ type PageEditorProps = {
   page: WikiPage | null;
   isLoading?: boolean;
   onRenamePage: (title: string) => Promise<void>;
+  onToggleHeadingNumbering: (enabled: boolean) => Promise<void>;
   onCheckpoint: () => Promise<void>;
   onEditorChange?: (editor: Editor | null) => void;
   onDocumentStateEncoderChange?: (encoder: (() => string | null) | null) => void;
@@ -319,6 +320,7 @@ export function PageEditor({
   page,
   isLoading = false,
   onRenamePage,
+  onToggleHeadingNumbering,
   onCheckpoint,
   onEditorChange,
   onDocumentStateEncoderChange,
@@ -351,6 +353,7 @@ export function PageEditor({
       spaceId={spaceId}
       page={page}
       onRenamePage={onRenamePage}
+      onToggleHeadingNumbering={onToggleHeadingNumbering}
       onCheckpoint={onCheckpoint}
       onEditorChange={onEditorChange}
       onDocumentStateEncoderChange={onDocumentStateEncoderChange}
@@ -370,6 +373,7 @@ function LivePageEditor({
   spaceId,
   page,
   onRenamePage,
+  onToggleHeadingNumbering,
   onCheckpoint,
   onEditorChange,
   onDocumentStateEncoderChange,
@@ -472,6 +476,7 @@ function LivePageEditor({
     page,
     canEdit,
     onRenamePage,
+    onToggleHeadingNumbering,
     onCheckpoint,
     onOpenCommentThread,
     isAiSlashEnabled,
@@ -613,6 +618,8 @@ function LivePageEditor({
         <PageEditorToolbar
           editor={controller.editor}
           canEdit={effectiveCanEdit}
+          headingNumberingEnabled={page?.headingNumberingEnabled ?? false}
+          onToggleHeadingNumbering={controller.handleToggleHeadingNumbering}
           onOpenLinkModal={controller.openLinkModal}
           onOpenImageModal={controller.openImageModal}
           onOpenIframeModal={controller.openIframeModal}
@@ -683,6 +690,7 @@ function LivePageEditor({
             }
           >
             <div
+              data-heading-numbering-enabled={page?.headingNumberingEnabled ? 'true' : 'false'}
               className={effectiveViewMode === 'paged' ? 'px-0' : ''}
               style={
                 effectiveViewMode === 'paged'
