@@ -171,18 +171,20 @@
   .tiptap h1.page-editor-heading,
   .tiptap h2.page-editor-heading,
   .tiptap h3.page-editor-heading {
-    display: flex;
-    align-items: baseline;
-    gap: 0.35em;
+    display: block;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   .tiptap h1.page-editor-heading::before,
   .tiptap h2.page-editor-heading::before,
   .tiptap h3.page-editor-heading::before {
+    display: inline;
+    margin-right: 0.35em;
     color: var(--editor-text-tertiary);
     font-variant-numeric: tabular-nums;
     font-weight: 600;
-    flex: 0 0 auto;
   }
 
   .tiptap h1.page-editor-heading {
@@ -687,17 +689,4 @@
 .time-machine-panel,
 .time-machine-panel * {
   font-family: 'MTSWide', var(--editor-font-sans);
-}
-
-.tiptap h1.page-editor-heading,
-.tiptap h2.page-editor-heading,
-.tiptap h3.page-editor-heading {
-  display: flex;
-  align-items: baseline;
-  gap: 0.35em;
-  flex-wrap: wrap;
-  min-width: 0;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    word-break: break-word;
 }

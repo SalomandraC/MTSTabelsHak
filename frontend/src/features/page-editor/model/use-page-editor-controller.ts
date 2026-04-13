@@ -537,12 +537,38 @@ export function usePageEditorController({
         const surfaceScrollTop = surface?.scrollTop ?? 0;
         const menuWidth = 304;
         const menuHeight = 288;
+        const verticalGap = 8;
+        const horizontalPadding = 12;
+        const verticalPadding = 12;
         const left = surfaceRect
-          ? Math.min(coords.left - surfaceRect.left + surfaceScrollLeft, Math.max(12, surfaceRect.width - menuWidth - 12))
-          : Math.min(coords.left, Math.max(12, window.innerWidth - menuWidth - 12));
-        const top = surfaceRect
-          ? Math.min(coords.bottom - surfaceRect.top + surfaceScrollTop + 8, Math.max(12, surfaceRect.height - menuHeight - 12))
-          : Math.min(coords.bottom + 8, Math.max(12, window.innerHeight - menuHeight - 12));
+          ? Math.min(
+              coords.left - surfaceRect.left + surfaceScrollLeft,
+              Math.max(horizontalPadding, surfaceRect.width - menuWidth - horizontalPadding),
+            )
+          : Math.min(coords.left, Math.max(horizontalPadding, window.innerWidth - menuWidth - horizontalPadding));
+
+        let top: number;
+
+        if (surfaceRect) {
+          const caretBottom = coords.bottom - surfaceRect.top + surfaceScrollTop;
+          const caretTop = coords.top - surfaceRect.top + surfaceScrollTop;
+          const availableBelow = surfaceRect.bottom - coords.bottom - verticalPadding;
+          const availableAbove = coords.top - surfaceRect.top - verticalPadding;
+          const shouldOpenAbove = availableBelow < menuHeight && availableAbove > availableBelow;
+
+          top = shouldOpenAbove ? caretTop - menuHeight - verticalGap : caretBottom + verticalGap;
+          top = Math.max(
+            verticalPadding,
+            Math.min(top, surfaceScrollTop + surfaceRect.height - menuHeight - verticalPadding),
+          );
+        } else {
+          const availableBelow = window.innerHeight - coords.bottom - verticalPadding;
+          const availableAbove = coords.top - verticalPadding;
+          const shouldOpenAbove = availableBelow < menuHeight && availableAbove > availableBelow;
+
+          top = shouldOpenAbove ? coords.top - menuHeight - verticalGap : coords.bottom + verticalGap;
+          top = Math.max(verticalPadding, Math.min(top, window.innerHeight - menuHeight - verticalPadding));
+        }
 
         setSlashState({
           isOpen: true,
