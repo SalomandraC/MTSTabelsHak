@@ -532,6 +532,64 @@
     background: color-mix(in srgb, var(--collab-user-color, #ff0037) 18%, transparent);
     box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--collab-user-color, #ff0037) 42%, transparent);
   }
+
+  [data-page-editor-surface][data-editor-view-mode='paged'] {
+    background-image:
+      radial-gradient(circle at top, rgba(255, 255, 255, 0.92) 0, rgba(255, 255, 255, 0.72) 18%, transparent 52%),
+      linear-gradient(180deg, #eef2f7 0%, #e9eef5 100%);
+  }
+
+  [data-page-editor-frame][data-editor-view-mode='paged'] {
+    position: relative;
+    overflow: hidden;
+  }
+
+  [data-page-editor-frame][data-editor-view-mode='paged']::before {
+    --editor-sheet-height: 29.7cm;
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent calc(var(--editor-sheet-height) - 22px),
+        rgba(229, 234, 241, 0.96) calc(var(--editor-sheet-height) - 22px),
+        rgba(229, 234, 241, 0.96) calc(var(--editor-sheet-height) - 6px),
+        transparent calc(var(--editor-sheet-height) - 6px),
+        transparent var(--editor-sheet-height)
+      );
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  [data-page-editor-frame][data-editor-view-mode='paged'] > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  [data-page-editor-frame][data-editor-view-mode='paged'] .tiptap {
+    min-height: calc(29.7cm - 5.08cm);
+  }
+
+  [data-page-editor-frame][data-editor-view-mode='paged'] .tiptap img,
+  [data-page-editor-frame][data-editor-view-mode='paged'] .tiptap iframe,
+  [data-page-editor-frame][data-editor-view-mode='paged'] [data-type='mws-table-embed'] {
+    max-width: 100%;
+  }
+
+  [data-page-editor-frame][data-editor-view-mode='paged'] .tiptap img,
+  [data-page-editor-frame][data-editor-view-mode='paged'] [data-type='mws-table-embed'],
+  [data-page-editor-frame][data-editor-view-mode='paged'] [data-type='iframe-block'],
+  [data-page-editor-frame][data-editor-view-mode='paged'] [data-type='canvasblock'] {
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+  }
+
+  [data-page-editor-frame][data-editor-view-mode='paged'] [data-type='mws-table-embed'] {
+    width: 100%;
+    overflow: hidden;
+  }
 }
 
 @layer components {

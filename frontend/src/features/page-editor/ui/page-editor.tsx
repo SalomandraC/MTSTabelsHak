@@ -1,6 +1,6 @@
 import type { Content, Editor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 
 import { SlashMenu } from '../../slash-menu';
 import { AiInlineCopilot } from '../../plugins/ai-assistant';
@@ -20,6 +20,13 @@ import { PagePickerModal } from './page-picker-modal';
 import { TemplateVariableModal } from './template-variable-modal';
 import { IframeModal } from './iframe-modal';
 import { LiveReferencePickerModal } from './live-reference-picker-modal';
+import {
+  clampPageIndent,
+  DEFAULT_PAGE_EDITOR_VIEW_PREFERENCES,
+  readPageEditorViewPreferences,
+  type PageEditorViewMode,
+  writePageEditorViewPreferences,
+} from '../model/editor-view-preferences';
 
 type PageEditorProps = {
   spaceId: string;
@@ -194,6 +201,119 @@ function PageEditorLoadingSkeleton() {
   );
 }
 
+function useCompactEditorViewport() {
+  const getIsCompact = () => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return false;
+    }
+
+    return window.matchMedia('(max-width: 767px)').matches;
+  };
+
+  const [isCompact, setIsCompact] = useState(getIsCompact);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return undefined;
+    }
+
+    const mediaQuery = window.matchMedia('(max-width: 767px)');
+    const handleChange = () => {
+      setIsCompact(mediaQuery.matches);
+    };
+
+    setIsCompact(mediaQuery.matches);
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
+    }
+
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
+  }, []);
+
+  return isCompact;
+}
+
+function PagedLayoutControls({
+  leftIndent,
+  rightIndent,
+  onChangeLeftIndent,
+  onChangeRightIndent,
+  onReset,
+}: {
+  leftIndent: number;
+  rightIndent: number;
+  onChangeLeftIndent: (value: number) => void;
+  onChangeRightIndent: (value: number) => void;
+  onReset: () => void;
+}) {
+  const handleNumericInput =
+    (applyValue: (value: number) => void) => (event: ChangeEvent<HTMLInputElement>) => {
+      const rawValue = Number(event.target.value.replace(',', '.'));
+      if (Number.isFinite(rawValue)) {
+        applyValue(clampPageIndent(rawValue));
+      }
+    };
+
+  return (
+    <div className="border-t border-editor-border-subtle bg-[rgba(245,247,250,1)] px-2 py-2 sm:px-4">
+      <div className="flex items-center gap-0 overflow-x-auto whitespace-nowrap pb-0.5" role="toolbar" aria-label="Панель макета страницы">
+        <span className="inline-flex h-8 items-center px-2 text-xs font-semibold uppercase tracking-[0.12em] text-editor-text-tertiary">
+          A4
+        </span>
+
+        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
+        <label className="inline-flex h-8 shrink-0 items-center gap-2 rounded-md border border-editor-border-control bg-white px-2 text-sm text-editor-text-primary">
+          <span className="text-xs font-semibold text-editor-text-secondary">Левое</span>
+          <input
+            type="number"
+            min="0.5"
+            max="6.5"
+            step="0.1"
+            inputMode="decimal"
+            value={leftIndent.toFixed(1)}
+            onChange={handleNumericInput(onChangeLeftIndent)}
+            className="w-16 border-0 bg-transparent text-right text-sm font-semibold outline-none"
+            aria-label="Левое поле страницы в сантиметрах"
+          />
+          <span className="text-xs text-editor-text-tertiary">см</span>
+        </label>
+
+        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
+        <label className="inline-flex h-8 shrink-0 items-center gap-2 rounded-md border border-editor-border-control bg-white px-2 text-sm text-editor-text-primary">
+          <span className="text-xs font-semibold text-editor-text-secondary">Правое</span>
+          <input
+            type="number"
+            min="0.5"
+            max="6.5"
+            step="0.1"
+            inputMode="decimal"
+            value={rightIndent.toFixed(1)}
+            onChange={handleNumericInput(onChangeRightIndent)}
+            className="w-16 border-0 bg-transparent text-right text-sm font-semibold outline-none"
+            aria-label="Правое поле страницы в сантиметрах"
+          />
+          <span className="text-xs text-editor-text-tertiary">см</span>
+        </label>
+
+        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
+        <button
+          type="button"
+          onClick={onReset}
+          className="inline-flex h-8 shrink-0 items-center rounded-md border border-editor-border-control bg-white px-3 text-xs font-semibold text-editor-text-primary transition-colors hover:bg-[#e8ebf1]"
+        >
+          Сбросить поля
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function PageEditor({
   spaceId,
   page,
@@ -263,6 +383,7 @@ function LivePageEditor({
   historyPreview = null,
 }: Omit<PageEditorProps, 'isLoading'> & { page: WikiPage }) {
   const { isEditorSlotEnabled, isAiAssistantFeatureEnabled, isPluginEnabled, isLoading: isPluginsLoading } = usePlugins();
+  const isCompactViewport = useCompactEditorViewport();
   const canEdit = page.access?.capabilities.canEdit ?? true;
   const canComment = page.access?.capabilities.canComment ?? true;
   const canUseAi = page.access?.capabilities.canUseAi ?? true;
@@ -279,6 +400,32 @@ function LivePageEditor({
   const [copilotAnchor, setCopilotAnchor] = useState<CopilotAnchor | null>(null);
   const isCopilotOpen = Boolean(copilotAnchor);
   const editorSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const [viewPreferences, setViewPreferences] = useState(() => readPageEditorViewPreferences());
+  const effectiveViewMode: PageEditorViewMode = isCompactViewport ? 'standard' : viewPreferences.mode;
+
+  useEffect(() => {
+    writePageEditorViewPreferences(viewPreferences);
+  }, [viewPreferences]);
+
+  const handleChangeViewMode = useCallback((mode: PageEditorViewMode) => {
+    setViewPreferences((current) => ({ ...current, mode }));
+  }, []);
+
+  const handleChangeLeftIndent = useCallback((value: number) => {
+    setViewPreferences((current) => ({ ...current, leftIndent: clampPageIndent(value) }));
+  }, []);
+
+  const handleChangeRightIndent = useCallback((value: number) => {
+    setViewPreferences((current) => ({ ...current, rightIndent: clampPageIndent(value) }));
+  }, []);
+
+  const handleResetIndents = useCallback(() => {
+    setViewPreferences((current) => ({
+      ...current,
+      leftIndent: DEFAULT_PAGE_EDITOR_VIEW_PREFERENCES.leftIndent,
+      rightIndent: DEFAULT_PAGE_EDITOR_VIEW_PREFERENCES.rightIndent,
+    }));
+  }, []);
 
   const reserveInlineCopilotBottomSpace = useCallback(
     (coords: { bottom: number }, surfaceRect?: DOMRect | null) => {
@@ -454,7 +601,10 @@ function LivePageEditor({
           title={controller.title}
           description={controller.description}
           editable={effectiveCanEdit}
+          viewMode={effectiveViewMode}
+          showViewModeControls={!isCompactViewport}
           onSave={controller.handleSaveMeta}
+          onViewModeChange={handleChangeViewMode}
           connectionStatus={controller.connectionStatus}
           saveStatus={controller.saveStatus}
           recoveryMessage={controller.recoveryMessage}
@@ -470,11 +620,26 @@ function LivePageEditor({
           onOpenTimeMachine={canEdit ? onOpenTimeMachine : undefined}
           commentCount={commentCount}
         />
+        {effectiveViewMode === 'paged' ? (
+          <PagedLayoutControls
+            leftIndent={viewPreferences.leftIndent}
+            rightIndent={viewPreferences.rightIndent}
+            onChangeLeftIndent={handleChangeLeftIndent}
+            onChangeRightIndent={handleChangeRightIndent}
+            onReset={handleResetIndents}
+          />
+        ) : null}
 
         <div
           ref={editorSurfaceRef}
-          className="relative z-[10] mx-auto w-full max-w-4xl flex-1 px-2 pb-4 pt-1 sm:px-6 sm:pb-10 sm:pt-5"
+          className={[
+            'relative z-[10] w-full flex-1',
+            effectiveViewMode === 'paged'
+              ? 'overflow-x-auto bg-[#eef2f7] px-3 pb-8 pt-4 sm:px-6 sm:pb-12 sm:pt-6'
+              : 'px-2 pb-4 pt-1 sm:px-6 sm:pb-10 sm:pt-5',
+          ].join(' ')}
           data-page-editor-surface
+          data-editor-view-mode={effectiveViewMode}
           onContextMenu={(event) => {
             if (!isAiInlineChatEnabled || !controller.editor) {
               return;
@@ -499,7 +664,41 @@ function LivePageEditor({
             });
           }}
         >
-          <EditorContent editor={controller.editor} />
+          <div
+            className={[
+              'relative',
+              effectiveViewMode === 'paged'
+                ? 'mx-auto rounded-[28px] border border-[#dde3eb] bg-white shadow-[0_22px_70px_rgba(15,23,42,0.14)]'
+                : 'mx-auto w-full max-w-4xl',
+            ].join(' ')}
+            data-page-editor-frame
+            data-editor-view-mode={effectiveViewMode}
+            style={
+              effectiveViewMode === 'paged'
+                ? {
+                    width: '21cm',
+                    minHeight: '29.7cm',
+                  }
+                : undefined
+            }
+          >
+            <div
+              className={effectiveViewMode === 'paged' ? 'px-0' : ''}
+              style={
+                effectiveViewMode === 'paged'
+                  ? {
+                      minHeight: '29.7cm',
+                      paddingTop: '2.54cm',
+                      paddingBottom: '2.54cm',
+                      paddingLeft: `${viewPreferences.leftIndent}cm`,
+                      paddingRight: `${viewPreferences.rightIndent}cm`,
+                    }
+                  : undefined
+              }
+            >
+              <EditorContent editor={controller.editor} />
+            </div>
+          </div>
           <CommentAnchorOverlay
             editor={controller.editor}
             threads={commentThreads}
