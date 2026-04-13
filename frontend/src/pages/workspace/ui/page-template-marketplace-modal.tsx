@@ -164,7 +164,7 @@ export function PageTemplateMarketplaceModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[95] bg-black/35" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[101] bg-black/35" onMouseDown={onClose}>
       <section
         className="fixed left-1/2 top-1/2 flex h-[min(44rem,calc(100vh-2rem))] w-[min(68rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-3xl border border-editor-border-subtle bg-white shadow-[0_28px_90px_rgba(17,25,40,0.24)]"
         role="dialog"

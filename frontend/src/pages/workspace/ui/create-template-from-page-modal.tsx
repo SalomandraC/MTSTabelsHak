@@ -66,7 +66,7 @@ export function CreateTemplateFromPageModal({
   const isEditing = mode === 'edit';
 
   return (
-    <div className="fixed inset-0 z-[95] bg-black/35" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[101] bg-black/35" onMouseDown={onClose}>
       <section
         className="fixed left-1/2 top-1/2 flex w-[min(38rem,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-3xl border border-editor-border-subtle bg-white shadow-[0_28px_90px_rgba(17,25,40,0.24)]"
         role="dialog"
