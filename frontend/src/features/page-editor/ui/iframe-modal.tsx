@@ -32,7 +32,7 @@ export function IframeModal({ isOpen, url, onUrlChange, onSubmit, onClose }: Ifr
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#d70032]">Встраивание контента</p>
           <h3 className="mt-2 font-wide text-xl font-semibold text-[#1f1f1f]">Вставить iframe</h3>
           <p className="mt-1 text-sm text-editor-text-tertiary">
-            Вставьте URL для встраивания — YouTube, карты, презентации и другое.
+            Вставьте URL для встраивания — RuTube, карты, презентации и другое.
           </p>
         </div>
 
@@ -43,7 +43,7 @@ export function IframeModal({ isOpen, url, onUrlChange, onSubmit, onClose }: Ifr
             onChange={(event) => onUrlChange(event.target.value)}
             onKeyDown={(event) => { if (event.key === 'Enter' && canSubmit) onSubmit(); }}
             className="h-11 w-full rounded-lg border border-[#cfd5dc] px-4 text-base leading-6 text-[#262b33] outline-none placeholder:text-[#9aa3ae] focus:border-[#b8c1cc]"
-            placeholder="https://www.youtube.com/embed/XIMLoLxmTDw"
+            placeholder="https://www.rutube.com/embed/XIMLoLxmTDw"
             autoFocus
           />
         </label>

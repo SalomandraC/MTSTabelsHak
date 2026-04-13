@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { handleListAction } from '../model/list-actions';
 import { menuBarStateSelector } from '../model/menu-state';
 import { getCanvasDrawSettings, getIframeEmbedSettings, getBookmarkSettings } from '../../plugins/model/plugin-registry';
+import { ensureBoundaryBlocksAfterInsert } from '../model/boundary-block-utils';
 import { usePlugins } from '../../plugins';
 import { HighlightColorPicker } from './highlight-color-picker';
 import { CreateBookmarkModal, BookmarkPickerModal, collectBookmarks } from './bookmark-modal';
@@ -626,35 +627,41 @@ export function PageEditorToolbar({
           aria-label="Вставить ссылку"
         />
 
+        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
         {onCreateComment ? (
-          <ToolbarButton
-            icon={
-              <span className="flex items-center gap-1 px-0.5">
-                <MessageSquare className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />
-                {commentCount > 0 ? <span className="text-[11px] font-semibold">{commentCount}</span> : null}
-              </span>
-            }
-            onClick={() => onCreateComment(editor)}
-            isFirst={true}
-            isLast={true}
-            isInGroup={true}
-            aria-label="Комментировать выделение"
-          />
+          <div className="flex items-center">
+            <ToolbarButton
+              icon={
+                <span className="flex items-center gap-1 px-0.5">
+                  <MessageSquare className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />
+                  {commentCount > 0 ? <span className="text-[11px] font-semibold">{commentCount}</span> : null}
+                </span>
+              }
+              onClick={() => onCreateComment(editor)}
+              isFirst={true}
+              isLast={true}
+              isInGroup={true}
+              aria-label="Комментировать выделение"
+              />
+              <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+          </div>
         ) : null}
 
         {onOpenTimeMachine ? (
-          <ToolbarButton
-            icon={<History className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
-            onClick={onOpenTimeMachine}
-            disabled={!canEdit}
-            isFirst={true}
-            isLast={true}
-            isInGroup={true}
-            aria-label="Открыть машину времени"
-          />
+          <div className="flex items-center">
+            <ToolbarButton
+              icon={<History className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
+              onClick={onOpenTimeMachine}
+              disabled={!canEdit}
+              isFirst={true}
+              isLast={true}
+              isInGroup={true}
+              aria-label="Открыть машину времени"
+            />
+            <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+          </div>
         ) : null}
-
-        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
         <ToolbarButton
           icon={
@@ -724,7 +731,10 @@ export function PageEditorToolbar({
                 />
               }
               label="Canvas"
-              onClick={() => editor.chain().focus().insertCanvasBlock().run()}
+              onClick={() => {
+                editor.chain().focus().insertCanvasBlock().run();
+                ensureBoundaryBlocksAfterInsert(editor);
+              }}
               isFirst={true}
               isLast={true}
               isInGroup={true}

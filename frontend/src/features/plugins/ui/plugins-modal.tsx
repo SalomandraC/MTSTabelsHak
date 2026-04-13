@@ -212,7 +212,7 @@ export function PluginsModal({
         className="flex h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-[24px] bg-white shadow-[0_28px_80px_rgba(17,24,39,0.26)]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex-shrink-0 border-b border-[#b81235] bg-[#d81f44] px-4 py-5 text-white sm:px-6">
+        <div className="flex-shrink-0 border-b border-[#b00025] bg-[#d70032] px-4 py-5 text-white sm:px-6">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/85">
@@ -236,7 +236,7 @@ export function PluginsModal({
         </div>
 
         {errorMessage ? (
-          <div className="flex-shrink-0 border-b border-[#ffd2d9] bg-[#fff1f3] px-4 py-3 text-sm text-[#b00025] sm:px-6">{errorMessage}</div>
+          <div className="flex-shrink-0 border-b border-[#ffd2d9] bg-[#fff7f8] px-4 py-3 text-sm text-[#b00025] sm:px-6">{errorMessage}</div>
         ) : null}
 
         <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,1fr)_18rem]">
@@ -297,17 +297,24 @@ export function PluginsModal({
                           />
                         ) : null}
                         <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                          <span className="rounded-full border border-editor-border-subtle bg-white px-2.5 py-1 font-semibold text-editor-text-secondary">
+                          <span
+                            className={[
+                              'rounded-lg px-2.5 py-1 text-[11px] font-semibold',
+                              item.enabled
+                                ? 'border border-transparent bg-[#d70032] text-white'
+                                : 'border border-[#f0d6da] bg-[#fff7f8] text-[#b00025]',
+                            ].join(' ')}
+                          >
                             {getCategoryLabel(item.category)}
                           </span>
                           {item.placement.map((placement) => (
-                            <span key={placement} className="rounded-full border border-editor-border-subtle bg-[#f9fafb] px-2.5 py-1 text-editor-text-tertiary">
+                            <span key={placement} className="rounded-full border border-[#f0d6da] bg-[#fff7f8] px-2.5 py-1 text-[#b00025]">
                               {placement}
                             </span>
                           ))}
                         </div>
                         {item.requiredPlans.length > 0 ? (
-                          <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-editor-border-subtle bg-white px-2.5 py-1 text-[11px] font-semibold text-editor-text-secondary">
+                          <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#ffd4da] bg-[#fff1f3] px-2.5 py-1 text-[11px] font-semibold text-[#d70032]">
                             <Crown size={12} strokeWidth={2.1} />
                             {item.requiredPlans.map((planId) => planId === 'pro' ? 'Командный' : planId === 'enterprise' ? 'Enterprise' : 'Базовый').join(' / ')}
                           </div>
