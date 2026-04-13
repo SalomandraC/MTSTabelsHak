@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import type { Editor } from '@tiptap/core';
 import {
@@ -591,9 +592,9 @@ function MwsTableActionModal({
     return null;
   }
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[101] flex items-center justify-center bg-black/30 p-4"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/30 p-4"
       role="dialog"
       aria-modal="true"
       aria-label={`Действия с таблицей ${node.title}`}
@@ -649,7 +650,7 @@ function MwsTableActionModal({
         </div>
       </div>
     </div>
-  );
+  , document.body);
 }
 
 function LogoutConfirmModal({
