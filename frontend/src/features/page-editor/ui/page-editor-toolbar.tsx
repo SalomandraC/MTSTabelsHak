@@ -431,6 +431,7 @@ export function PageEditorToolbar({
           isInGroup={true}
           aria-label="Заголовок 3"
         />
+        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
         <ToolbarButton
           icon={(
             <svg
@@ -440,29 +441,28 @@ export function PageEditorToolbar({
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2"
+              strokeWidth="1.25"
               strokeLinecap="round"
               strokeLinejoin="round"
               className="h-4 w-4"
             >
-              <path d="M10 6H21" />
-              <path d="M10 12H21" />
-              <path d="M10 18H21" />
-              <path d="M3 6h2" />
-              <path d="M3 12h2" />
-              <path d="M3 18h2" />
-              <path d="M7 6h.01" />
-              <path d="M7 12h.01" />
-              <path d="M7 18h.01" />
+              <path d="M5 5.66H21" />
+              <path d="M10 11.66H21" />
+              <path d="M15 17.66H21" />
+              <text x="1" y="7" fontSize="4.5" fill="currentColor" stroke="none" fontFamily="monospace">1</text>
+              <text x="1" y="13" fontSize="4.5" fill="currentColor" stroke="none" fontFamily="monospace">1.1</text>
+              <text x="1" y="19" fontSize="4.5" fill="currentColor" stroke="none" fontFamily="monospace">1.1.1</text>
             </svg>
           )}
           onClick={() => onToggleHeadingNumbering(!headingNumberingEnabled)}
           pressed={headingNumberingEnabled}
           disabled={!canEdit}
-          noBorder
+          noBorder={false}
+          isFirst={true}
+          isLast={true}
+          isInGroup={true}
           aria-label="Автонумерация заголовков"
         />
-
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
         <ToolbarButton
