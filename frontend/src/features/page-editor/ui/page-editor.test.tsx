@@ -72,6 +72,10 @@ vi.mock('./template-variable-modal', () => ({
   TemplateVariableModal: () => null,
 }));
 
+vi.mock('./live-reference-picker-modal', () => ({
+  LiveReferencePickerModal: () => null,
+}));
+
 describe('PageEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -103,6 +107,7 @@ describe('PageEditor', () => {
       imageModal: {},
       pagePicker: {},
       tablePicker: {},
+      liveReferencePicker: {},
       templateVariableModal: {},
       getCurrentDocumentStateValue: vi.fn(),
     });

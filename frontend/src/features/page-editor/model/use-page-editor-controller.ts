@@ -16,6 +16,8 @@ import { createWikiTableEmbed, createWikiTableEmbedNode, type WikiTableSelection
 import type { SlashMenuItem } from '../../slash-menu';
 import { createPageEditorExtensions, initialContent } from './editor-config';
 import { formatFileSize, readFileAsDataUrl, validateImageFile } from './image-utils';
+import type { LiveReferenceSelection } from './live-reference';
+import { insertAiTextWithLiveReferences } from './live-reference-parser';
 import type { PageEditorSlashCommandItem } from './slash-command-items';
 import { getSlashCommandItems } from './slash-command-items';
 import { base64ToBytes, bytesToBase64, readStoredDraft, writeStoredDraft } from './yjs-utils';
@@ -179,6 +181,7 @@ export function usePageEditorController({
 
   const [isPagePickerOpen, setIsPagePickerOpen] = useState(false);
   const [isTablePickerOpen, setIsTablePickerOpen] = useState(false);
+  const [isLiveReferencePickerOpen, setIsLiveReferencePickerOpen] = useState(false);
   const [isTemplateVariableModalOpen, setIsTemplateVariableModalOpen] = useState(false);
   const [templateVariableLabel, setTemplateVariableLabel] = useState('');
   const [templateVariableDescription, setTemplateVariableDescription] = useState('');
@@ -834,6 +837,12 @@ export function usePageEditorController({
       return;
     }
 
+    if (item.id === 'live-reference') {
+      setSlashState(baseSlashState);
+      setIsLiveReferencePickerOpen(true);
+      return;
+    }
+
     if (item.id === 'ai-generate') {
       if (!isAiSlashEnabled) {
         setSlashState(baseSlashState);
@@ -858,6 +867,11 @@ export function usePageEditorController({
 
         if (Array.isArray(generatedContent) && generatedContent.length > 0) {
           editor.chain().focus().insertContent(generatedContent as Content).run();
+          return;
+        }
+
+        if (typeof response.document === 'string') {
+          insertAiTextWithLiveReferences(editor, response.document);
           return;
         }
 
@@ -955,6 +969,15 @@ export function usePageEditorController({
     setIsTablePickerOpen(false);
   };
 
+  const handleSelectLiveReference = (selection: LiveReferenceSelection) => {
+    if (!editor || !canEdit) {
+      return;
+    }
+
+    editor.chain().focus().insertLiveReference(selection).run();
+    setIsLiveReferencePickerOpen(false);
+  };
+
   const applySlashItemRef = useRef(applySlashItem);
 
   useEffect(() => {
@@ -978,6 +1001,12 @@ export function usePageEditorController({
       if (isTemplateVariableModalOpen && event.key === 'Escape') {
         event.preventDefault();
         closeTemplateVariableModal();
+        return;
+      }
+
+      if (isLiveReferencePickerOpen && event.key === 'Escape') {
+        event.preventDefault();
+        setIsLiveReferencePickerOpen(false);
         return;
       }
 
@@ -1042,7 +1071,15 @@ export function usePageEditorController({
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [canEdit, closeImageModal, editor, isImageModalOpen, isLinkModalOpen, isTemplateVariableModalOpen]);
+  }, [
+    canEdit,
+    closeImageModal,
+    editor,
+    isImageModalOpen,
+    isLinkModalOpen,
+    isLiveReferencePickerOpen,
+    isTemplateVariableModalOpen,
+  ]);
 
   return {
     editor,
@@ -1073,6 +1110,12 @@ export function usePageEditorController({
       initialSpaceId: spaceId,
       onSelect: handleSelectTable,
       onClose: () => setIsTablePickerOpen(false),
+    },
+    liveReferencePicker: {
+      isOpen: isLiveReferencePickerOpen,
+      initialSpaceId: spaceId,
+      onSelect: handleSelectLiveReference,
+      onClose: () => setIsLiveReferencePickerOpen(false),
     },
     linkModal: {
       isOpen: isLinkModalOpen,

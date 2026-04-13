@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Editor } from '@tiptap/core';
 
 import { type MwsField, type MwsRecord, wikiliveApi } from '../../../../shared/api/wikilive';
+import { insertAiTextWithLiveReferences } from '../../../page-editor/model/live-reference-parser';
 import { getEditorMarkdown } from '../model/editor-markdown';
 import { useAiTableContext } from '../model/use-ai-table-context';
 
@@ -1021,6 +1022,7 @@ export function AiInlineCopilot({
           'Ты помощник по тексту.',
           `Вот содержание документа: ${markdown}`,
           `Запрос пользователя: ${trimmed}`,
+          'Если нужно сослаться на конкретную ячейку MWS, используй токен в формате [Ref:tableId:rowId:colId].',
           'Верни только текст, который можно вставить в документ.',
         ].join('\n'),
         pageId: pageId ?? undefined,
@@ -1029,7 +1031,7 @@ export function AiInlineCopilot({
       });
 
       if (editor) {
-        editor.commands.insertContent(response.answer);
+        insertAiTextWithLiveReferences(editor, response.answer);
       }
 
       handleAiChatResponse(response);

@@ -438,6 +438,17 @@ export type MwsRecordList = {
   total: number;
 };
 
+export type MwsCellValue = {
+  cell: {
+    datasheetId: string;
+    recordId: string;
+    fieldId: string;
+    value: unknown;
+    displayValue: string;
+    updatedAt?: string | null;
+  };
+};
+
 export type CreateMwsRecordsPayload = {
   fieldKey: 'id' | 'name';
   records: Array<{ fields: Record<string, unknown> }>;
@@ -1166,6 +1177,9 @@ export const wikiliveApi = {
         sort: query.sort ? JSON.stringify(query.sort) : undefined,
       },
     });
+  },
+  getMwsCellValue(datasheetId: string, recordId: string, fieldId: string) {
+    return request<MwsCellValue>(`/api/v1/mws/datasheets/${datasheetId}/records/${recordId}/fields/${fieldId}`);
   },
   createMwsRecords(datasheetId: string, payload: CreateMwsRecordsPayload) {
     return request<{ items: MwsRecord[] }>(`/api/v1/mws/datasheets/${datasheetId}/records`, {

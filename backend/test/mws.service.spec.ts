@@ -276,6 +276,38 @@ describe('MwsService', () => {
     expect(response.pageSize).toBe(25);
   });
 
+  it('returns a normalized single cell value for live references', async () => {
+    const { service } = createService((url) => {
+      if (url.endsWith('/datasheets/dst-1/records')) {
+        return {
+          data: {
+            records: {
+              items: [
+                {
+                  recordId: 'rec-7',
+                  fields: {
+                    'fld-status': { text: 'В работе' },
+                  },
+                  updatedAt: 1760000000000,
+                },
+              ],
+            },
+          },
+        };
+      }
+
+      return { data: {} };
+    });
+
+    const response = await service.getCellValue('dst-1', 'rec-7', 'fld-status', user);
+
+    expect(response.cell.datasheetId).toBe('dst-1');
+    expect(response.cell.recordId).toBe('rec-7');
+    expect(response.cell.fieldId).toBe('fld-status');
+    expect(response.cell.displayValue).toBe('В работе');
+    expect(response.cell.value).toEqual({ text: 'В работе' });
+  });
+
   it('resolves embed preview records from nested upstream payloads', async () => {
     const { service } = createService((url) => {
       if (url.endsWith('/nodes/node-1')) {

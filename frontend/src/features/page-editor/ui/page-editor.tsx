@@ -19,6 +19,7 @@ import { PageEditorToolbar } from './page-editor-toolbar';
 import { PagePickerModal } from './page-picker-modal';
 import { TemplateVariableModal } from './template-variable-modal';
 import { IframeModal } from './iframe-modal';
+import { LiveReferencePickerModal } from './live-reference-picker-modal';
 
 type PageEditorProps = {
   spaceId: string;
@@ -446,6 +447,7 @@ function LivePageEditor({
           <IframeModal {...controller.iframeModal} />
           <PagePickerModal {...controller.pagePicker} />
           <TemplateVariableModal {...controller.templateVariableModal} />
+          <LiveReferencePickerModal {...controller.liveReferencePicker} />
           <WikiTablePickerModal {...controller.tablePicker} />
           {historyPreview ? (
             <ReadOnlyPreviewOverlay checkpoint={historyPreview} />

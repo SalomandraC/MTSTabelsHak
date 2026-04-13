@@ -46,6 +46,7 @@ import { CommentAnchor } from './comment-anchor';
 import { ImageBlock } from './image-block';
 import { PageLink } from './page-link';
 import { RootBlock } from './root-block';
+import { LiveReference } from './live-reference';
 import { TemplateVariable } from './template-variable';
 
 const lowlight = createLowlight();
@@ -139,6 +140,7 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     RootBlock,
     ImageBlock,
     TemplateVariable,
+    LiveReference,
     PageLink,
     CommentAnchor.configure({
       onOpenThread: options.onOpenCommentThread,

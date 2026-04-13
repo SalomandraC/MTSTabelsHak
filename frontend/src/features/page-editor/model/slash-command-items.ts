@@ -85,6 +85,16 @@ export function getSlashCommandItems(plugins: PluginCatalogItem[]): PageEditorSl
       },
     },
     {
+      id: 'live-reference',
+      label: 'Живая переменная',
+      hint: 'Привязать inline-значение к ячейке MWS таблицы',
+      keywords: ['ref', 'cell', 'live', 'mws', 'ячейка', 'переменная', 'таблица', 'reference'],
+      icon: '⦿',
+      run: () => {
+        // Handled in PageEditor with live reference picker flow.
+      },
+    },
+    {
       id: 'task-list',
       label: 'Чеклист',
       hint: 'Создать список задач с чекбоксами',

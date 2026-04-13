@@ -222,6 +222,42 @@ export class MwsService {
     });
   }
 
+  async getCellValue(datasheetId: string, recordId: string, fieldId: string, user: UserContext) {
+    const records = await this.listRecords(
+      datasheetId,
+      {
+        recordIds: recordId,
+        fields: fieldId,
+        pageNum: 1,
+        pageSize: 1,
+        fieldKey: 'id',
+        cellFormat: 'json',
+      },
+      user,
+    );
+
+    const record = records.items.find((item: any) => String(item.recordId) === recordId) ?? records.items[0];
+    if (!record) {
+      throw new NotFoundException({
+        code: 'MWS_RECORD_NOT_FOUND',
+        message: `Record ${recordId} was not found in datasheet ${datasheetId}`,
+      });
+    }
+
+    const rawValue = record.fields?.[fieldId];
+
+    return {
+      cell: {
+        datasheetId,
+        recordId,
+        fieldId,
+        value: rawValue ?? null,
+        displayValue: this.stringifyCellValue(rawValue),
+        updatedAt: record.updatedAt ? new Date(Number(record.updatedAt)).toISOString() : null,
+      },
+    };
+  }
+
   async createRecords(datasheetId: string, dto: CreateMwsRecordsDto, user: UserContext) {
     const data = await this.request(user, 'POST', `/datasheets/${datasheetId}/records`, {
       ...dto,
@@ -648,6 +684,45 @@ export class MwsService {
     } catch {
       return query;
     }
+  }
+
+  private stringifyCellValue(value: unknown): string {
+    if (value === null || value === undefined) {
+      return '';
+    }
+
+    if (typeof value === 'string') {
+      return value;
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => this.stringifyCellValue(item))
+        .filter(Boolean)
+        .join(', ');
+    }
+
+    if (typeof value === 'object') {
+      const objectValue = value as Record<string, unknown>;
+      for (const key of ['text', 'title', 'name', 'value', 'label']) {
+        const candidate = objectValue[key];
+        if (typeof candidate === 'string' && candidate.trim()) {
+          return candidate;
+        }
+      }
+
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return '';
+      }
+    }
+
+    return '';
   }
 
   private async invalidateNodeCache(spaceId: string) {

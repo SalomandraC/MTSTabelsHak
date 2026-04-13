@@ -659,6 +659,7 @@ export class AiAssistantService {
           'Return only valid JSON.',
           'The document must have type "doc" and a content array.',
           'Use only paragraph, heading, bulletList, orderedList, listItem, blockquote, and text nodes unless the context requires another common ProseMirror node.',
+          'If user asks to reference a live MWS cell, insert token [Ref:tableId:rowId:colId] directly in text, without extra markup.',
         ].join(' '),
       },
       {
