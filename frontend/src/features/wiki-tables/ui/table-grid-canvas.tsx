@@ -17,6 +17,11 @@ export type TableGridProps = {
   isExpanded?: boolean;
   isReadOnly?: boolean;
   selectColorToCss: (color: string) => string;
+  onOpenFieldMenu?: (payload: {
+    fieldIndex: number;
+    clientX: number;
+    clientY: number;
+  }) => void;
 };
 
 export function TableGridCanvas({
@@ -31,7 +36,8 @@ export function TableGridCanvas({
   onAddColumn,
   onAddRow,
   onOpenAttachmentUpload,
-  onDownloadAllAttachments
+  onDownloadAllAttachments,
+  onOpenFieldMenu
 }: TableGridProps & {
   onCanvasKeyDown: (event: React.KeyboardEvent<HTMLCanvasElement>) => void;
   selectEditorRef: React.RefObject<HTMLDivElement>;
@@ -120,8 +126,36 @@ export function TableGridCanvas({
               x >= addColumnStart &&
               x <= addColumnEnd
             ) {
+              event.preventDefault();
+              event.stopPropagation();
               onAddColumn();
               return;
+            }
+
+            if (
+              !isReadOnly &&
+              onOpenFieldMenu &&
+              y >= 0 &&
+              y <= HEADER_HEIGHT &&
+              x >= INDEX_WIDTH
+            ) {
+              const fieldIndex = Math.floor(
+                (x + controller.scrollOffset.left - INDEX_WIDTH) / COLUMN_WIDTH
+              );
+
+              if (
+                fieldIndex >= 0 &&
+                fieldIndex < controller.visibleFields.length
+              ) {
+                event.preventDefault();
+                event.stopPropagation();
+                onOpenFieldMenu({
+                  fieldIndex,
+                  clientX: event.clientX,
+                  clientY: event.clientY
+                });
+                return;
+              }
             }
 
             if (
@@ -132,11 +166,15 @@ export function TableGridCanvas({
               y >= addRowStart &&
               y <= addRowEnd
             ) {
+              event.preventDefault();
+              event.stopPropagation();
               onAddRow();
               return;
             }
 
             if (isReadOnly) {
+              event.preventDefault();
+              event.stopPropagation();
               controller.setSelection(null);
               controller.setEditingCell(null);
               controller.setEditingSelectCell(null);
@@ -144,13 +182,49 @@ export function TableGridCanvas({
             }
 
             const nextSelection = controller.hitTest(event);
+            event.preventDefault();
+            event.stopPropagation();
             controller.setSelection(nextSelection);
             controller.setEditingCell(null);
             controller.setEditingSelectCell(null);
             controller.beginEdit(nextSelection, { fromSingleClick: true });
           }}
+          onContextMenu={(event) => {
+            if (isReadOnly || !onOpenFieldMenu) {
+              return;
+            }
+
+            const rect = event.currentTarget.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            if (y < 0 || y > HEADER_HEIGHT || x < INDEX_WIDTH) {
+              return;
+            }
+
+            const fieldIndex = Math.floor(
+              (x + controller.scrollOffset.left - INDEX_WIDTH) / COLUMN_WIDTH
+            );
+
+            if (
+              fieldIndex < 0 ||
+              fieldIndex >= controller.visibleFields.length
+            ) {
+              return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            onOpenFieldMenu({
+              fieldIndex,
+              clientX: event.clientX,
+              clientY: event.clientY
+            });
+          }}
           onDoubleClick={(event) => {
             if (!isReadOnly) {
+              event.preventDefault();
+              event.stopPropagation();
               controller.beginEdit(controller.hitTest(event));
             }
           }}

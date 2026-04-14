@@ -7,6 +7,7 @@ import { MwsTableActionBar } from './mws-table-action-bar';
 import { AttachmentUploadModal } from './attachment-upload-modal';
 import { CreateFieldModal } from './create-field-modal';
 import { ExpandedTableModal } from './expanded-table-modal';
+import { FieldActionsMenu } from './field-actions-menu';
 import { FilterRecordsModal } from './filter-records-modal';
 import { GroupRecordsModal } from './group-records-modal';
 import { HideFieldsModal } from './hide-fields-modal';
@@ -24,6 +25,20 @@ import {
   ROW_HEIGHT,
   useWikiTableEmbed
 } from '../model/use-wiki-table-embed';
+import type { MwsField, MwsRecord } from '../../../shared/api/wikilive';
+
+type AiTableMutationDetail = {
+  datasheetId?: string;
+  op?: 'create_records' | 'add_table_column' | 'refresh';
+  records?: MwsRecord[];
+  field?: MwsField;
+};
+
+type AiTableRefreshDetail = {
+  datasheetId?: string | null;
+  viewId?: string | null;
+  reason?: string;
+};
 
 function isDirectEditKey(event: React.KeyboardEvent<HTMLElement>) {
   return (
@@ -37,6 +52,77 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
 
   useEffect(() => {
     controllerRef.current = controller;
+  }, [controller]);
+
+  useEffect(() => {
+    const datasheetId = controller.attrs.datasheetId;
+    if (!datasheetId) {
+      return;
+    }
+
+    const globalStore = (window as unknown as {
+      __wikiliveTableSnapshots?: Record<string, unknown>;
+    });
+
+    if (!globalStore.__wikiliveTableSnapshots) {
+      globalStore.__wikiliveTableSnapshots = {};
+    }
+
+    globalStore.__wikiliveTableSnapshots[datasheetId] = {
+      datasheetId,
+      viewId: controller.attrs.viewId ?? null,
+      fields: controller.fields,
+      records: controller.records.slice(0, 200),
+      total: controller.total,
+      updatedAt: Date.now(),
+    };
+  }, [
+    controller.attrs.datasheetId,
+    controller.attrs.viewId,
+    controller.fields,
+    controller.records,
+    controller.total,
+  ]);
+
+  useEffect(() => {
+    const handleRefreshRequest = (event: Event) => {
+      const customEvent = event as CustomEvent<AiTableRefreshDetail>;
+      const detail = customEvent.detail;
+      const targetDatasheetId = detail?.datasheetId ?? undefined;
+
+      if (targetDatasheetId && targetDatasheetId !== controller.attrs.datasheetId) {
+        return;
+      }
+
+      void controller.refreshTable();
+    };
+
+    const handleMutation = (event: Event) => {
+      const customEvent = event as CustomEvent<AiTableMutationDetail>;
+      const detail = customEvent.detail;
+      const targetDatasheetId = detail?.datasheetId;
+
+      if (!targetDatasheetId || targetDatasheetId !== controller.attrs.datasheetId) {
+        return;
+      }
+
+      if (detail.op === 'create_records' && Array.isArray(detail.records) && detail.records.length > 0) {
+        controller.applyAiRecords(detail.records);
+      }
+
+      if (detail.op === 'add_table_column' && detail.field) {
+        controller.applyAiField(detail.field);
+      }
+
+      void controller.refreshTable();
+    };
+
+    window.addEventListener('wikilive:ai-table-refresh-request', handleRefreshRequest);
+    window.addEventListener('wikilive:ai-table-mutation', handleMutation);
+    return () => {
+      window.removeEventListener('wikilive:ai-table-refresh-request', handleRefreshRequest);
+      window.removeEventListener('wikilive:ai-table-mutation', handleMutation);
+    };
   }, [controller]);
   const [isCreateFieldModalOpen, setIsCreateFieldModalOpen] = useState(false);
   const [isHideFieldsModalOpen, setIsHideFieldsModalOpen] = useState(false);
@@ -54,7 +140,17 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     []
   );
   const [attachmentUploadError, setAttachmentUploadError] = useState('');
+  const [activeFieldMenu, setActiveFieldMenu] = useState<{
+    field: MwsField;
+    x: number;
+    y: number;
+  } | null>(null);
   const selectEditorRef = useRef<HTMLDivElement | null>(null);
+  const activeFieldMenuIndex = activeFieldMenu
+    ? controller.visibleFields.findIndex(
+        (field) => field.id === activeFieldMenu.field.id
+      )
+    : -1;
 
   const selectColorToCss = (color: string) => {
     const palette: Record<string, string> = {
@@ -125,11 +221,12 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         return;
       }
 
-      ctx.fillStyle = '#f8fafc';
+      const isActiveFieldMenuColumn = fieldIndex === activeFieldMenuIndex;
+      ctx.fillStyle = isActiveFieldMenuColumn ? '#e8f0ff' : '#f8fafc';
       ctx.fillRect(x, 0, COLUMN_WIDTH, HEADER_HEIGHT);
       ctx.strokeStyle = '#dde2ea';
       ctx.strokeRect(x - 0.5, 0.5, COLUMN_WIDTH, HEADER_HEIGHT);
-      ctx.fillStyle = '#3f3f46';
+      ctx.fillStyle = isActiveFieldMenuColumn ? '#1d4ed8' : '#3f3f46';
       ctx.font =
         '600 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
       ctx.fillText(
@@ -240,6 +337,11 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
           const isSelected =
             controller.selection?.rowIndex === rowIndex &&
             controller.selection.fieldIndex === fieldIndex;
+          const isActiveFieldMenuColumn = fieldIndex === activeFieldMenuIndex;
+          if (isActiveFieldMenuColumn) {
+            ctx.fillStyle = rowIndex % 2 === 0 ? '#eff5ff' : '#e8f0ff';
+            ctx.fillRect(x, y, COLUMN_WIDTH, ROW_HEIGHT);
+          }
           ctx.strokeStyle = '#e5e8ef';
           ctx.strokeRect(x - 0.5, y - 0.5, COLUMN_WIDTH, ROW_HEIGHT);
 
@@ -319,7 +421,8 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     controller.viewport.height,
     controller.viewport.width,
     controller.visibleFields,
-    controller.visibleRows
+    controller.visibleRows,
+    activeFieldMenuIndex
   ]);
 
   useEffect(() => {
@@ -387,6 +490,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     controller.setSelection(null);
     controller.setEditingCell(null);
     controller.setEditingSelectCell(null);
+    setActiveFieldMenu(null);
   };
 
   const openAttachmentUploadModal = () => {
@@ -417,10 +521,75 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         controller.setSelection(null);
         controller.setEditingCell(null);
         controller.setEditingSelectCell(null);
+        setActiveFieldMenu(null);
       }
 
       return next;
     });
+  };
+
+  const openFieldMenu = ({
+    fieldIndex,
+    clientX,
+    clientY
+  }: {
+    fieldIndex: number;
+    clientX: number;
+    clientY: number;
+  }) => {
+    const field = controller.visibleFields[fieldIndex];
+    if (!field) {
+      return;
+    }
+
+    setActiveFieldMenu({
+      field,
+      x: clientX,
+      y: clientY + 8
+    });
+  };
+
+  const applySingleFieldSort = (field: MwsField, desc: boolean) => {
+    controller.setSortRules((current) => [
+      {
+        id: `sort-rule-${Date.now()}`,
+        fieldId: field.id,
+        desc
+      },
+      ...current.filter((rule) => rule.fieldId !== field.id)
+    ]);
+  };
+
+  const addFieldFilter = (field: MwsField) => {
+    controller.setFilterRules((current) => {
+      if (current.some((rule) => rule.fieldId === field.id)) {
+        return current;
+      }
+
+      return [
+        ...current,
+        {
+          id: `filter-rule-${Date.now()}`,
+          fieldId: field.id,
+          operator: 'contains',
+          value: ''
+        }
+      ];
+    });
+    setIsFilterRecordsModalOpen(true);
+  };
+
+  const applyFieldGrouping = (field: MwsField, desc: boolean) => {
+    controller.setGroupRule({
+      fieldId: field.id,
+      desc
+    });
+  };
+
+  const hideField = (field: MwsField) => {
+    controller.setHiddenFieldIds((current) =>
+      current.includes(field.id) ? current : [...current, field.id]
+    );
   };
 
   const downloadAllAttachments = async () => {
@@ -429,15 +598,24 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     }
   };
 
+  const resetAllTransforms = () => {
+    controller.setSortRules([]);
+    controller.setFilterRules([]);
+    controller.setGroupRule(null);
+    setActiveFieldMenu(null);
+  };
+
   return (
     <NodeViewWrapper
       className={[
         'my-4 flex flex-col overflow-hidden rounded-lg border bg-white shadow-sm',
         selected
-          ? 'border-[#7b67ee] ring-2 ring-[#7b67ee]/20'
+          ? 'border-[#d70032] ring-2 ring-[#d70032]/20'
           : 'border-editor-border-subtle'
       ].join(' ')}
       data-type="mws-table-embed"
+      data-datasheet-id={controller.attrs.datasheetId ?? undefined}
+      data-view-id={controller.attrs.viewId ?? undefined}
       contentEditable={false}
       onKeyDownCapture={(event: React.KeyboardEvent<HTMLDivElement>) => {
         if (
@@ -561,6 +739,9 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
               canExpand={controller.records.length > 0}
               isLoading={controller.isLoading}
               isMutating={controller.isMutating}
+              hasActiveFilter={controller.filterRules.length > 0}
+              hasActiveGroup={Boolean(controller.groupRule)}
+              hasActiveSort={controller.sortRules.length > 0}
               searchQuery={controller.searchQuery}
               onSearchQueryChange={handleSearchQueryChange}
               onCreateRow={() => void controller.createRow()}
@@ -581,6 +762,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
               }
               onExpand={() => setIsExpandedViewOpen(true)}
               onRefresh={() => void controllerRef.current?.loadEmbed()}
+              onResetAll={resetAllTransforms}
             />
           </div>
         </div>
@@ -626,6 +808,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
               onDownloadAllAttachments={
                 isCollapsed ? undefined : () => void downloadAllAttachments()
               }
+              onOpenFieldMenu={isCollapsed ? undefined : openFieldMenu}
               onAddColumn={
                 isCollapsed ? undefined : () => setIsCreateFieldModalOpen(true)
               }
@@ -668,6 +851,48 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
           ) : null}
         </div>
       </div>
+      <FieldActionsMenu
+        fieldName={activeFieldMenu?.field.name ?? ''}
+        position={
+          activeFieldMenu
+            ? {
+                x: activeFieldMenu.x,
+                y: activeFieldMenu.y
+              }
+            : null
+        }
+        onClose={() => setActiveFieldMenu(null)}
+        onSortAsc={() => {
+          if (activeFieldMenu) {
+            applySingleFieldSort(activeFieldMenu.field, false);
+          }
+        }}
+        onSortDesc={() => {
+          if (activeFieldMenu) {
+            applySingleFieldSort(activeFieldMenu.field, true);
+          }
+        }}
+        onAddFilter={() => {
+          if (activeFieldMenu) {
+            addFieldFilter(activeFieldMenu.field);
+          }
+        }}
+        onGroupAsc={() => {
+          if (activeFieldMenu) {
+            applyFieldGrouping(activeFieldMenu.field, false);
+          }
+        }}
+        onGroupDesc={() => {
+          if (activeFieldMenu) {
+            applyFieldGrouping(activeFieldMenu.field, true);
+          }
+        }}
+        onHideField={() => {
+          if (activeFieldMenu) {
+            hideField(activeFieldMenu.field);
+          }
+        }}
+      />
       <CreateFieldModal
         isOpen={isCreateFieldModalOpen}
         isSubmitting={controller.isMutating}
@@ -715,12 +940,14 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         selectColorToCss={selectColorToCss}
         selectEditorRef={selectEditorRef}
         onClose={() => setIsExpandedViewOpen(false)}
+        onOpenFieldMenu={openFieldMenu}
         onSearchQueryChange={handleSearchQueryChange}
         onCreateField={() => setIsCreateFieldModalOpen(true)}
         onHideFields={() => setIsHideFieldsModalOpen(true)}
         onFilter={() => setIsFilterRecordsModalOpen(true)}
         onGroup={() => setIsGroupRecordsModalOpen(true)}
         onSort={() => setIsSortFieldsModalOpen(true)}
+        onResetAll={resetAllTransforms}
         onExpand={() => {}}
         onOpenFilePicker={openAttachmentUploadModal}
         onDownloadSelectedAttachment={() => {

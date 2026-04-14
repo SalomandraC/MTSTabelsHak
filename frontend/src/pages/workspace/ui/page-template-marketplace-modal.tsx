@@ -164,7 +164,7 @@ export function PageTemplateMarketplaceModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[95] bg-black/35" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[101] bg-black/35" onMouseDown={onClose}>
       <section
         className="fixed left-1/2 top-1/2 flex h-[min(44rem,calc(100vh-2rem))] w-[min(68rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-3xl border border-editor-border-subtle bg-white shadow-[0_28px_90px_rgba(17,25,40,0.24)]"
         role="dialog"
@@ -180,14 +180,6 @@ export function PageTemplateMarketplaceModal({
                 <h2 className="mt-2 font-wide text-xl font-semibold text-[#1f1f1f]">Маркетплейс страниц</h2>
                 <p className="mt-2 text-sm text-editor-text-tertiary">Выберите основу документа и заполните параметры.</p>
               </div>
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#8d8d8d] hover:bg-[#f2f3f5] hover:text-[#1f1f1f]"
-                aria-label="Закрыть"
-              >
-                <X size={17} strokeWidth={2.2} />
-              </button>
             </div>
             <label className="mt-4 flex h-10 items-center gap-2 rounded-xl border border-editor-border-subtle bg-white px-3">
               <Search size={16} className="text-editor-text-tertiary" />
@@ -351,7 +343,16 @@ export function PageTemplateMarketplaceModal({
         <div className="flex min-w-0 flex-1 flex-col">
           {selectedTemplate ? (
             <>
-              <div className="border-b border-editor-border-subtle p-6">
+              <div className="relative border-b border-editor-border-subtle p-6">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="absolute right-6 top-6 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-[#8d8d8d] shadow-sm transition-colors hover:bg-[#f2f3f5] hover:text-[#1f1f1f]"
+                  aria-label="Закрыть"
+                >
+                  <X size={17} strokeWidth={2.2} />
+                </button>
+
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">

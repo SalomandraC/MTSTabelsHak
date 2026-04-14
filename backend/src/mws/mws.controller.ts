@@ -55,6 +55,11 @@ export class MwsController {
     return this.mwsService.getNode(nodeId, user);
   }
 
+  @Post('spaces/:spaceId/sync-tree')
+  async syncTree(@Param('spaceId') spaceId: string, @CurrentUser() user: UserContext) {
+    return this.mwsService.syncSpaceNodes(spaceId, user);
+  }
+
   @Post('spaces/:spaceId/datasheets')
   async createDatasheet(
     @Param('spaceId') spaceId: string,
@@ -126,6 +131,16 @@ export class MwsController {
     @CurrentUser() user: UserContext,
   ) {
     return this.mwsService.listRecords(datasheetId, query, user);
+  }
+
+  @Get('datasheets/:datasheetId/records/:recordId/fields/:fieldId')
+  async getCellValue(
+    @Param('datasheetId') datasheetId: string,
+    @Param('recordId') recordId: string,
+    @Param('fieldId') fieldId: string,
+    @CurrentUser() user: UserContext,
+  ) {
+    return this.mwsService.getCellValue(datasheetId, recordId, fieldId, user);
   }
 
   @Post('datasheets/:datasheetId/records')

@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { FloatingToolbar } from './floating-toolbar';
 
 vi.mock('../../plugins', () => ({
-  usePlugins: () => ({ items: [] }),
+  usePlugins: () => ({
+    items: [],
+  }),
 }));
 
 vi.mock('@tiptap/react', () => ({
@@ -19,6 +21,10 @@ vi.mock('@tiptap/react', () => ({
     canUnderline: true,
     isCode: false,
     canCode: true,
+    isHighlight: false,
+    canHighlight: true,
+    isCodeBlock: false,
+    canCodeBlock: true,
     isHeading1: false,
     isHeading2: false,
     isHeading3: false,
@@ -33,6 +39,12 @@ vi.mock('@tiptap/react', () => ({
   }),
 }));
 
+vi.mock('../../plugins', () => ({
+  usePlugins: () => ({
+    items: [],
+  }),
+}));
+
 function createEditorMock() {
   const callbacks = new Map<string, (...args: unknown[]) => void>();
   const chainResult = {
@@ -42,6 +54,7 @@ function createEditorMock() {
     toggleStrike: vi.fn(() => chainResult),
     toggleUnderline: vi.fn(() => chainResult),
     toggleCode: vi.fn(() => chainResult),
+    toggleCodeBlock: vi.fn(() => chainResult),
     toggleHeading: vi.fn(() => chainResult),
     unsetLink: vi.fn(() => chainResult),
     insertContentAt: vi.fn(() => chainResult),
@@ -80,6 +93,7 @@ describe('FloatingToolbar', () => {
         editor={editor}
         canEdit={false}
         onOpenLinkModal={vi.fn()}
+        onOpenIframeModal={vi.fn()}
         onCreateComment={onCreateComment}
         isAiTransformEnabled
       />,

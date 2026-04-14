@@ -3,6 +3,8 @@ import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { Public } from 'src/common/decorators/public.decorator';
 import { UserContext } from 'src/auth/user-context';
 import { ExecuteToolDto } from './dto/execute-tool.dto';
+import { PlanTableMutationDto } from './dto/plan-table-mutation.dto';
+import { PlanTableWorkflowDto } from './dto/plan-table-workflow.dto';
 import {
   ChatRequestDto,
   CompletionRequestDto,
@@ -50,7 +52,7 @@ export class AiToolsController {
   @Post('transform')
   @Public()
   transform(@Body() dto: TransformRequestDto) {
-    return this.aiAssistantService.transformText(dto.text, dto.transformation, {
+    return this.aiAssistantService.transformText(dto.text, dto.transformation, dto.styleId, {
       pageTitle: dto.pageTitle,
       pageSnapshot: dto.pageSnapshot,
     });
@@ -78,6 +80,31 @@ export class AiToolsController {
     return this.aiToolRegistryService.executeTool(dto.toolName, dto.args, user, {
       pageId: dto.pageId,
       workspaceId: dto.workspaceId,
+    });
+  }
+
+  @Post('plan-mutation')
+  @Public()
+  planTableMutation(@Body() dto: PlanTableMutationDto) {
+    return this.aiAssistantService.planTableMutation({
+      operation: dto.operation,
+      prompt: dto.prompt,
+      spaceId: dto.spaceId,
+      datasheetId: dto.datasheetId,
+      viewId: dto.viewId,
+      tableSnapshot: dto.tableSnapshot,
+    });
+  }
+
+  @Post('plan-workflow')
+  @Public()
+  planTableWorkflow(@Body() dto: PlanTableWorkflowDto) {
+    return this.aiAssistantService.planTableWorkflow({
+      prompt: dto.prompt,
+      spaceId: dto.spaceId,
+      datasheetId: dto.datasheetId,
+      viewId: dto.viewId,
+      tableSnapshot: dto.tableSnapshot,
     });
   }
 }

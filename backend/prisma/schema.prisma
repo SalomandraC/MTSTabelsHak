@@ -10,10 +10,23 @@ datasource db {
 enum WikiNodeType {
   folder
   page
+  mws_folder
+  mws_table
 }
 
 enum EmbedProvider {
   mws_tables
+}
+
+enum NodeSourceType {
+  local
+  mws
+}
+
+enum NodeSyncState {
+  local_only
+  synced
+  stale
 }
 
 enum CheckpointTrigger {
@@ -56,15 +69,26 @@ enum CommentThreadStatus {
   resolved
 }
 
+enum CommentResolveReason {
+  manual
+  anchor_removed_by_restore
+}
+
 model WikiNode {
   id          String       @id @default(uuid())
   spaceId     String       @map("space_id")
   type        WikiNodeType
+  sourceType  NodeSourceType @default(local) @map("source_type")
+  sourceNodeId String?     @map("source_node_id")
+  sourceParentNodeId String? @map("source_parent_node_id")
   parentId    String?      @map("parent_id")
   title       String
   icon        String?
   position    Int          @default(0)
   isArchived  Boolean      @default(false) @map("is_archived")
+  isExternalReadonly Boolean @default(false) @map("is_external_readonly")
+  syncState   NodeSyncState @default(local_only) @map("sync_state")
+  lastSeenInSourceAt DateTime? @map("last_seen_in_source_at")
   mwsSpaceId  String?      @map("mws_space_id")
   mwsParentNodeId String?  @map("mws_parent_node_id")
   mwsSourceNodeId String?  @map("mws_source_node_id")
@@ -84,14 +108,18 @@ model WikiNode {
 
   @@index([spaceId, parentId, position])
   @@index([spaceId, type, isArchived])
+  @@index([spaceId, sourceType, sourceNodeId])
+  @@index([spaceId, sourceParentNodeId])
   @@index([spaceId, mwsParentNodeId])
   @@index([spaceId, mwsSourceNodeId])
+  @@unique([spaceId, sourceType, sourceNodeId])
   @@map("wiki_nodes")
 }
 
 model WikiPage {
   nodeId              String           @id @map("node_id")
   plainTextPreview    String?          @map("plain_text_preview")
+  headingNumberingEnabled Boolean      @default(false) @map("heading_numbering_enabled")
   lastSnapshotVersion BigInt           @default(0) @map("last_snapshot_version")
   latestCheckpointId  String?          @map("latest_checkpoint_id")
   lastCompactedAt     DateTime?        @map("last_compacted_at")
@@ -222,6 +250,7 @@ model PageCommentThread {
   createdByName String              @map("created_by_name")
   resolvedBy    String?             @map("resolved_by")
   resolvedAt    DateTime?           @map("resolved_at")
+  resolvedReason CommentResolveReason? @map("resolved_reason")
   createdAt     DateTime            @default(now()) @map("created_at")
   updatedAt     DateTime            @updatedAt @map("updated_at")
   page          WikiNode            @relation(fields: [pageId], references: [id], onDelete: Cascade)

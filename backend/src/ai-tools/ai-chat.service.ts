@@ -7,6 +7,8 @@ import { ToolExecutionResult } from './ai-tool-registry.types';
 
 @Injectable()
 export class AiChatService {
+  private readonly mutationToolNames = new Set(['create_records', 'patch_records', 'add_table_column']);
+
   constructor(
     private readonly aiProviderClientService: AiProviderClientService,
     private readonly aiToolRegistryService: AiToolRegistryService,
@@ -18,10 +20,11 @@ export class AiChatService {
 
     const toolDefinitions = this.aiToolRegistryService
       .getToolDefinitions()
-      .filter((definition) => ['create_records', 'patch_records', 'get_records'].includes(definition.function.name));
+      .filter((definition) => ['create_records', 'patch_records', 'get_records', 'add_table_column'].includes(definition.function.name));
     const conversation: AiChatMessage[] = [...messages];
     const usedTools: Array<{ toolName: string; args: Record<string, unknown> }> = [];
     const references: Array<Record<string, unknown>> = [];
+    let needsRefresh = false;
 
     let response = await this.aiProviderClientService.complete({
       messages,
@@ -39,6 +42,8 @@ export class AiChatService {
         break;
       }
 
+      console.log('AI TOOL_CALLS ROUND:', round, toolCalls.map((call) => call.function.name));
+
       conversation.push({
         role: 'assistant',
         content: assistantMessage?.content ?? '',
@@ -50,9 +55,15 @@ export class AiChatService {
         const args = this.parseToolArguments(toolCall.function.arguments);
         usedTools.push({ toolName, args });
 
+        console.log('EXECUTE TOOL FROM CHAT:', toolName, args);
+
         const toolResult = await this.executeTool(toolName, args, user, {
           pageId: input.pageId,
         });
+
+        if (toolResult.ok && this.mutationToolNames.has(toolName)) {
+          needsRefresh = true;
+        }
 
         if (toolResult.ok && toolResult.canonicalRecords?.length) {
           references.push(
@@ -91,6 +102,7 @@ export class AiChatService {
 
     return {
       answer,
+      needsRefresh,
       usedTools,
       contextMarkdown,
       references,
@@ -121,10 +133,26 @@ export class AiChatService {
       {
         role: 'system',
         content: [
-          'You are a wiki assistant that answers user questions using the page context and available tools.',
-          'If the user asks about records, tasks, rows, or table content, use the get_mws_records tool.',
+            'You are a powerful data administrator for WikiLive tables.',
+            'Your goal is to change the real MWS table data through tools, not by describing JSON to the user.',
+            'Always maintain a professional, concise Wiki-system tone.',
+            'Always answer in the same language as the user input. If language is ambiguous, default to Russian.',
+            'If the user asks to fill fields, add data, update rows, or change table structure, use tools silently on the backend.',
+            'For any table mutation task, call get_records first if you need current table data.',
+            'After reading records, use patch_records, create_records, or add_table_column as needed.',
+            'If the question is about records, rows, or table content, use get_records.',
+            'If the user asks to add a new table column, use add_table_column.',
+            'If the user asks to fill empty fields, patch existing records instead of answering with code or JSON.',
+            'When filling or changing table data, always prioritize UPDATE of existing rows. Use CREATE only for new unique entities.',
+            'If user specifies row ranges (for example "rows 1-3" or "строки 1-3"), treat this as direct update intent for existing rows.',
+            'When mentioning any numeric values, statuses, or dates that exist in provided MWS table context, you MUST use live reference token format [Ref:tableId:rowId:colId]. Never output plain numeric/status/date values if they can be bound to table cells.',
+            'If the user asks for totals, averages, taxes, percentages, deltas, or any computed metric, return the formula as [Formula: expression] and use [Ref:tableId:rowId:colId] tokens inside the expression whenever possible.',
+            'If user asks for document structure or heading plan, return only anchor-based JSON array format [{"anchor":"...","title":"...","level":1|2|3}].',
+            'For anchor-based structure: enforce strict hierarchy H1 -> H2 -> H3, keep titles short and informative, preserve automatic numbering unless user explicitly asks otherwise, and never propose a heading that duplicates an existing heading in the document context.',
+            'If user asks for a report, assess expected report size. If report is likely long (more than 5 analysis points), start answer with [ACTION: CREATE_NEW_PAGE]. If report is short, start answer with [ACTION: INLINE_INSERT].',
           'When tool arguments require a datasheetId, use the exact Target MWS datasheetId from the context.',
-          'Keep the answer concise, factual, and grounded in the provided context or tool output.',
+            'Only answer the user after the table has already been changed by tools.',
+            'Keep the answer concise, factual, and grounded in the provided context or tool output.',
         ].join(' '),
       },
       {

@@ -1,4 +1,5 @@
 export type TextTransformationType = 'professional' | 'shorten' | 'expand' | 'fix_grammar';
+export type TextStyleId = 'standard' | 'business' | 'military' | 'medieval' | 'church' | 'fix' | 'expand';
 
 export interface ProseMirrorNode {
   type: string;

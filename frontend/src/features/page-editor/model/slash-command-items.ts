@@ -85,6 +85,26 @@ export function getSlashCommandItems(plugins: PluginCatalogItem[]): PageEditorSl
       },
     },
     {
+      id: 'live-reference',
+      label: 'Живая переменная',
+      hint: 'Привязать inline-значение к ячейке MWS таблицы',
+      keywords: ['ref', 'cell', 'live', 'mws', 'ячейка', 'переменная', 'таблица', 'reference'],
+      icon: '⦿',
+      run: () => {
+        // Handled in PageEditor with live reference picker flow.
+      },
+    },
+    {
+      id: 'live-formula',
+      label: 'Живая формула',
+      hint: 'Добавить вычисляемую формулу на основе [Ref:table:row:field]',
+      keywords: ['formula', 'calc', 'math', 'live', 'формула', 'вычисление', 'арифметика'],
+      icon: 'ƒx',
+      run: () => {
+        // Handled in PageEditor with live formula modal flow.
+      },
+    },
+    {
       id: 'task-list',
       label: 'Чеклист',
       hint: 'Создать список задач с чекбоксами',
@@ -203,7 +223,23 @@ export function getSlashCommandItems(plugins: PluginCatalogItem[]): PageEditorSl
       hint: 'Встроить YouTube, карту или другой внешний контент',
       keywords: ['iframe', 'embed', 'video', 'youtube', 'встраивание', 'видео', 'карта'],
       icon: '▶',
-      run: (editor: Editor) => { editor.chain().focus().setIframe({ src: '' }).run(); },
+      run: () => {
+        // Handled in PageEditor with iframe modal flow.
+      },
+    });
+  }
+
+  const bookmarksEnabled = plugins.some(p => p.id === 'bookmarks' && p.enabled)
+    && (plugins.find(p => p.id === 'bookmarks')?.settings?.['slash-menu'] ?? true);
+
+  if (bookmarksEnabled) {
+    items.push({
+      id: 'bookmark',
+      label: 'Закладка',
+      hint: 'Создать именованную закладку в тексте',
+      keywords: ['bookmark', 'anchor', 'закладка', 'якорь', 'метка'],
+      icon: '🔖',
+      run: (_editor: Editor) => { /* handled by controller via id */ },
     });
   }
 

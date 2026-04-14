@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CommentThreadStatus, WikiNodeType } from '@prisma/client';
+import { CommentResolveReason, CommentThreadStatus, WikiNodeType } from '@prisma/client';
 import { UserContext } from 'src/auth/user-context';
 import { PrismaService } from 'src/infra/prisma/prisma.service';
 import { PageAccessService } from 'src/page-access/page-access.service';
@@ -192,6 +192,7 @@ export class CommentsService {
         status: dto.status,
         resolvedBy: isResolved ? user.userId : null,
         resolvedAt: isResolved ? new Date() : null,
+        resolvedReason: isResolved ? CommentResolveReason.manual : null,
       },
       include: {
         messages: {
@@ -204,6 +205,48 @@ export class CommentsService {
     return {
       thread: this.mapThread(thread),
     };
+  }
+
+  async autoResolveMissingAnchorsAfterRestore(pageId: string, plainText: string, user: UserContext): Promise<number> {
+    await this.ensurePageExists(pageId);
+
+    const normalizedDocumentText = this.normalizeAnchorText(plainText);
+    const openThreads = await this.prisma.pageCommentThread.findMany({
+      where: {
+        pageId,
+        status: CommentThreadStatus.open,
+      },
+      select: {
+        id: true,
+        anchorText: true,
+      },
+    });
+
+    const missingThreadIds = openThreads
+      .filter((thread) => {
+        const normalizedAnchor = this.normalizeAnchorText(thread.anchorText);
+        return normalizedAnchor.length > 0 && !normalizedDocumentText.includes(normalizedAnchor);
+      })
+      .map((thread) => thread.id);
+
+    if (missingThreadIds.length === 0) {
+      return 0;
+    }
+
+    const resolvedAt = new Date();
+    await this.prisma.pageCommentThread.updateMany({
+      where: {
+        id: { in: missingThreadIds },
+      },
+      data: {
+        status: CommentThreadStatus.resolved,
+        resolvedBy: user.userId,
+        resolvedAt,
+        resolvedReason: CommentResolveReason.anchor_removed_by_restore,
+      },
+    });
+
+    return missingThreadIds.length;
   }
 
   private async ensurePageExists(pageId: string): Promise<void> {
@@ -268,6 +311,7 @@ export class CommentsService {
       createdByName: thread.createdByName,
       resolvedBy: thread.resolvedBy,
       resolvedAt: thread.resolvedAt,
+      resolvedReason: thread.resolvedReason ?? null,
       createdAt: thread.createdAt,
       updatedAt: thread.updatedAt,
       messages: thread.messages.map((message: any) => ({
@@ -280,5 +324,9 @@ export class CommentsService {
         updatedAt: message.updatedAt,
       })),
     };
+  }
+
+  private normalizeAnchorText(value: string): string {
+    return value.replace(/\s+/g, ' ').trim().toLowerCase();
   }
 }

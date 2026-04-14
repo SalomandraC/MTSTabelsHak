@@ -1,11 +1,15 @@
 import type { Editor } from '@tiptap/core';
 import { useEditorState } from '@tiptap/react';
 import type { MouseEvent } from 'react';
+import { useState } from 'react';
 
 import { handleListAction } from '../model/list-actions';
 import { menuBarStateSelector } from '../model/menu-state';
-import { getCanvasDrawSettings, getIframeEmbedSettings } from '../../plugins/model/plugin-registry';
+import { getCanvasDrawSettings, getIframeEmbedSettings, getBookmarkSettings } from '../../plugins/model/plugin-registry';
+import { ensureBoundaryBlocksAfterInsert } from '../model/boundary-block-utils';
 import { usePlugins } from '../../plugins';
+import { HighlightColorPicker } from './highlight-color-picker';
+import { CreateBookmarkModal, BookmarkPickerModal, collectBookmarks } from './bookmark-modal';
 
 import VectorLeft from '../../../app/images/VectorLeft.svg';
 import VectorRight from '../../../app/images/VectorRight.svg';
@@ -26,13 +30,15 @@ import BrushCleaning from '../../../app/images/brush-cleaning.svg';
 import AtSign from '../../../app/images/at-sign.svg';
 import Picture from '../../../app/images/Picture.svg';
 
-import { History, MessageSquare, MonitorPlay, Pencil, TextAlignCenter, TextAlignEnd, TextAlignStart } from 'lucide-react';
+import { History, MessageSquare, MonitorPlay, Pencil, TextAlignCenter, TextAlignEnd, TextAlignStart, Highlighter, BookmarkPlus, Link } from 'lucide-react';
 
 const redFilter = 'brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(2665%) hue-rotate(346deg) brightness(101%) contrast(97%)';
 
 type PageEditorToolbarProps = {
   editor: Editor | null;
   canEdit?: boolean;
+  headingNumberingEnabled?: boolean;
+  onToggleHeadingNumbering: (enabled: boolean) => void;
   onOpenLinkModal: (position?: { top: number; left: number }) => void;
   onOpenImageModal: () => void;
   onOpenIframeModal: () => void;
@@ -81,6 +87,10 @@ function areMenuStatesEqual(
     previous.canCode === next.canCode &&
     previous.isUnderline === next.isUnderline &&
     previous.canUnderline === next.canUnderline &&
+    previous.isHighlight === next.isHighlight &&
+    previous.canHighlight === next.canHighlight &&
+    previous.isBookmark === next.isBookmark &&
+    previous.isBookmarkLink === next.isBookmarkLink &&
     previous.canClearNodes === next.canClearNodes &&
     previous.isParagraph === next.isParagraph &&
     previous.isHeading1 === next.isHeading1 &&
@@ -168,6 +178,7 @@ function ToolbarButton({
       disabled={disabled} 
       className={className}
       aria-label={ariaLabel}
+      title={ariaLabel}
     >
       {icon || label}
     </button>
@@ -177,6 +188,8 @@ function ToolbarButton({
 export function PageEditorToolbar({
   editor,
   canEdit = true,
+  headingNumberingEnabled = false,
+  onToggleHeadingNumbering,
   onOpenLinkModal,
   onOpenImageModal,
   onOpenIframeModal,
@@ -187,8 +200,13 @@ export function PageEditorToolbar({
   const { items: plugins } = usePlugins();
   const canvasSettings = getCanvasDrawSettings(plugins);
   const iframeSettings = getIframeEmbedSettings(plugins);
+  const bookmarkSettings = getBookmarkSettings(plugins);
   const showCanvasButton = plugins.some(p => p.id === 'canvas-draw' && p.enabled) && canvasSettings['toolbar'];
   const showIframeButton = plugins.some(p => p.id === 'iframe-embed' && p.enabled) && iframeSettings['toolbar'];
+  const showBookmarkButtons = plugins.some(p => p.id === 'bookmarks' && p.enabled) && bookmarkSettings['toolbar'];
+  const [highlightPickerAnchor, setHighlightPickerAnchor] = useState<DOMRect | null>(null);
+  const [createBookmarkAnchor, setCreateBookmarkAnchor] = useState<DOMRect | null>(null);
+  const [bookmarkPickerAnchor, setBookmarkPickerAnchor] = useState<DOMRect | null>(null);
   const state =
     useEditorState({
       editor,
@@ -206,6 +224,10 @@ export function PageEditorToolbar({
       canCode: false,
       isUnderline: false,
       canUnderline: false,
+      isHighlight: false,
+      canHighlight: false,
+      isBookmark: false,
+      isBookmarkLink: false,
       canClearNodes: false,
       isParagraph: false,
       isHeading1: false,
@@ -348,9 +370,31 @@ export function PageEditorToolbar({
           disabled={!canEdit || !state.canUnderline}
           noBorder={false}
           isFirst={false}
-          isLast={true}
+          isLast={false}
           isInGroup={true}
           aria-label="Подчёркнутый (Ctrl+U)"
+        />
+        <ToolbarButton
+          icon={
+            <Highlighter 
+              className="h-4 w-4"
+              style={state.isHighlight ? { color: '#d92c2c' } : { color: 'rgba(80, 87, 98, 1)' }}
+            />
+          }
+          onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
+            if (!canEdit) {
+              return;
+            }
+            const rect = event.currentTarget.getBoundingClientRect();
+            setHighlightPickerAnchor(rect);
+          }}
+          pressed={state.isHighlight}
+          disabled={!canEdit || !state.canHighlight}
+          noBorder={false}
+          isFirst={false}
+          isLast={true}
+          isInGroup={true}
+          aria-label="Выделить маркером"
         />
 
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
@@ -426,7 +470,38 @@ export function PageEditorToolbar({
           isInGroup={true}
           aria-label="Заголовок 3"
         />
-
+        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+        <ToolbarButton
+          icon={(
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.25"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4 w-4"
+            >
+              <path d="M5 5.66H21" />
+              <path d="M10 11.66H21" />
+              <path d="M15 17.66H21" />
+              <text x="1" y="7" fontSize="4.5" fill="currentColor" stroke="none" fontFamily="monospace">1</text>
+              <text x="1" y="13" fontSize="4.5" fill="currentColor" stroke="none" fontFamily="monospace">1.1</text>
+              <text x="1" y="19" fontSize="4.5" fill="currentColor" stroke="none" fontFamily="monospace">1.1.1</text>
+            </svg>
+          )}
+          onClick={() => onToggleHeadingNumbering(!headingNumberingEnabled)}
+          pressed={headingNumberingEnabled}
+          disabled={!canEdit}
+          noBorder={false}
+          isFirst={true}
+          isLast={true}
+          isInGroup={true}
+          aria-label="Автонумерация заголовков"
+        />
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
         <ToolbarButton
@@ -552,35 +627,41 @@ export function PageEditorToolbar({
           aria-label="Вставить ссылку"
         />
 
+        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+
         {onCreateComment ? (
-          <ToolbarButton
-            icon={
-              <span className="flex items-center gap-1 px-0.5">
-                <MessageSquare className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />
-                {commentCount > 0 ? <span className="text-[11px] font-semibold">{commentCount}</span> : null}
-              </span>
-            }
-            onClick={() => onCreateComment(editor)}
-            isFirst={true}
-            isLast={true}
-            isInGroup={true}
-            aria-label="Комментировать выделение"
-          />
+          <div className="flex items-center">
+            <ToolbarButton
+              icon={
+                <span className="flex items-center gap-1 px-0.5">
+                  <MessageSquare className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />
+                  {commentCount > 0 ? <span className="text-[11px] font-semibold">{commentCount}</span> : null}
+                </span>
+              }
+              onClick={() => onCreateComment(editor)}
+              isFirst={true}
+              isLast={true}
+              isInGroup={true}
+              aria-label="Комментировать выделение"
+              />
+              <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+          </div>
         ) : null}
 
         {onOpenTimeMachine ? (
-          <ToolbarButton
-            icon={<History className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
-            onClick={onOpenTimeMachine}
-            disabled={!canEdit}
-            isFirst={true}
-            isLast={true}
-            isInGroup={true}
-            aria-label="Открыть машину времени"
-          />
+          <div className="flex items-center">
+            <ToolbarButton
+              icon={<History className="h-4 w-4" style={{ color: 'rgba(80, 87, 98, 1)' }} />}
+              onClick={onOpenTimeMachine}
+              disabled={!canEdit}
+              isFirst={true}
+              isLast={true}
+              isInGroup={true}
+              aria-label="Открыть машину времени"
+            />
+            <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+          </div>
         ) : null}
-
-        <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
 
         <ToolbarButton
           icon={
@@ -650,7 +731,10 @@ export function PageEditorToolbar({
                 />
               }
               label="Canvas"
-              onClick={() => editor.chain().focus().insertCanvasBlock().run()}
+              onClick={() => {
+                editor.chain().focus().insertCanvasBlock().run();
+                ensureBoundaryBlocksAfterInsert(editor);
+              }}
               isFirst={true}
               isLast={true}
               isInGroup={true}
@@ -705,7 +789,65 @@ export function PageEditorToolbar({
           isInGroup={true}
           aria-label="Очистить форматирование"
         />
+
+        {showBookmarkButtons && (
+          <>
+            <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
+            <ToolbarButton
+              icon={<BookmarkPlus className="h-4 w-4" style={state.isBookmark ? { color: '#7b67ee' } : { color: 'rgba(80,87,98,1)' }} />}
+              onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
+                if (!canEdit) return;
+                setCreateBookmarkAnchor(event.currentTarget.getBoundingClientRect());
+              }}
+              pressed={state.isBookmark}
+              disabled={!canEdit}
+              isFirst={true}
+              isLast={false}
+              isInGroup={true}
+              aria-label="Создать закладку"
+            />
+            <ToolbarButton
+              icon={<Link className="h-4 w-4" style={state.isBookmarkLink ? { color: '#7b67ee' } : { color: 'rgba(80,87,98,1)' }} />}
+              onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
+                if (!canEdit) return;
+                setBookmarkPickerAnchor(event.currentTarget.getBoundingClientRect());
+              }}
+              pressed={state.isBookmarkLink}
+              disabled={!canEdit}
+              isFirst={false}
+              isLast={true}
+              isInGroup={true}
+              aria-label="Ссылка на закладку"
+            />
+          </>
+        )}
       </div>
+
+      <HighlightColorPicker
+        editor={editor}
+        isOpen={Boolean(highlightPickerAnchor)}
+        anchorRect={highlightPickerAnchor}
+        onClose={() => setHighlightPickerAnchor(null)}
+      />
+      <CreateBookmarkModal
+        isOpen={Boolean(createBookmarkAnchor)}
+        anchorRect={createBookmarkAnchor}
+        onConfirm={(label) => {
+          editor.chain().focus().setBookmark({ id: `bm-${Date.now()}`, label }).run();
+          setCreateBookmarkAnchor(null);
+        }}
+        onClose={() => setCreateBookmarkAnchor(null)}
+      />
+      <BookmarkPickerModal
+        isOpen={Boolean(bookmarkPickerAnchor)}
+        anchorRect={bookmarkPickerAnchor}
+        bookmarks={collectBookmarks(editor)}
+        onSelect={(id) => {
+          editor.chain().focus().setBookmarkLink({ bookmarkId: id }).run();
+          setBookmarkPickerAnchor(null);
+        }}
+        onClose={() => setBookmarkPickerAnchor(null)}
+      />
     </div>
   );
 }

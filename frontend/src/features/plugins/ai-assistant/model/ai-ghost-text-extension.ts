@@ -11,27 +11,214 @@ type AIGhostTextOptions = {
 type AIGhostTextStorage = {
   suggestion: string;
   requestId: number;
+  anchorPos: number | null;
 };
+
+type CopilotVisibilityEvent = CustomEvent<{ open: boolean }>;
 
 const ghostTextPluginKey = new PluginKey<DecorationSet>('aiGhostTextPlugin');
 
-function buildDecorations(editor: any, suggestion: string): DecorationSet {
+function isCopilotOpen(): boolean {
+  const globalFlags = window as unknown as { __wikiliveCopilotOpen?: boolean };
+  return Boolean(globalFlags.__wikiliveCopilotOpen);
+}
+
+function isSlashMenuOpen(): boolean {
+  const globalFlags = window as unknown as { __wikiliveSlashMenuOpen?: boolean };
+  return Boolean(globalFlags.__wikiliveSlashMenuOpen);
+}
+
+function isWordChar(char: string): boolean {
+  return /[\p{L}\p{N}_]/u.test(char);
+}
+
+function isCursorInsideWord(editor: { state: any }): boolean {
+  const selection = editor.state.selection;
+
+  if (!selection.empty) {
+    return false;
+  }
+
+  const { doc } = editor.state;
+  const before = doc.textBetween(Math.max(0, selection.to - 1), selection.to, '', '');
+  const after = doc.textBetween(selection.to, Math.min(doc.content.size, selection.to + 1), '', '');
+
+  return isWordChar(before) && isWordChar(after);
+}
+
+function isSlashCommandActive(editor: { state: any }): boolean {
+  const selection = editor.state.selection;
+
+  if (!selection.empty) {
+    return false;
+  }
+
+  const textBeforeCursor = editor.state.doc.textBetween(
+    selection.$from.start(),
+    selection.to,
+    '\n',
+    ' ',
+  );
+
+  return /(?:^|\s)\/[^\n]*$/u.test(textBeforeCursor);
+}
+
+function clearSuggestion(instance: {
+  storage: { suggestion: string; requestId: number; anchorPos: number | null };
+  editor: { state: any; view: { dispatch: (transaction: any) => void } };
+}) {
+  instance.storage.requestId += 1;
+  instance.storage.anchorPos = null;
+
+  if (!instance.storage.suggestion) {
+    return;
+  }
+
+  instance.storage.suggestion = '';
+  instance.editor.view.dispatch(instance.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
+}
+
+function buildSuggestionForCursor(editor: any, suggestion: string): string {
+  const selection = editor.state.selection;
+  const from = selection.to;
+  const previousChar = editor.state.doc.textBetween(Math.max(0, from - 1), from, '', '');
+  const trimmedSuggestion = suggestion.trimStart();
+
+  if (!trimmedSuggestion) {
+    return '';
+  }
+
+  const startsWithPunctuation = /^[,.;:!?)]/.test(trimmedSuggestion);
+  const needsLeadingSpace = previousChar.length > 0 && !/\s/.test(previousChar) && !startsWithPunctuation;
+
+  return needsLeadingSpace ? ` ${trimmedSuggestion}` : trimmedSuggestion;
+}
+
+function countTrailingSpacesBeforeCursor(editor: any): number {
+  const selection = editor.state.selection;
+  const cursorPos = selection.to;
+  const scanFrom = Math.max(0, cursorPos - 64);
+  const chunk = editor.state.doc.textBetween(scanFrom, cursorPos, '', '');
+
+  let count = 0;
+  for (let i = chunk.length - 1; i >= 0; i -= 1) {
+    if (chunk[i] !== ' ') {
+      break;
+    }
+
+    count += 1;
+  }
+
+  return count;
+}
+
+function buildDecorations(editor: any, suggestion: string, anchorPos: number | null): DecorationSet {
+  if (isCopilotOpen()) {
+    return DecorationSet.empty;
+  }
+
   const state = editor.state;
   const selection = state.selection;
 
-  if (!suggestion || !selection.empty) {
+  if (!suggestion || !selection.empty || anchorPos === null || selection.to !== anchorPos) {
+    return DecorationSet.empty;
+  }
+
+  const preview = buildSuggestionForCursor(editor, suggestion);
+  if (!preview) {
     return DecorationSet.empty;
   }
 
   const widget = Decoration.widget(selection.to, () => {
     const span = document.createElement('span');
     span.className = 'ai-ghost-text-hint';
-    span.textContent = suggestion;
+    span.textContent = preview;
     span.title = 'Tab, чтобы принять';
     return span;
   });
 
   return DecorationSet.create(state.doc, [widget]);
+}
+
+function scheduleGhostSuggestion(instance: {
+  storage: { suggestion: string; requestId: number; anchorPos: number | null };
+  options: { minChars: number; debounceMs: number; fetchCompletion: (currentText: string) => Promise<string> };
+  editor: {
+    isEditable: boolean;
+    state: any;
+    view: { dispatch: (transaction: any) => void };
+  };
+  __aiGhostTimer?: number;
+}) {
+  if (isCopilotOpen()) {
+    clearSuggestion(instance);
+    return;
+  }
+
+  const selection = instance.editor.state.selection;
+  if (!selection.empty) {
+    return;
+  }
+
+  if (isSlashMenuOpen() || isSlashCommandActive(instance.editor) || isCursorInsideWord(instance.editor)) {
+    clearSuggestion(instance);
+    window.clearTimeout(instance.__aiGhostTimer);
+    return;
+  }
+
+  const currentText = instance.editor.state.doc.textBetween(Math.max(0, selection.to - 1200), selection.to, '\n', ' ');
+
+  if (currentText.trim().length < instance.options.minChars) {
+    clearSuggestion(instance);
+    window.clearTimeout(instance.__aiGhostTimer);
+    return;
+  }
+
+  const expectedPos = selection.to;
+  const requestId = instance.storage.requestId + 1;
+  instance.storage.requestId = requestId;
+
+  window.clearTimeout(instance.__aiGhostTimer);
+  instance.__aiGhostTimer = window.setTimeout(() => {
+    void instance.options.fetchCompletion(currentText).then((nextSuggestion) => {
+      if (instance.storage.requestId !== requestId) {
+        return;
+      }
+
+      const normalized = nextSuggestion.trim();
+      if (!normalized) {
+        if (instance.storage.suggestion) {
+          instance.storage.suggestion = '';
+          instance.storage.anchorPos = null;
+          instance.editor.view.dispatch(instance.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
+        }
+        return;
+      }
+
+      if (
+        isCopilotOpen()
+        || !instance.editor.isEditable
+        || !instance.editor.state.selection.empty
+        || instance.editor.state.selection.to !== expectedPos
+      ) {
+        return;
+      }
+
+      instance.storage.suggestion = normalized;
+      instance.storage.anchorPos = expectedPos;
+      instance.editor.view.dispatch(instance.editor.state.tr.setMeta(ghostTextPluginKey, 'refresh'));
+    }).catch(() => {
+      if (instance.storage.requestId !== requestId) {
+        return;
+      }
+
+      if (instance.storage.suggestion) {
+        instance.storage.suggestion = '';
+        instance.storage.anchorPos = null;
+        instance.editor.view.dispatch(instance.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
+      }
+    });
+  }, instance.options.debounceMs);
 }
 
 export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhostTextStorage>({
@@ -49,16 +236,37 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
     return {
       suggestion: '',
       requestId: 0,
+      anchorPos: null,
     };
   },
 
   onCreate() {
     this.storage.suggestion = '';
     this.storage.requestId = 0;
+    this.storage.anchorPos = null;
+
+    const handler = (event: Event) => {
+      const customEvent = event as CopilotVisibilityEvent;
+      if (!customEvent.detail?.open) {
+        return;
+      }
+
+      clearSuggestion(this as unknown as {
+        storage: { suggestion: string; requestId: number; anchorPos: number | null };
+        editor: { state: any; view: { dispatch: (transaction: any) => void } };
+      });
+    };
+
+    (this as unknown as { __copilotVisibilityHandler?: (event: Event) => void }).__copilotVisibilityHandler = handler;
+    window.addEventListener('wikilive:copilot-visibility', handler);
   },
 
   onDestroy() {
     window.clearTimeout((this as unknown as { __aiGhostTimer?: number }).__aiGhostTimer);
+    const handler = (this as unknown as { __copilotVisibilityHandler?: (event: Event) => void }).__copilotVisibilityHandler;
+    if (handler) {
+      window.removeEventListener('wikilive:copilot-visibility', handler);
+    }
   },
 
   addProseMirrorPlugins() {
@@ -70,10 +278,11 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
           apply: (transaction, oldState) => {
             if (transaction.docChanged && this.storage.suggestion) {
               this.storage.suggestion = '';
+              this.storage.anchorPos = null;
             }
 
             if (transaction.docChanged || transaction.selectionSet || transaction.getMeta(ghostTextPluginKey)) {
-              return buildDecorations(this.editor, this.storage.suggestion);
+              return buildDecorations(this.editor, this.storage.suggestion, this.storage.anchorPos);
             }
 
             return oldState.map(transaction.mapping, transaction.doc);
@@ -88,6 +297,7 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
 
             this.storage.suggestion = '';
             this.storage.requestId += 1;
+            this.storage.anchorPos = null;
             this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
             return false;
           },
@@ -104,13 +314,34 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
           return false;
         }
 
-        const inserted = this.editor.commands.insertContent(suggestion);
+        const finalSuggestion = buildSuggestionForCursor(this.editor, suggestion);
+        if (!finalSuggestion) {
+          return false;
+        }
+
+        const trailingSpaces = countTrailingSpacesBeforeCursor(this.editor);
+        let inserted = false;
+
+        if (trailingSpaces > 1) {
+          const cursorPos = this.editor.state.selection.to;
+          const deleteFrom = cursorPos - (trailingSpaces - 1);
+          inserted = this.editor
+            .chain()
+            .focus()
+            .deleteRange({ from: deleteFrom, to: cursorPos })
+            .insertContent(finalSuggestion)
+            .run();
+        } else {
+          inserted = this.editor.commands.insertContent(finalSuggestion);
+        }
+
         if (!inserted) {
           return false;
         }
 
         this.storage.suggestion = '';
         this.storage.requestId += 1;
+        this.storage.anchorPos = null;
         this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
         return true;
       },
@@ -121,6 +352,7 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
 
         this.storage.suggestion = '';
         this.storage.requestId += 1;
+        this.storage.anchorPos = null;
         this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
         return true;
       },
@@ -131,6 +363,7 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
 
         this.storage.suggestion = '';
         this.storage.requestId += 1;
+        this.storage.anchorPos = null;
         this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
         return false;
       },
@@ -138,66 +371,45 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
   },
 
   onSelectionUpdate() {
-    if (!this.editor.state.selection.empty && this.storage.suggestion) {
-      this.storage.suggestion = '';
-      this.storage.requestId += 1;
-      this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
+    if (this.editor.state.selection.empty && this.storage.suggestion && this.storage.anchorPos !== this.editor.state.selection.to) {
+      clearSuggestion(this as unknown as {
+        storage: { suggestion: string; requestId: number; anchorPos: number | null };
+        editor: { state: any; view: { dispatch: (transaction: any) => void } };
+      });
+      return;
     }
+
+    if (!this.editor.state.selection.empty && this.storage.suggestion) {
+      clearSuggestion(this as unknown as {
+        storage: { suggestion: string; requestId: number; anchorPos: number | null };
+        editor: { state: any; view: { dispatch: (transaction: any) => void } };
+      });
+      return;
+    }
+
+    scheduleGhostSuggestion(this as unknown as {
+      storage: { suggestion: string; requestId: number; anchorPos: number | null };
+      options: { minChars: number; debounceMs: number; fetchCompletion: (currentText: string) => Promise<string> };
+      editor: {
+        isEditable: boolean;
+        state: any;
+        view: { dispatch: (transaction: any) => void };
+      };
+      __aiGhostTimer?: number;
+    });
   },
 
   onUpdate() {
-    const selection = this.editor.state.selection;
-    if (!selection.empty) {
-      return;
-    }
-
-    const currentText = this.editor.state.doc.textBetween(Math.max(0, selection.to - 1200), selection.to, '\n', ' ');
-
-    if (currentText.trim().length < this.options.minChars) {
-      if (this.storage.suggestion) {
-        this.storage.suggestion = '';
-        this.storage.requestId += 1;
-        this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
-      }
-      return;
-    }
-
-    const expectedPos = selection.to;
-    const requestId = this.storage.requestId + 1;
-    this.storage.requestId = requestId;
-
-    window.clearTimeout((this as unknown as { __aiGhostTimer?: number }).__aiGhostTimer);
-    (this as unknown as { __aiGhostTimer?: number }).__aiGhostTimer = window.setTimeout(() => {
-      void this.options.fetchCompletion(currentText).then((nextSuggestion) => {
-        if (this.storage.requestId !== requestId) {
-          return;
-        }
-
-        const normalized = nextSuggestion.trim();
-        if (!normalized) {
-          if (this.storage.suggestion) {
-            this.storage.suggestion = '';
-            this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
-          }
-          return;
-        }
-
-        if (!this.editor.isEditable || !this.editor.state.selection.empty || this.editor.state.selection.to !== expectedPos) {
-          return;
-        }
-
-        this.storage.suggestion = normalized.startsWith(' ') ? normalized : ` ${normalized}`;
-        this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'refresh'));
-      }).catch(() => {
-        if (this.storage.requestId !== requestId) {
-          return;
-        }
-
-        if (this.storage.suggestion) {
-          this.storage.suggestion = '';
-          this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
-        }
-      });
-    }, this.options.debounceMs);
+    scheduleGhostSuggestion(this as unknown as {
+      storage: { suggestion: string; requestId: number; anchorPos: number | null };
+      options: { minChars: number; debounceMs: number; fetchCompletion: (currentText: string) => Promise<string> };
+      editor: {
+        isEditable: boolean;
+        state: any;
+        view: { dispatch: (transaction: any) => void };
+      };
+      __aiGhostTimer?: number;
+    });
   },
+
 });

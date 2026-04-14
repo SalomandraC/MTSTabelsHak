@@ -102,6 +102,8 @@ export class CollabService {
   }
 
   async createCheckpoint(pageId: string, dto: CreateCheckpointDto, user: UserContext) {
+    await this.pageAccessService.assertCanEdit(pageId, user);
+
     return this.persistenceService.createCheckpoint(
       pageId,
       dto.documentState.value,

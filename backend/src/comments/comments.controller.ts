@@ -9,7 +9,6 @@ import {
   Query,
 } from '@nestjs/common';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
-import { Public } from 'src/common/decorators/public.decorator';
 import { UserContext } from 'src/auth/user-context';
 import { CommentsService } from './comments.service';
 import { CreateCommentMessageDto } from './dto/create-comment-message.dto';
@@ -22,7 +21,6 @@ export class CommentsController {
   constructor(private readonly commentsService: CommentsService) {}
 
   @Get()
-  @Public()
   async listThreads(
     @Param('pageId') pageId: string,
     @Query('includeResolved') includeResolved = 'true',

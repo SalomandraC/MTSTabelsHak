@@ -46,7 +46,44 @@ import { CommentAnchor } from './comment-anchor';
 import { ImageBlock } from './image-block';
 import { PageLink } from './page-link';
 import { RootBlock } from './root-block';
+import { LiveReference } from './live-reference';
+import { LiveFormula } from './live-formula';
 import { TemplateVariable } from './template-variable';
+import { Bookmark, BookmarkLink } from './bookmark';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
+
+const bookmarkClickKey = new PluginKey('bookmarkClick');
+
+const BookmarkClickHandler = Extension.create({
+  name: 'bookmarkClickHandler',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: bookmarkClickKey,
+        props: {
+          handleClick(view, _pos, event) {
+            const target = event.target as HTMLElement;
+            const linkEl = target.closest('.bookmark-link') as HTMLElement | null;
+            if (!linkEl) return false;
+            const bookmarkId = linkEl.dataset.bookmarkHref;
+            if (!bookmarkId) return false;
+
+            // Ищем якорь прямо в DOM редактора — надёжнее чем nodeDOM(pos)
+            const anchorEl = view.dom.querySelector(
+              `[data-bookmark-id="${CSS.escape(bookmarkId)}"]`,
+            ) as HTMLElement | null;
+
+            if (anchorEl) {
+              anchorEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            return true;
+          },
+        },
+      }),
+    ];
+  },
+});
 
 const lowlight = createLowlight();
 lowlight.register('bash', bash);
@@ -128,7 +165,12 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
   return [
     Markdown,
     TextStyle,
-    Highlight,
+    Highlight.configure({
+      multicolor: true,
+    }),
+    Bookmark,
+    BookmarkLink,
+    BookmarkClickHandler,
     Typography,
     DashShortcut,
     Dropcursor.configure({
@@ -139,6 +181,8 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     RootBlock,
     ImageBlock,
     TemplateVariable,
+    LiveReference,
+    LiveFormula,
     PageLink,
     CommentAnchor.configure({
       onOpenThread: options.onOpenCommentThread,
@@ -172,6 +216,11 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
       link: false,
       underline: false,
       horizontalRule: false,
+      heading: {
+        HTMLAttributes: {
+          class: 'page-editor-heading',
+        },
+      },
     }),
     Placeholder.configure({
       emptyEditorClass: 'is-editor-empty',

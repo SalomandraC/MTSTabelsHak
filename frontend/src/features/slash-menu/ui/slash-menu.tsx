@@ -23,7 +23,7 @@ export function SlashMenu({
 
   return (
     <div
-      className="slash-menu-scroll fixed z-[60] max-h-[min(18rem,46vh)] w-[min(19rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-editor-border-subtle bg-white p-1.5 shadow-[0_12px_28px_rgba(17,25,40,0.14)] max-sm:left-3 max-sm:w-[calc(100vw-1.5rem)]"
+      className="slash-menu-scroll absolute z-[60] max-h-[min(18rem,46vh)] w-[min(19rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-editor-border-subtle bg-white p-1.5 shadow-[0_12px_28px_rgba(17,25,40,0.14)] max-sm:left-3 max-sm:w-[calc(100vw-1.5rem)]"
       style={{ top: position.top, left: position.left }}
       role="listbox"
       aria-label="Slash menu"

@@ -88,7 +88,7 @@ export function CreateFieldModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[95] bg-black/35" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[101] bg-black/35" onMouseDown={onClose}>
       <div
         role="dialog"
         aria-modal="true"

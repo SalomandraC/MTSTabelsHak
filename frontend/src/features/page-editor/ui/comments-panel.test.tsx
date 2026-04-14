@@ -23,6 +23,7 @@ const baseThread = {
   createdByName: 'Ivan',
   resolvedBy: null,
   resolvedAt: null,
+  resolvedReason: null,
   createdAt: '2026-04-12T10:00:00.000Z',
   updatedAt: '2026-04-12T10:00:00.000Z',
   isDraft: false,

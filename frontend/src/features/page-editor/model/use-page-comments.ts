@@ -28,6 +28,7 @@ function createDraftThread(pageId: string, threadId: string, anchorText: string)
     createdByName: '',
     resolvedBy: null,
     resolvedAt: null,
+    resolvedReason: null,
     createdAt: now,
     updatedAt: now,
     messages: [],
@@ -59,6 +60,17 @@ export function usePageComments({ pageId, editor, enabled }: UsePageCommentsOpti
       try {
         const response = await wikiliveApi.getComments(pageId, true);
         setThreads(response.items);
+        setActiveThreadId((current) => {
+          if (!current) {
+            return current;
+          }
+
+          if (draftThread?.id === current) {
+            return current;
+          }
+
+          return response.items.some((thread) => thread.id === current && thread.status === 'open') ? current : null;
+        });
         setErrorMessage('');
       } catch (error) {
         if (!silent) {
@@ -70,7 +82,7 @@ export function usePageComments({ pageId, editor, enabled }: UsePageCommentsOpti
         }
       }
     },
-    [enabled, pageId],
+    [draftThread?.id, enabled, pageId],
   );
 
   useEffect(() => {

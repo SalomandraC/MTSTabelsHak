@@ -21,4 +21,24 @@ describe('PageEditorHeader', () => {
     expect(screen.queryByDisplayValue('Документ')).not.toBeInTheDocument();
     expect(screen.queryByDisplayValue('Описание')).not.toBeInTheDocument();
   });
+
+  it('switches between document views from the header menu', () => {
+    const onViewModeChange = vi.fn();
+
+    render(
+      <PageEditorHeader
+        title="Документ"
+        description="Описание"
+        viewMode="standard"
+        showViewModeControls
+        onSave={vi.fn()}
+        onViewModeChange={onViewModeChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Выбрать представление документа'));
+    fireEvent.click(screen.getAllByRole('menuitemradio')[1]!);
+
+    expect(onViewModeChange).toHaveBeenCalledWith('paged');
+  });
 });
