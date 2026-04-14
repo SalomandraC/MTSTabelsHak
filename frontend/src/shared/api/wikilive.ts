@@ -252,6 +252,10 @@ export type WikiPage = {
   backlinksCount: number;
   access?: DocumentAccessSummary;
   embeds: PageEmbed[];
+  document?: {
+    type: string;
+    content?: unknown[];
+  };
   documentState?: PageDocumentState;
 };
 
@@ -1022,9 +1026,12 @@ export const wikiliveApi = {
       }),
     });
   },
-  getPage(pageId: string) {
+  getPage(pageId: string, options?: { readOnlyLink?: boolean }) {
     return request<{ page: WikiPage }>(`/api/v1/pages/${pageId}`, {
-      query: { includeDocumentState: true },
+      query: {
+        includeDocumentState: true,
+        readOnlyLink: options?.readOnlyLink ?? false,
+      },
     });
   },
   getPageAccess(pageId: string) {

@@ -8,8 +8,17 @@ export type WorkspaceRouteState = {
 
 export function readWorkspaceRoute(): WorkspaceRouteState {
   const url = new URL(window.location.href);
+  const readOnlyPathMatch = url.pathname.match(/^\/spaces\/([^/]+)\/pages\/([^/]+)\/read-only\/?$/);
   const routeMatch = url.pathname.match(/^\/spaces\/([^/]+)(?:\/pages\/([^/]+))?/);
-  const readOnly = url.searchParams.get('readOnly') === 'true';
+  const readOnly = url.searchParams.get('readOnly') === 'true' || Boolean(readOnlyPathMatch);
+
+  if (readOnlyPathMatch) {
+    return {
+      spaceId: decodeURIComponent(readOnlyPathMatch[1] ?? ''),
+      pageId: decodeURIComponent(readOnlyPathMatch[2] ?? ''),
+      readOnly,
+    };
+  }
 
   if (routeMatch) {
     return {
