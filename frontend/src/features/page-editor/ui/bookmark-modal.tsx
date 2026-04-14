@@ -20,6 +20,7 @@ export function CreateBookmarkModal({
 }: CreateBookmarkModalProps) {
   const [label, setLabel] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -31,8 +32,15 @@ export function CreateBookmarkModal({
   useEffect(() => {
     if (!isOpen) return;
     const handleEscape = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const handleClickOutside = (e: MouseEvent) => {
+      if (modalRef.current && !modalRef.current.contains(e.target as Node)) onClose();
+    };
     document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, [isOpen, onClose]);
 
   if (!isOpen || !anchorRect) return null;
@@ -52,6 +60,7 @@ export function CreateBookmarkModal({
 
   return createPortal(
     <div
+      ref={modalRef}
       style={{ position: 'fixed', top, left, zIndex: 9999, width: W }}
       className="rounded-xl border border-editor-border-control bg-white p-3 shadow-lg"
       role="dialog"

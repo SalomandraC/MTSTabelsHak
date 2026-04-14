@@ -2173,21 +2173,28 @@ export function WorkspacePage() {
 
   const handleExportPage = (pageId: string, title: string, format: ExportFormat) => {
     const doExport = async () => {
-      let doc: unknown;
-
-      if (pageId === activePageId && activeEditor) {
-        doc = activeEditor.getJSON();
-      } else {
-        const history = await wikiliveApi.listPageHistory(pageId, 1);
-        const checkpointId = history.items[0]?.id;
-        if (!checkpointId) {
-          throw new Error('Нет сохранённых версий страницы');
+      // If exporting the active page, force-save a checkpoint first so we get the latest content
+      if (pageId === activePageId && documentStateEncoder) {
+        const value = documentStateEncoder();
+        if (value) {
+          await wikiliveApi.createCheckpoint(pageId, value, 'manual');
         }
-        const checkpoint = await wikiliveApi.getPageHistoryCheckpoint(pageId, checkpointId);
-        doc = checkpoint.document;
       }
 
-      await exportDocument(title, doc, format);
+      const history = await wikiliveApi.listPageHistory(pageId, 1);
+      const checkpointId = history.items[0]?.id;
+
+      let doc: unknown;
+      if (checkpointId) {
+        const checkpoint = await wikiliveApi.getPageHistoryCheckpoint(pageId, checkpointId);
+        doc = checkpoint.document;
+      } else if (pageId === activePageId && activeEditor) {
+        doc = activeEditor.getJSON();
+      } else {
+        throw new Error('Нет сохранённых версий страницы');
+      }
+
+      await exportDocument(title, doc, format, selectedSpaceId);
     };
 
     void doExport().catch((err) => {
