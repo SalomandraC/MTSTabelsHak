@@ -520,15 +520,25 @@
 
   .tiptap .mermaid-diagram-node {
     display: block;
-    border: 1px solid #d9e0ec;
+    border: 1px solid #f2c6cf;
     border-radius: 0.85rem;
-    background: #f9fbff;
+    background: linear-gradient(180deg, #fff7f8 0%, #ffffff 100%);
     margin: 1rem 0;
     overflow: hidden;
+    transition:
+      border-color 120ms ease,
+      box-shadow 120ms ease,
+      transform 120ms ease;
+  }
+
+  .tiptap .mermaid-diagram-node:hover {
+    border-color: #d70032;
+    box-shadow: 0 10px 24px rgba(215, 0, 50, 0.09);
   }
 
   .tiptap .mermaid-diagram-node--selected {
-    box-shadow: 0 0 0 2px #9fbbff;
+    border-color: #d70032;
+    box-shadow: 0 0 0 2px rgba(215, 0, 50, 0.14);
   }
 
   .tiptap .mermaid-diagram-node__header {
@@ -537,8 +547,8 @@
     justify-content: space-between;
     gap: 0.75rem;
     padding: 0.55rem 0.8rem;
-    background: linear-gradient(180deg, #f3f7ff 0%, #eef4ff 100%);
-    border-bottom: 1px solid #e3ebfb;
+    background: linear-gradient(180deg, #fff1f3 0%, #ffe9ed 100%);
+    border-bottom: 1px solid #f2c6cf;
   }
 
   .tiptap .mermaid-diagram-node__title {
@@ -550,18 +560,19 @@
   }
 
   .tiptap .mermaid-diagram-node__edit {
-    border: 1px solid #c7d5f5;
+    border: 1px solid #f0b6c2;
     border-radius: 0.55rem;
     padding: 0.3rem 0.55rem;
     background: #ffffff;
-    color: #2f4676;
+    color: #b00025;
     font-size: 0.74rem;
     font-weight: 650;
     cursor: pointer;
   }
 
   .tiptap .mermaid-diagram-node__edit:hover {
-    background: #eff5ff;
+    background: #fff0f3;
+    border-color: #d70032;
   }
 
   .tiptap .mermaid-diagram-node__surface {
@@ -593,20 +604,21 @@
     background: rgba(19, 26, 39, 0.34);
     display: grid;
     place-items: center;
-    z-index: 120;
-    padding: 1rem;
+    z-index: 101;
+    padding: 0.75rem;
   }
 
   .mermaid-diagram-editor {
-    width: min(1040px, 96vw);
-    max-height: min(92vh, 860px);
+    width: 100%;
+    max-width: 56rem;
+    height: 92vh;
     display: flex;
     flex-direction: column;
-    border: 1px solid #dbe3f0;
-    border-radius: 1rem;
-    background: #ffffff;
-    box-shadow: 0 26px 62px rgba(15, 23, 42, 0.25);
     overflow: hidden;
+    border: 1px solid #ffd2d9;
+    border-radius: 24px;
+    background: #ffffff;
+    box-shadow: 0 28px 80px rgba(17, 24, 39, 0.26);
   }
 
   .mermaid-diagram-editor__header {
@@ -614,32 +626,40 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
-    padding: 0.95rem 1.1rem;
-    border-bottom: 1px solid #ebf0f9;
-    background: #f6f9ff;
+    padding: 1.1rem 1.25rem;
+    border-bottom: 1px solid #b00025;
+    background: #d70032;
   }
 
   .mermaid-diagram-editor__header h3 {
     margin: 0;
     font-size: 1rem;
     font-weight: 700;
-    color: #2d3b5a;
+    color: #ffffff;
   }
 
   .mermaid-diagram-editor__close {
-    border: 1px solid #cfd9eb;
-    border-radius: 0.55rem;
-    background: #ffffff;
-    color: #3d4c6f;
-    padding: 0.32rem 0.6rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
     cursor: pointer;
+  }
+
+  .mermaid-diagram-editor__close:hover {
+    background: rgba(255, 255, 255, 0.18);
   }
 
   .mermaid-diagram-editor__presets {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
-    padding: 0.7rem 1.1rem;
+    padding: 0.85rem 1.25rem;
     border-bottom: 1px solid #edf1f8;
     background: #fafcff;
   }
@@ -663,8 +683,9 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 0.85rem;
-    padding: 0.95rem 1.1rem;
-    min-height: 420px;
+    padding: 1rem 1.25rem;
+    min-height: 0;
+    flex: 1;
     overflow: auto;
   }
 
@@ -686,7 +707,7 @@
 
   .mermaid-diagram-editor__textarea {
     width: 100%;
-    min-height: 330px;
+    min-height: 100%;
     resize: vertical;
     border: 1px solid #d2ddee;
     border-radius: 0.8rem;
@@ -699,7 +720,7 @@
   }
 
   .mermaid-diagram-editor__preview {
-    min-height: 330px;
+    min-height: 100%;
     border: 1px solid #d8e2f3;
     border-radius: 0.8rem;
     padding: 0.75rem;
@@ -716,7 +737,7 @@
     display: flex;
     justify-content: flex-end;
     gap: 0.6rem;
-    padding: 0.75rem 1.1rem 1rem;
+    padding: 0.85rem 1.25rem 1.1rem;
     border-top: 1px solid #edf1f8;
     background: #fafcff;
   }
@@ -751,6 +772,11 @@
   }
 
   @media (max-width: 960px) {
+    .mermaid-diagram-editor {
+      height: min(92vh, 860px);
+      max-width: 100%;
+    }
+
     .mermaid-diagram-editor__body {
       grid-template-columns: minmax(0, 1fr);
     }
@@ -763,21 +789,42 @@
 
   @media (prefers-color-scheme: dark) {
     .tiptap .mermaid-diagram-node {
-      border-color: #344157;
-      background: #1b2432;
+      border-color: #5c1b29;
+      background: linear-gradient(180deg, #24141a 0%, #1a1014 100%);
+    }
+
+    .tiptap .mermaid-diagram-node:hover {
+      border-color: #ff4d6d;
+      box-shadow: 0 10px 24px rgba(215, 0, 50, 0.22);
+    }
+
+    .tiptap .mermaid-diagram-node--selected {
+      border-color: #ff4d6d;
+      box-shadow: 0 0 0 2px rgba(255, 77, 109, 0.18);
     }
 
     .tiptap .mermaid-diagram-node__header {
-      background: #1f2a3a;
-      border-bottom-color: #304058;
+      background: linear-gradient(180deg, #38151f 0%, #2a1119 100%);
+      border-bottom-color: #5c1b29;
     }
 
     .tiptap .mermaid-diagram-node__title {
-      color: #d6e2ff;
+      color: #ffd7de;
     }
 
     .tiptap .mermaid-diagram-node__surface {
-      background: #202a3a;
+      background: #1a1014;
+    }
+
+    .tiptap .mermaid-diagram-node__edit {
+      border-color: #6f2b39;
+      background: #231217;
+      color: #ffd7de;
+    }
+
+    .tiptap .mermaid-diagram-node__edit:hover {
+      background: #3a1520;
+      border-color: #ff4d6d;
     }
 
     .tiptap .mermaid-diagram-node__error {

@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import type { NodeViewProps } from '@tiptap/react';
 import { NodeViewWrapper } from '@tiptap/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -118,48 +119,16 @@ export function MermaidDiagramNodeView({ node, updateAttributes, selected, edito
     };
   }, [showActions, isEditorOpen]);
 
-  return (
-    <NodeViewWrapper
-      className={[
-        'mermaid-diagram-node',
-        selected ? 'mermaid-diagram-node--selected' : '',
-      ].filter(Boolean).join(' ')}
-      data-type="mermaid-diagram"
-      ref={containerRef}
-      onClick={() => setShowActions(true)}
-      onDoubleClick={() => {
-        if (!isEditable) {
-          return;
-        }
-
-        setShowActions(true);
-        setIsEditorOpen(true);
-      }}
-    >
-      <div className="mermaid-diagram-node__header" contentEditable={false}>
-        <span className="mermaid-diagram-node__title">Mermaid Diagram</span>
-        {isEditable && showActions ? (
-          <button
-            type="button"
-            className="mermaid-diagram-node__edit"
-            onClick={() => setIsEditorOpen(true)}
+  const editorModal = isEditorOpen && typeof document !== 'undefined'
+    ? createPortal(
+        <div className="mermaid-diagram-editor__backdrop" onMouseDown={() => setIsEditorOpen(false)}>
+          <section
+            className="mermaid-diagram-editor"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Редактор Mermaid-диаграммы"
+            onMouseDown={(event) => event.stopPropagation()}
           >
-            Редактировать
-          </button>
-        ) : null}
-      </div>
-
-      <div className="mermaid-diagram-node__surface" contentEditable={false}>
-        {previewSvg ? (
-          <div className="mermaid-diagram-node__svg" dangerouslySetInnerHTML={{ __html: previewSvg }} />
-        ) : null}
-
-        {previewError ? <p className="mermaid-diagram-node__error">{previewError}</p> : null}
-      </div>
-
-      {isEditorOpen ? (
-        <div className="mermaid-diagram-editor__backdrop" contentEditable={false}>
-          <section className="mermaid-diagram-editor" role="dialog" aria-label="Редактор Mermaid-диаграммы">
             <header className="mermaid-diagram-editor__header">
               <h3>Редактирование диаграммы</h3>
               <button
@@ -230,8 +199,51 @@ export function MermaidDiagramNodeView({ node, updateAttributes, selected, edito
               </button>
             </footer>
           </section>
-        </div>
-      ) : null}
+        </div>,
+        document.body,
+      )
+    : null;
+
+  return (
+    <NodeViewWrapper
+      className={[
+        'mermaid-diagram-node',
+        selected ? 'mermaid-diagram-node--selected' : '',
+      ].filter(Boolean).join(' ')}
+      data-type="mermaid-diagram"
+      ref={containerRef}
+      onClick={() => setShowActions(true)}
+      onDoubleClick={() => {
+        if (!isEditable) {
+          return;
+        }
+
+        setShowActions(true);
+        setIsEditorOpen(true);
+      }}
+    >
+      <div className="mermaid-diagram-node__header" contentEditable={false}>
+        <span className="mermaid-diagram-node__title">Mermaid Diagram</span>
+        {isEditable && showActions ? (
+          <button
+            type="button"
+            className="mermaid-diagram-node__edit"
+            onClick={() => setIsEditorOpen(true)}
+          >
+            Редактировать
+          </button>
+        ) : null}
+      </div>
+
+      <div className="mermaid-diagram-node__surface" contentEditable={false}>
+        {previewSvg ? (
+          <div className="mermaid-diagram-node__svg" dangerouslySetInnerHTML={{ __html: previewSvg }} />
+        ) : null}
+
+        {previewError ? <p className="mermaid-diagram-node__error">{previewError}</p> : null}
+      </div>
+
+      {editorModal}
     </NodeViewWrapper>
   );
 }
