@@ -195,4 +195,17 @@ export const pluginDefinitions: PluginDefinition[] = [
       'slash-menu': true,
     },
   },
+  {
+    id: 'visual-diagrams',
+    title: 'Визуальные диаграммы',
+    description: 'Создание UML-схем и графиков процессов с помощью ИИ и Mermaid.js',
+    category: 'core',
+    kind: 'optional',
+    defaultEnabled: true,
+    implemented: true,
+    placement: ['Редактор', 'Slash-меню', 'AI Inline Copilot'],
+    defaultSettings: {
+      'slash-menu': true,
+    },
+  },
 ];

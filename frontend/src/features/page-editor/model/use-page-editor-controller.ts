@@ -20,6 +20,7 @@ import type { LiveReferenceSelection } from './live-reference';
 import { insertAiTextWithLiveReferences } from './live-reference-parser';
 import type { PageEditorSlashCommandItem } from './slash-command-items';
 import { getSlashCommandItems } from './slash-command-items';
+import { DEFAULT_MERMAID_CODE } from '../../plugins/diagrams';
 import { base64ToBytes, bytesToBase64, readStoredDraft, writeStoredDraft } from './yjs-utils';
 import { usePlugins } from '../../plugins';
 
@@ -934,7 +935,11 @@ export function usePageEditorController({
     deleteSlashRange();
 
     if (item.id === 'link') {
-      const modalAnchor = { top: slashState.top, left: slashState.left };
+      const selectionCoords = editor.view.coordsAtPos(editor.state.selection.from);
+      const modalAnchor = {
+        top: selectionCoords.bottom + 8,
+        left: selectionCoords.left,
+      };
       setSlashState(baseSlashState);
       openLinkModal(modalAnchor);
       return;
@@ -1019,6 +1024,12 @@ export function usePageEditorController({
     if (item.id === 'image') {
       setSlashState(baseSlashState);
       openImageModal();
+      return;
+    }
+
+    if (item.id === 'diagram') {
+      setSlashState(baseSlashState);
+      editor.chain().focus().insertMermaidDiagram({ code: DEFAULT_MERMAID_CODE }).run();
       return;
     }
 

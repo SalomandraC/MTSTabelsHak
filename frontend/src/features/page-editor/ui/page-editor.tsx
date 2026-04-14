@@ -70,6 +70,69 @@ type CopilotAnchor = {
   } | null;
 };
 
+type RemoveBlockMenuState = {
+  x: number;
+  y: number;
+  pos: number;
+  kind: 'iframe' | 'markdown-table' | 'canvas' | 'live-table' | 'diagram';
+};
+
+function resolveRemoveBlockTarget(
+  editor: Editor,
+  pos: number,
+  preferredKinds: Array<RemoveBlockMenuState['kind']>,
+): { pos: number; kind: RemoveBlockMenuState['kind'] } | null {
+  const doc = editor.state.doc;
+  const boundedPos = Math.min(Math.max(0, pos), doc.content.size);
+  const kindByType: Record<string, RemoveBlockMenuState['kind']> = {
+    iframeBlock: 'iframe',
+    table: 'markdown-table',
+    canvasBlock: 'canvas',
+    mwsTableEmbed: 'live-table',
+    mermaidDiagram: 'diagram',
+  };
+
+  // For atom blocks (iframe/canvas), DOM coordinates may resolve to a node boundary.
+  // Probe around the position first before walking ancestors.
+  const candidatePositions = [
+    boundedPos,
+    Math.max(0, boundedPos - 1),
+    Math.min(doc.content.size, boundedPos + 1),
+  ];
+
+  for (const candidatePos of candidatePositions) {
+    const directNode = doc.nodeAt(candidatePos);
+    const directKind = directNode ? kindByType[directNode.type.name] : undefined;
+    if (directKind && preferredKinds.includes(directKind)) {
+      return {
+        pos: candidatePos,
+        kind: directKind,
+      };
+    }
+  }
+
+  const resolved = doc.resolve(boundedPos);
+  for (let depth = resolved.depth; depth >= 0; depth -= 1) {
+    const node = resolved.node(depth);
+
+    const kind = kindByType[node.type.name];
+    if (!kind || !preferredKinds.includes(kind)) {
+      continue;
+    }
+
+    if (depth === 0) {
+      return null;
+    }
+
+    return {
+      pos: resolved.before(depth),
+      kind,
+    };
+  }
+
+  return null;
+}
+
 function getTableSnapshot(datasheetId?: string | null) {
   if (!datasheetId) {
     return null;
@@ -419,11 +482,15 @@ function LivePageEditor({
   const isAiToolbarEnabled = isAiPluginEnabled && isEditorSlotEnabled('toolbar_bubble') && canUseAi;
   const isAiGhostEnabled = isAiPluginEnabled && isAiAssistantFeatureEnabled('ghost_text') && canUseAi;
   const isAiInlineChatEnabled = isAiPluginEnabled && isAiAssistantFeatureEnabled('inline_chat') && canUseAi;
+  const isVisualDiagramsEnabled = isPluginEnabled('visual-diagrams');
   const isPageNavigationEnabled = isPluginEnabled('page-navigation');
   const isDocumentStructureEnabled = isAiPluginEnabled && isAiAssistantFeatureEnabled('document_structure') && canUseAi;
   const [copilotAnchor, setCopilotAnchor] = useState<CopilotAnchor | null>(null);
   const isCopilotOpen = Boolean(copilotAnchor);
+  const [removeBlockMenu, setRemoveBlockMenu] = useState<RemoveBlockMenuState | null>(null);
   const editorSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number; target: EventTarget | null } | null>(null);
   const [viewPreferences, setViewPreferences] = useState(() => readPageEditorViewPreferences());
   const effectiveViewMode: PageEditorViewMode = isCompactViewport ? 'standard' : viewPreferences.mode;
 
@@ -503,6 +570,43 @@ function LivePageEditor({
     isAiGhostEnabled,
   });
 
+  const openInlineCopilotAtPoint = useCallback((clientX: number, clientY: number, target: EventTarget | null) => {
+    if (!isAiInlineChatEnabled || !controller.editor) {
+      return;
+    }
+
+    const tableContext = getTableContextByDomTarget(target) ?? getTableContextBySelection(controller.editor);
+    const surfaceRect = editorSurfaceRef.current?.getBoundingClientRect();
+
+    reserveInlineCopilotBottomSpace({ bottom: clientY }, surfaceRect);
+    const nextSurfaceRect = editorSurfaceRef.current?.getBoundingClientRect();
+
+    setRemoveBlockMenu(null);
+    setCopilotAnchor({
+      x: clientX - (nextSurfaceRect?.left ?? 0),
+      y: clientY - (nextSurfaceRect?.top ?? 0),
+      surfaceWidth: nextSurfaceRect?.width,
+      surfaceHeight: nextSurfaceRect?.height,
+      target: tableContext?.datasheetId ? 'table' : 'text',
+      datasheetId: tableContext?.datasheetId,
+      viewId: tableContext?.viewId,
+      tableSnapshot: getTableSnapshot(tableContext?.datasheetId),
+    });
+  }, [controller.editor, isAiInlineChatEnabled, reserveInlineCopilotBottomSpace]);
+
+  const clearLongPressTimer = useCallback(() => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearLongPressTimer();
+    };
+  }, [clearLongPressTimer]);
+
   useEffect(() => {
     const globalFlags = window as unknown as { __wikiliveCopilotOpen?: boolean };
     globalFlags.__wikiliveCopilotOpen = isCopilotOpen;
@@ -515,12 +619,74 @@ function LivePageEditor({
   }, [isCopilotOpen]);
 
   useEffect(() => {
+    if (!removeBlockMenu) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('[data-remove-block-menu="true"]')) {
+        return;
+      }
+
+      setRemoveBlockMenu(null);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setRemoveBlockMenu(null);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown, true);
+    window.addEventListener('keydown', handleEscape);
+
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown, true);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [removeBlockMenu]);
+
+  useEffect(() => {
     onEditorChange?.(controller.editor);
 
     return () => {
       onEditorChange?.(null);
     };
   }, [controller.editor, onEditorChange]);
+
+  const handleRemoveBlockFromContextMenu = useCallback(() => {
+    if (!controller.editor || !removeBlockMenu) {
+      return;
+    }
+
+    const editor = controller.editor;
+    editor.commands.focus();
+
+    const node = editor.state.doc.nodeAt(removeBlockMenu.pos);
+    if (!node) {
+      setRemoveBlockMenu(null);
+      return;
+    }
+
+    const expectedType = removeBlockMenu.kind === 'iframe'
+      ? 'iframeBlock'
+      : removeBlockMenu.kind === 'canvas'
+        ? 'canvasBlock'
+        : removeBlockMenu.kind === 'live-table'
+          ? 'mwsTableEmbed'
+          : removeBlockMenu.kind === 'diagram'
+            ? 'mermaidDiagram'
+        : 'table';
+    if (node.type.name !== expectedType) {
+      setRemoveBlockMenu(null);
+      return;
+    }
+
+    const tr = editor.state.tr.delete(removeBlockMenu.pos, removeBlockMenu.pos + node.nodeSize);
+    editor.view.dispatch(tr);
+    setRemoveBlockMenu(null);
+  }, [controller.editor, removeBlockMenu]);
 
   useEffect(() => {
     onDocumentStateEncoderChange?.(controller.getCurrentDocumentStateValue);
@@ -670,30 +836,127 @@ function LivePageEditor({
           ].join(' ')}
           data-page-editor-surface
           data-editor-view-mode={effectiveViewMode}
-          onContextMenu={(event) => {
-            if (!isAiInlineChatEnabled || !controller.editor) {
+          onMouseDown={(event) => {
+            if (!isAiInlineChatEnabled || !controller.editor || event.button !== 0) {
               return;
             }
 
-            event.preventDefault();
-            const tableContext = getTableContextByDomTarget(event.target) ?? getTableContextBySelection(controller.editor);
-            const surfaceRect = editorSurfaceRef.current?.getBoundingClientRect();
+            clearLongPressTimer();
+            longPressStartRef.current = {
+              x: event.clientX,
+              y: event.clientY,
+              target: event.target,
+            };
 
-            reserveInlineCopilotBottomSpace({ bottom: event.clientY }, surfaceRect);
-            const nextSurfaceRect = editorSurfaceRef.current?.getBoundingClientRect();
+            longPressTimerRef.current = window.setTimeout(() => {
+              const start = longPressStartRef.current;
+              if (!start) {
+                return;
+              }
 
-            setCopilotAnchor({
-              x: event.clientX - (nextSurfaceRect?.left ?? 0),
-              y: event.clientY - (nextSurfaceRect?.top ?? 0),
-              surfaceWidth: nextSurfaceRect?.width,
-              surfaceHeight: nextSurfaceRect?.height,
-              target: tableContext?.datasheetId ? 'table' : 'text',
-              datasheetId: tableContext?.datasheetId,
-              viewId: tableContext?.viewId,
-              tableSnapshot: getTableSnapshot(tableContext?.datasheetId),
-            });
+              openInlineCopilotAtPoint(start.x, start.y, start.target);
+              clearLongPressTimer();
+            }, 420);
+          }}
+          onMouseMove={(event) => {
+            const start = longPressStartRef.current;
+            if (!start) {
+              return;
+            }
+
+            const movedX = Math.abs(event.clientX - start.x);
+            const movedY = Math.abs(event.clientY - start.y);
+            if (movedX > 6 || movedY > 6) {
+              clearLongPressTimer();
+              longPressStartRef.current = null;
+            }
+          }}
+          onMouseUp={() => {
+            clearLongPressTimer();
+            longPressStartRef.current = null;
+          }}
+          onMouseLeave={() => {
+            clearLongPressTimer();
+            longPressStartRef.current = null;
+          }}
+          onContextMenu={(event) => {
+            if (!controller.editor) {
+              return;
+            }
+
+            const target = event.target as HTMLElement | null;
+            const iframeNode = target?.closest('[data-type="iframeBlock"]') as HTMLElement | null;
+            const canvasNode = target?.closest('[data-type="canvasBlock"]') as HTMLElement | null;
+            const liveTableNode = target?.closest('[data-type="mws-table-embed"]') as HTMLElement | null;
+            const diagramNode = target?.closest('[data-type="mermaid-diagram"]') as HTMLElement | null;
+            const markdownTableNode = target?.closest('table') as HTMLTableElement | null;
+            const isInsideMwsTable = Boolean(target?.closest('[data-type="mws-table-embed"]'));
+
+            if (effectiveCanEdit && (iframeNode || canvasNode || liveTableNode || diagramNode || (markdownTableNode && !isInsideMwsTable))) {
+              const menuTarget = iframeNode ?? canvasNode ?? liveTableNode ?? diagramNode ?? markdownTableNode;
+              const preferredKinds: Array<RemoveBlockMenuState['kind']> = [
+                ...(iframeNode ? ['iframe' as const] : []),
+                ...(canvasNode ? ['canvas' as const] : []),
+                ...(liveTableNode ? ['live-table' as const] : []),
+                ...(diagramNode ? ['diagram' as const] : []),
+                ...(markdownTableNode && !isInsideMwsTable ? ['markdown-table' as const] : []),
+              ];
+
+              if (menuTarget) {
+                try {
+                  const domPos = controller.editor.view.posAtDOM(menuTarget, 0);
+                  const resolvedTarget = resolveRemoveBlockTarget(controller.editor, domPos, preferredKinds);
+                  if (!resolvedTarget) {
+                    return;
+                  }
+
+                  event.preventDefault();
+                  setCopilotAnchor(null);
+                  setRemoveBlockMenu({
+                    x: event.clientX,
+                    y: event.clientY,
+                    pos: resolvedTarget.pos,
+                    kind: resolvedTarget.kind,
+                  });
+                  return;
+                } catch {
+                  // Ignore mapping errors and fallback to the default context flow.
+                }
+              }
+            }
+
+            setRemoveBlockMenu(null);
           }}
         >
+          {removeBlockMenu ? (
+            <div
+              data-remove-block-menu="true"
+              className="fixed z-[90] min-w-[220px] rounded-xl border border-editor-border-subtle bg-white p-1.5 shadow-[0_14px_32px_rgba(17,25,40,0.2)]"
+              style={{
+                left: removeBlockMenu.x,
+                top: removeBlockMenu.y,
+              }}
+              onContextMenu={(event) => event.preventDefault()}
+            >
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-[#c62828] transition-colors hover:bg-[#fff1f1]"
+                onClick={handleRemoveBlockFromContextMenu}
+              >
+                <span>
+                  {removeBlockMenu.kind === 'iframe'
+                    ? 'Удалить iframe из документа'
+                    : removeBlockMenu.kind === 'canvas'
+                      ? 'Удалить холст из документа'
+                      : removeBlockMenu.kind === 'live-table'
+                        ? 'Удалить live-таблицу из документа'
+                        : removeBlockMenu.kind === 'diagram'
+                          ? 'Удалить диаграмму из документа'
+                      : 'Удалить таблицу из документа'}
+                </span>
+              </button>
+            </div>
+          ) : null}
           <div
             className={[
               'relative',
@@ -784,6 +1047,7 @@ function LivePageEditor({
               pageTitle={controller.title}
               isPageNavigationEnabled={isPageNavigationEnabled}
               isDocumentStructureEnabled={isDocumentStructureEnabled}
+              isDiagramFeatureEnabled={isVisualDiagramsEnabled}
               onClose={() => setCopilotAnchor(null)}
             />
           )}

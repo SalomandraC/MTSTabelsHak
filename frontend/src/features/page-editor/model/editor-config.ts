@@ -42,6 +42,7 @@ import { Markdown } from 'tiptap-markdown';
 
 import { MwsTableEmbed } from '../../wiki-tables';
 import { AIGhostTextExtension } from '../../plugins/ai-assistant';
+import { MermaidNode } from '../../plugins/diagrams';
 import { CanvasBlock } from './canvas-block';
 import { IframeBlock } from './iframe-block';
 import { CodeBlockComponent } from '../ui/code-block-component.tsx';
@@ -195,6 +196,7 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
       onOpenThread: options.onOpenCommentThread,
     }),
     MwsTableEmbed,
+    MermaidNode,
     CanvasBlock,
     IframeBlock,
     TaskList,

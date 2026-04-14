@@ -112,8 +112,30 @@ export class PagesService {
     };
   }
 
-  async getPage(pageId: string, includeDocumentState = true, user?: UserContext) {
-    const access = await this.pageAccessService.assertCanView(pageId, user);
+  async getPage(pageId: string, includeDocumentState = true, user?: UserContext, allowReadOnlyLinkAccess = false) {
+    const resolvedAccess = await this.pageAccessService.resolvePageAccess(pageId, user);
+    const access = !resolvedAccess.capabilities.canView && allowReadOnlyLinkAccess && !user?.userId
+      ? {
+          ...resolvedAccess,
+          role: 'guest' as const,
+          principal: 'anonymous' as const,
+          capabilities: {
+            ...resolvedAccess.capabilities,
+            canView: true,
+            canEdit: false,
+            canComment: false,
+            canManageAccess: false,
+            canDelete: false,
+            canUseAi: false,
+            canUseAdvancedPlugins: false,
+          },
+        }
+      : resolvedAccess;
+
+    if (!access.capabilities.canView) {
+      await this.pageAccessService.assertCanView(pageId, user);
+    }
+
     const page = await this.prisma.wikiNode.findUnique({
       where: { id: pageId },
       include: {
@@ -132,6 +154,17 @@ export class PagesService {
       throw new NotFoundException('Page not found');
     }
 
+    const documentJson =
+      includeDocumentState && page.page?.document
+        ? (() => {
+            const ydoc = new Y.Doc();
+            Y.applyUpdate(ydoc, new Uint8Array(page.page.document.ydocSnapshot));
+            const prosemirrorDoc = yDocToProsemirrorJSON(ydoc, 'default') as { type: string; content?: unknown[] };
+            ydoc.destroy();
+            return prosemirrorDoc;
+          })()
+        : undefined;
+
     return {
       page: {
         id: page.id,
@@ -145,6 +178,7 @@ export class PagesService {
         outgoingLinksCount: page.sourceLinks.length,
         backlinksCount: page.targetLinks.length,
         access,
+        document: documentJson,
         embeds: page.embeds.map((embed) => ({
           id: embed.id,
           type: 'mwsTableEmbed',

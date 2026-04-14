@@ -10,6 +10,7 @@ import Quote from '../../../app/images/quote.svg';
 import AtSign from '../../../app/images/at-sign.svg';
 import Picture from '../../../app/images/Picture.svg';
 import MwsTableIcon from '../../../app/images/logo.svg';
+import { DEFAULT_MERMAID_CODE } from '../../plugins/diagrams';
 
 export type PageEditorSlashCommandItem = SlashMenuItem & {
   run: (editor: Editor) => void;
@@ -18,6 +19,8 @@ export type PageEditorSlashCommandItem = SlashMenuItem & {
 export function getSlashCommandItems(plugins: PluginCatalogItem[]): PageEditorSlashCommandItem[] {
   const canvasEnabled = plugins.some(p => p.id === 'canvas-draw' && p.enabled)
     && (plugins.find(p => p.id === 'canvas-draw')?.settings?.['slash-menu'] ?? true);
+  const diagramsEnabled = plugins.some(p => p.id === 'visual-diagrams' && p.enabled)
+    && (plugins.find(p => p.id === 'visual-diagrams')?.settings?.['slash-menu'] ?? true);
 
   const items: PageEditorSlashCommandItem[] = [
     {
@@ -250,6 +253,19 @@ export function getSlashCommandItems(plugins: PluginCatalogItem[]): PageEditorSl
       keywords: ['bookmark', 'anchor', 'закладка', 'якорь', 'метка'],
       icon: '🔖',
       run: (_editor: Editor) => { /* handled by controller via id */ },
+    });
+  }
+
+  if (diagramsEnabled) {
+    items.push({
+      id: 'diagram',
+      label: 'Диаграмма',
+      hint: 'Вставить Mermaid-диаграмму для UML или процессов',
+      keywords: ['diagram', 'mermaid', 'uml', 'flowchart', 'sequence', 'диаграмма', 'процесс'],
+      icon: 'MMD',
+      run: (editor: Editor) => {
+        editor.chain().focus().insertMermaidDiagram({ code: DEFAULT_MERMAID_CODE }).run();
+      },
     });
   }
 

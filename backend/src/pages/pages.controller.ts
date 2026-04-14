@@ -39,9 +39,10 @@ export class PagesController {
   async getPage(
     @Param('pageId') pageId: string,
     @Query('includeDocumentState') includeDocumentState = 'true',
+    @Query('readOnlyLink') readOnlyLink = 'false',
     @CurrentUser() user?: UserContext,
   ) {
-    return this.pagesService.getPage(pageId, includeDocumentState !== 'false', user);
+    return this.pagesService.getPage(pageId, includeDocumentState !== 'false', user, readOnlyLink === 'true');
   }
 
   @Get(':pageId/access')
