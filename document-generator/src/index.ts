@@ -52,7 +52,7 @@ app.post('/generate', async (req: Request, res: Response) => {
         break;
 
       case 'docx':
-        buffer = await generateDocx(title, blocks);
+        buffer = await generateDocx(title, blocks, auth);
         contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
         filename = `${sanitizeFilename(title)}.docx`;
         break;

@@ -7,8 +7,105 @@ import {
   HeadingLevel,
   BorderStyle,
   ExternalHyperlink,
+  Table,
+  TableRow,
+  TableCell,
+  WidthType,
+  ShadingType,
 } from 'docx';
 import type { BlockNode } from '../types.js';
+
+// ─── MWS table fetcher (same pattern as pdf-generator) ───────────────────────
+
+const API_BASE = process.env.API_BASE_URL ?? 'http://api:8080';
+
+type MwsField = { id: string; name: string };
+type MwsRecord = { recordId: string; fields: Record<string, unknown> };
+
+type AuthContext = {
+  accessToken?: string;
+  userId?: string;
+  displayName?: string;
+};
+
+function buildAuthHeaders(auth?: AuthContext): Record<string, string> {
+  if (auth?.accessToken) return { Authorization: `Bearer ${auth.accessToken}` };
+  if (auth?.userId) return { 'x-user-id': auth.userId, 'x-user-name': auth.displayName ?? auth.userId };
+  return { 'x-user-id': 'docgen', 'x-user-name': 'Document Generator' };
+}
+
+async function fetchTableData(
+  datasheetId: string,
+  viewId?: string | null,
+  auth?: AuthContext,
+): Promise<{ fields: MwsField[]; records: MwsRecord[] } | null> {
+  const headers = buildAuthHeaders(auth);
+  try {
+    const fieldsRes = await fetch(
+      `${API_BASE}/api/v1/mws/datasheets/${datasheetId}/fields${viewId ? `?viewId=${viewId}` : ''}`,
+      { headers },
+    );
+    if (!fieldsRes.ok) return null;
+    const { items: fields } = await fieldsRes.json() as { items: MwsField[] };
+
+    const recordsRes = await fetch(
+      `${API_BASE}/api/v1/mws/datasheets/${datasheetId}/records?pageSize=100&fieldKey=id&cellFormat=json${viewId ? `&viewId=${viewId}` : ''}`,
+      { headers },
+    );
+    if (!recordsRes.ok) return null;
+    const { items: records } = await recordsRes.json() as { items: MwsRecord[] };
+
+    return { fields, records };
+  } catch {
+    return null;
+  }
+}
+
+function buildDocxTable(title: string, fields: MwsField[], records: MwsRecord[]): (Paragraph | Table)[] {
+  const result: (Paragraph | Table)[] = [];
+
+  if (title) {
+    result.push(new Paragraph({
+      children: [new TextRun({ text: title, bold: true })],
+      spacing: { after: 80 },
+    }));
+  }
+
+  // A4 page width minus margins ≈ 9026 twips, distribute evenly
+  const colCount = fields.length || 1;
+  const colWidth = Math.floor(9026 / colCount);
+
+  const headerRow = new TableRow({
+    tableHeader: true,
+    children: fields.map((f) => new TableCell({
+      width: { size: colWidth, type: WidthType.DXA },
+      shading: { type: ShadingType.SOLID, fill: 'F2F3F5' },
+      children: [new Paragraph({ children: [new TextRun({ text: f.name, bold: true, size: 20 })] })],
+    })),
+  });
+
+  const dataRows = records.map((r) => new TableRow({
+    children: fields.map((f) => {
+      const val = r.fields[f.id];
+      const text = val == null ? '' : typeof val === 'object' ? JSON.stringify(val) : String(val);
+      return new TableCell({
+        width: { size: colWidth, type: WidthType.DXA },
+        children: [new Paragraph({ children: [new TextRun({ text, size: 20 })] })],
+      });
+    }),
+  }));
+
+  result.push(new Table({
+    width: { size: 9026, type: WidthType.DXA },
+    columnWidths: Array(colCount).fill(colWidth),
+    layout: 'autofit' as any,
+    rows: [headerRow, ...dataRows],
+  }));
+
+  result.push(new Paragraph({ children: [], spacing: { after: 160 } }));
+
+  return result;
+}
 
 // ─── Image helpers ────────────────────────────────────────────────────────────
 
@@ -132,7 +229,7 @@ function makeRuns(content: string, marks?: Array<{ type: string; attrs?: Record<
 
 // ─── Block → docx elements (async for images) ────────────────────────────────
 
-async function blockToDocxElements(block: BlockNode): Promise<Paragraph[]> {
+async function blockToDocxElements(block: BlockNode, auth?: AuthContext): Promise<Paragraph[]> {
   switch (block.type) {
     case 'heading': {
       const hLevel = Math.min(Math.max(block.level ?? 1, 1), 3) as 1 | 2 | 3;
@@ -182,11 +279,18 @@ async function blockToDocxElements(block: BlockNode): Promise<Paragraph[]> {
         spacing: { after: 120 },
       })];
 
-    case 'table':
+    case 'table': {
+      if (block.datasheetId) {
+        const data = await fetchTableData(block.datasheetId, block.viewId, auth);
+        if (data && data.fields.length > 0) {
+          return buildDocxTable(block.content ?? '', data.fields, data.records) as Paragraph[];
+        }
+      }
       return [new Paragraph({
-        children: [new TextRun({ text: `📊 ${block.content ?? 'Таблица MWS'}`, italics: true, color: '6B7898' })],
+        children: [new TextRun({ text: block.content ?? 'Таблица MWS', italics: true, color: '6B7898' })],
         spacing: { after: 120 },
       })];
+    }
 
     case 'code_block': {
       const langLine = block.language ? `${block.language}\n` : '';
@@ -199,7 +303,7 @@ async function blockToDocxElements(block: BlockNode): Promise<Paragraph[]> {
 
     case 'bullet_list': {
       const items = await Promise.all((block.children ?? []).map(async (child) => {
-        const inner = await blockToDocxElements(child);
+        await blockToDocxElements(child, auth);
         return new Paragraph({
           bullet: { level: 0 },
           children: [new TextRun(renderChildren(child))],
@@ -259,8 +363,8 @@ function renderChildren(block: BlockNode): string {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-export async function generateDocx(title: string, blocks: BlockNode[]): Promise<Buffer> {
-  const children: Paragraph[] = [];
+export async function generateDocx(title: string, blocks: BlockNode[], auth?: AuthContext): Promise<Buffer> {
+  const children: (Paragraph | Table)[] = [];
 
   children.push(new Paragraph({
     heading: HeadingLevel.TITLE,
@@ -269,7 +373,7 @@ export async function generateDocx(title: string, blocks: BlockNode[]): Promise<
   }));
 
   for (const block of blocks) {
-    const elements = await blockToDocxElements(block);
+    const elements = await blockToDocxElements(block, auth);
     children.push(...elements);
   }
 
