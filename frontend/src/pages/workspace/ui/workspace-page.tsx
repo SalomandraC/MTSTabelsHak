@@ -1831,6 +1831,7 @@ export function WorkspacePage() {
 
     setSelectedTableNode(null);
     setActivePage(null);
+    setIsPageLoading(true);
     setActivePageId(pageId);
     writeWorkspaceRoute(selectedSpaceId, pageId, 'push');
   };
