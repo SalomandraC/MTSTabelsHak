@@ -3,22 +3,26 @@ import type { MwsSpace } from '../api/wikilive';
 export type WorkspaceRouteState = {
   spaceId: string | null;
   pageId: string | null;
+  readOnly: boolean;
 };
 
 export function readWorkspaceRoute(): WorkspaceRouteState {
   const url = new URL(window.location.href);
   const routeMatch = url.pathname.match(/^\/spaces\/([^/]+)(?:\/pages\/([^/]+))?/);
+  const readOnly = url.searchParams.get('readOnly') === 'true';
 
   if (routeMatch) {
     return {
       spaceId: decodeURIComponent(routeMatch[1] ?? ''),
       pageId: routeMatch[2] ? decodeURIComponent(routeMatch[2]) : null,
+      readOnly,
     };
   }
 
   return {
     spaceId: url.searchParams.get('spaceId'),
     pageId: url.searchParams.get('pageId'),
+    readOnly,
   };
 }
 
