@@ -1204,6 +1204,28 @@ export const wikiliveApi = {
       body: JSON.stringify({ index }),
     });
   },
+  setMwsViewSort(
+    spaceId: string,
+    datasheetId: string,
+    viewId: string,
+    rules: Array<{ fieldId: string; desc: boolean }>,
+  ) {
+    return request<{ ok: boolean }>(`/api/v1/mws/spaces/${spaceId}/datasheets/${datasheetId}/views/${viewId}/sort`, {
+      method: 'POST',
+      body: JSON.stringify({ spaceId, rules, keepSort: true, applySort: true }),
+    });
+  },
+  setMwsViewGroup(
+    spaceId: string,
+    datasheetId: string,
+    viewId: string,
+    rules: Array<{ fieldId: string; desc: boolean }>,
+  ) {
+    return request<{ ok: boolean }>(`/api/v1/mws/spaces/${spaceId}/datasheets/${datasheetId}/views/${viewId}/group`, {
+      method: 'POST',
+      body: JSON.stringify({ spaceId, rules }),
+    });
+  },
   listMwsViews(datasheetId: string) {
     return request<{ items: MwsView[] }>(`/api/v1/mws/datasheets/${datasheetId}/views`);
   },

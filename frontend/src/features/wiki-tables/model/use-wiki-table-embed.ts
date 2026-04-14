@@ -1767,6 +1767,33 @@ export function useWikiTableEmbed(
     setFilterRules,
     groupRule,
     setGroupRule,
+    applySort: (rules: SortRule[]) => {
+      setSortRules(rules);
+      // Persist to MWS view if we have spaceId and viewId
+      if (attrs.spaceId && attrs.datasheetId && attrs.viewId) {
+        void wikiliveApi.setMwsViewSort(
+          attrs.spaceId,
+          attrs.datasheetId,
+          attrs.viewId,
+          rules.map(({ fieldId, desc }) => ({ fieldId, desc })),
+        ).catch(() => {
+          // Non-critical: local sort still works
+        });
+      }
+    },
+    applyGroup: (rule: GroupRule | null) => {
+      setGroupRule(rule);
+      if (attrs.spaceId && attrs.datasheetId && attrs.viewId) {
+        void wikiliveApi.setMwsViewGroup(
+          attrs.spaceId,
+          attrs.datasheetId,
+          attrs.viewId,
+          rule ? [{ fieldId: rule.fieldId, desc: rule.desc }] : [],
+        ).catch(() => {
+          // Non-critical: local group still works
+        });
+      }
+    },
     loadEmbed,
     refreshTable,
     loadNextPage,

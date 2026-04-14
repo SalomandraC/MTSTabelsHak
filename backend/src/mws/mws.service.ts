@@ -444,6 +444,45 @@ export class MwsService {
     return { view: this.unwrapPayload(data) };
   }
 
+  async setViewSort(
+    spaceId: string,
+    datasheetId: string,
+    viewId: string,
+    rules: Array<{ fieldId: string; desc?: boolean }>,
+    keepSort: boolean,
+    applySort: boolean,
+    user: UserContext,
+  ) {
+    const data = await this.request(
+      user,
+      'POST',
+      `/spaces/${spaceId}/datasheets/${datasheetId}/views/${viewId}/sort`,
+      {
+        data: { keepSort, rules: rules.map(r => ({ fieldId: r.fieldId, desc: r.desc ?? false })) },
+        applySort,
+      },
+    );
+    await this.invalidateDatasheetCache(datasheetId);
+    return { ok: true, data: this.unwrapPayload(data) };
+  }
+
+  async setViewGroup(
+    spaceId: string,
+    datasheetId: string,
+    viewId: string,
+    rules: Array<{ fieldId: string; desc?: boolean }>,
+    user: UserContext,
+  ) {
+    const data = await this.request(
+      user,
+      'POST',
+      `/spaces/${spaceId}/datasheets/${datasheetId}/views/${viewId}/group`,
+      { data: rules.map(r => ({ fieldId: r.fieldId, desc: r.desc ?? false })) },
+    );
+    await this.invalidateDatasheetCache(datasheetId);
+    return { ok: true, data: this.unwrapPayload(data) };
+  }
+
   async listRecords(
     datasheetId: string,
     query: Record<string, unknown>,
