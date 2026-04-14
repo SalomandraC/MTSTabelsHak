@@ -95,6 +95,16 @@ export function getSlashCommandItems(plugins: PluginCatalogItem[]): PageEditorSl
       },
     },
     {
+      id: 'live-formula',
+      label: 'Живая формула',
+      hint: 'Добавить вычисляемую формулу на основе [Ref:table:row:field]',
+      keywords: ['formula', 'calc', 'math', 'live', 'формула', 'вычисление', 'арифметика'],
+      icon: 'ƒx',
+      run: () => {
+        // Handled in PageEditor with live formula modal flow.
+      },
+    },
+    {
       id: 'task-list',
       label: 'Чеклист',
       hint: 'Создать список задач с чекбоксами',

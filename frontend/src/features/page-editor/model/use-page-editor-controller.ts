@@ -191,6 +191,9 @@ export function usePageEditorController({
   const [isPagePickerOpen, setIsPagePickerOpen] = useState(false);
   const [isTablePickerOpen, setIsTablePickerOpen] = useState(false);
   const [isLiveReferencePickerOpen, setIsLiveReferencePickerOpen] = useState(false);
+  const [isLiveFormulaModalOpen, setIsLiveFormulaModalOpen] = useState(false);
+  const [liveFormulaExpression, setLiveFormulaExpression] = useState('');
+  const [isSelectingFormulaReference, setIsSelectingFormulaReference] = useState(false);
   const [liveReferenceEditTarget, setLiveReferenceEditTarget] = useState<LiveReferenceEditTarget | null>(null);
   const [isTemplateVariableModalOpen, setIsTemplateVariableModalOpen] = useState(false);
   const [templateVariableLabel, setTemplateVariableLabel] = useState('');
@@ -868,6 +871,16 @@ export function usePageEditorController({
     setIsTemplateVariableModalOpen(false);
   };
 
+  const openLiveFormulaModal = () => {
+    setLiveFormulaExpression('');
+    setIsLiveFormulaModalOpen(true);
+  };
+
+  const closeLiveFormulaModal = () => {
+    setIsLiveFormulaModalOpen(false);
+    setIsSelectingFormulaReference(false);
+  };
+
   const openBookmarkModal = () => {
     setIsBookmarkModalOpen(true);
   };
@@ -942,6 +955,12 @@ export function usePageEditorController({
     if (item.id === 'live-reference') {
       setSlashState(baseSlashState);
       setIsLiveReferencePickerOpen(true);
+      return;
+    }
+
+    if (item.id === 'live-formula') {
+      setSlashState(baseSlashState);
+      openLiveFormulaModal();
       return;
     }
 
@@ -1079,6 +1098,20 @@ export function usePageEditorController({
 
   const handleSelectLiveReference = (selection: LiveReferenceSelection) => {
     if (!editor || !canEdit) {
+      return;
+    }
+
+    if (isSelectingFormulaReference) {
+      const token = `[Ref:${selection.datasheetId}:${selection.recordId}:${selection.fieldId}]`;
+      setLiveFormulaExpression((current) => {
+        const trimmed = current.trim();
+        if (!trimmed) {
+          return token;
+        }
+        return `${current} ${token}`;
+      });
+      setIsSelectingFormulaReference(false);
+      setIsLiveReferencePickerOpen(false);
       return;
     }
 
@@ -1226,6 +1259,13 @@ export function usePageEditorController({
       if (isLiveReferencePickerOpen && event.key === 'Escape') {
         event.preventDefault();
         setIsLiveReferencePickerOpen(false);
+        setIsSelectingFormulaReference(false);
+        return;
+      }
+
+      if (isLiveFormulaModalOpen && event.key === 'Escape') {
+        event.preventDefault();
+        closeLiveFormulaModal();
         return;
       }
 
@@ -1293,9 +1333,11 @@ export function usePageEditorController({
   }, [
     canEdit,
     closeImageModal,
+    closeLiveFormulaModal,
     editor,
     isImageModalOpen,
     isLinkModalOpen,
+    isLiveFormulaModalOpen,
     isLiveReferencePickerOpen,
     isTemplateVariableModalOpen,
   ]);
@@ -1339,7 +1381,31 @@ export function usePageEditorController({
       onClose: () => {
         setIsLiveReferencePickerOpen(false);
         setLiveReferenceEditTarget(null);
+        setIsSelectingFormulaReference(false);
       },
+    },
+    liveFormulaModal: {
+      isOpen: isLiveFormulaModalOpen,
+      expression: liveFormulaExpression,
+      isSubmitDisabled: !liveFormulaExpression.trim(),
+      onExpressionChange: setLiveFormulaExpression,
+      onPickReference: () => {
+        setIsSelectingFormulaReference(true);
+        setIsLiveReferencePickerOpen(true);
+      },
+      onSubmit: () => {
+        if (!editor || !canEdit || !liveFormulaExpression.trim()) {
+          return;
+        }
+
+        editor.chain().focus().insertLiveFormula({
+          spaceId,
+          expression: liveFormulaExpression.trim(),
+        }).run();
+
+        closeLiveFormulaModal();
+      },
+      onClose: closeLiveFormulaModal,
     },
     linkModal: {
       isOpen: isLinkModalOpen,

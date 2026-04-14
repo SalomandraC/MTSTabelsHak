@@ -19,6 +19,7 @@ import { PageEditorToolbar } from './page-editor-toolbar';
 import { PagePickerModal } from './page-picker-modal';
 import { TemplateVariableModal } from './template-variable-modal';
 import { IframeModal } from './iframe-modal';
+import { LiveFormulaModal } from './live-formula-modal';
 import { CreateBookmarkModal, collectBookmarks, BookmarkPickerModal } from './bookmark-modal';
 import { LiveReferencePickerModal } from './live-reference-picker-modal';
 import {
@@ -740,6 +741,7 @@ function LivePageEditor({
           <IframeModal {...controller.iframeModal} />
           <PagePickerModal {...controller.pagePicker} />
           <TemplateVariableModal {...controller.templateVariableModal} />
+          <LiveFormulaModal {...controller.liveFormulaModal} />
           <LiveReferencePickerModal {...controller.liveReferencePicker} />
           <WikiTablePickerModal {...controller.tablePicker} />
           <CreateBookmarkModal
