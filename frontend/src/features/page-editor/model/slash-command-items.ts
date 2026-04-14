@@ -9,7 +9,7 @@ import ListChecks from '../../../app/images/list-checks.svg';
 import Quote from '../../../app/images/quote.svg';
 import AtSign from '../../../app/images/at-sign.svg';
 import Picture from '../../../app/images/Picture.svg';
-import Table from '../../../app/images/logo.svg';
+import MwsTableIcon from '../../../app/images/logo.svg';
 
 export type PageEditorSlashCommandItem = SlashMenuItem & {
   run: (editor: Editor) => void;
@@ -53,12 +53,22 @@ export function getSlashCommandItems(plugins: PluginCatalogItem[]): PageEditorSl
       },
     },
     {
+      id: 'table',
+      label: 'Таблица',
+      hint: 'Вставить стандартную редактируемую таблицу',
+      keywords: ['table', 'таблица', 'markdown', 'grid', 'static'],
+      icon: '▦',
+      run: (editor) => {
+        editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+      },
+    },
+    {
       id: 'mws-table',
       label: 'MWS таблица',
       hint: 'Вставить live embed существующей таблицы',
       keywords: ['table', 'mws', 'таблица', 'embed', 'live', 'datasheet'],
       icon: React.createElement('img', {
-        src: Table,
+        src: MwsTableIcon,
         alt: 'Список с чекбоксами',
         className: 'h-4 w-4',
       }),

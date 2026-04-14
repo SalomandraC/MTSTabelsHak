@@ -11,6 +11,11 @@ export type LiveReferenceParseOptions = {
   spaceId?: string;
 };
 
+type MarkdownStorage = {
+  getMarkdown?: () => string;
+  parse?: (value: string) => Content | null | undefined;
+};
+
 const LIVE_REFERENCE_TOKEN = /^\[Ref:([^:\]\s]+):([^:\]\s]+):([^:\]\s]+)\]$/;
 
 function extractFormulaToken(text: string, from: number): { token: string; expression: string; end: number } | null {
@@ -50,7 +55,66 @@ function looksLikeMarkdown(text: string): boolean {
     return false;
   }
 
-  return /(^#{1,6}\s)|(^[-*]\s)|(^\d+\.\s)|(```)|(`[^`]+`)|(\*\*[^*]+\*\*)|(^>\s)|(^(-{3,}|\*{3,}|_{3,})$)/m.test(value);
+  return /(^#{1,6}\s)|(^[-*]\s)|(^\d+\.\s)|(```)|(`[^`]+`)|(\*\*[^*]+\*\*)|(^>\s)|(^(-{3,}|\*{3,}|_{3,})$)|(^\|.+\|\s*$)|(^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$)/m.test(value);
+}
+
+function extractParsedBlocks(content: Content | null | undefined): JSONContent[] {
+  if (!content) {
+    return [];
+  }
+
+  if (Array.isArray(content)) {
+    return content as JSONContent[];
+  }
+
+  const asNode = content as JSONContent;
+  if (asNode.type === 'doc' && Array.isArray(asNode.content)) {
+    return asNode.content;
+  }
+
+  if (typeof asNode.type === 'string') {
+    return [asNode];
+  }
+
+  return [];
+}
+
+function mapNodeWithLiveReferences(node: JSONContent, options: LiveReferenceParseOptions): JSONContent[] {
+  if (node.type === 'text' && typeof node.text === 'string' && hasLiveReferenceToken(node.text)) {
+    return parseInlineContentWithLiveReferences(node.text, options);
+  }
+
+  if (!Array.isArray(node.content)) {
+    return [node];
+  }
+
+  const mappedContent: JSONContent[] = [];
+  for (const child of node.content) {
+    mappedContent.push(...mapNodeWithLiveReferences(child, options));
+  }
+
+  return [
+    {
+      ...node,
+      content: mappedContent,
+    },
+  ];
+}
+
+export function parseMarkdownWithLiveReferences(
+  editor: Editor,
+  text: string,
+  options: LiveReferenceParseOptions = {},
+): JSONContent[] {
+  const markdownStorage = (editor.storage as { markdown?: MarkdownStorage }).markdown;
+  const parsed = markdownStorage?.parse?.(text);
+  const blocks = extractParsedBlocks(parsed);
+
+  if (blocks.length === 0) {
+    return [];
+  }
+
+  return blocks.flatMap((node) => mapNodeWithLiveReferences(node, options));
 }
 
 export function hasLiveReferenceToken(text: string): boolean {
@@ -195,9 +259,15 @@ export function insertAiTextWithLiveReferences(editor: Editor, text: string, opt
     return editor.commands.insertContent(text);
   }
 
-  if (!hasLiveRef && hasMarkdown) {
+  if (hasMarkdown) {
+    const parsedBlocks = parseMarkdownWithLiveReferences(editor, text, options);
     const from = editor.state.selection.from;
     const to = editor.state.selection.to;
+
+    if (parsedBlocks.length > 0) {
+      return editor.chain().focus().insertContentAt({ from, to }, parsedBlocks).run();
+    }
+
     return editor.chain().focus().insertContentAt({ from, to }, text).run();
   }
 

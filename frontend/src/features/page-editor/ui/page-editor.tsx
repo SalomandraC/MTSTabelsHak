@@ -36,6 +36,7 @@ type PageEditorProps = {
   isLoading?: boolean;
   sidebarInsetClassName?: string;
   hideCooperationBadge?: boolean;
+  isReadOnlyViewLink?: boolean;
   onRenamePage: (title: string) => Promise<void>;
   onToggleHeadingNumbering: (enabled: boolean) => Promise<void>;
   onCheckpoint: () => Promise<void>;
@@ -331,6 +332,7 @@ export function PageEditor({
   isLoading = false,
   sidebarInsetClassName = '',
   hideCooperationBadge = false,
+  isReadOnlyViewLink = false,
   onRenamePage,
   onToggleHeadingNumbering,
   onCheckpoint,
@@ -366,6 +368,7 @@ export function PageEditor({
       page={page}
       sidebarInsetClassName={sidebarInsetClassName}
       hideCooperationBadge={hideCooperationBadge}
+      isReadOnlyViewLink={isReadOnlyViewLink}
       onRenamePage={onRenamePage}
       onToggleHeadingNumbering={onToggleHeadingNumbering}
       onCheckpoint={onCheckpoint}
@@ -388,6 +391,7 @@ function LivePageEditor({
   page,
   sidebarInsetClassName = '',
   hideCooperationBadge = false,
+  isReadOnlyViewLink = false,
   onRenamePage,
   onToggleHeadingNumbering,
   onCheckpoint,
@@ -409,7 +413,7 @@ function LivePageEditor({
   const canUseAi = page.access?.capabilities.canUseAi ?? true;
   const isAiPluginEnabled = isPluginsLoading ? true : isPluginEnabled('ai-assistant');
   const isHistoryPreviewActive = Boolean(historyPreview);
-  const effectiveCanEdit = canEdit && !isHistoryPreviewActive;
+  const effectiveCanEdit = canEdit && !isHistoryPreviewActive && !isReadOnlyViewLink;
   const effectiveCanComment = canComment && !isHistoryPreviewActive;
   const isAiSlashEnabled = isAiPluginEnabled && isEditorSlotEnabled('slash_menu') && canUseAi;
   const isAiToolbarEnabled = isAiPluginEnabled && isEditorSlotEnabled('toolbar_bubble') && canUseAi;

@@ -169,6 +169,40 @@ function splitMarkdownBlocks(text: string): string[] {
   return trimmed.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
 }
 
+function isTableSeparatorRow(line: string): boolean {
+  const normalized = line.trim();
+  return /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(normalized);
+}
+
+function splitTableRow(line: string): string[] {
+  const raw = line.trim().replace(/^\|/, '').replace(/\|$/, '');
+  return raw.split('|').map((cell) => cell.trim());
+}
+
+function parseMarkdownTable(lines: string[]): { header: string[]; rows: string[][] } | null {
+  if (lines.length < 2) {
+    return null;
+  }
+
+  const nonEmpty = lines.map((line) => line.trim()).filter(Boolean);
+  if (nonEmpty.length < 2) {
+    return null;
+  }
+
+  if (!nonEmpty[0].includes('|') || !isTableSeparatorRow(nonEmpty[1])) {
+    return null;
+  }
+
+  const header = splitTableRow(nonEmpty[0]);
+  const rows = nonEmpty.slice(2).filter((line) => line.includes('|')).map(splitTableRow);
+
+  if (header.length === 0) {
+    return null;
+  }
+
+  return { header, rows };
+}
+
 function renderMarkdownBlock(block: string, index: number) {
   if (/^```/.test(block)) {
     const fenced = block.match(/^```(?:\w+)?\n([\s\S]*?)\n```$/);
@@ -208,6 +242,36 @@ function renderMarkdownBlock(block: string, index: number) {
   }
 
   const lines = block.split('\n').map((line) => line.trimEnd());
+  const table = parseMarkdownTable(lines);
+
+  if (table) {
+    return (
+      <div key={index} className="overflow-x-auto rounded-lg border border-[#e5e7eb] bg-white">
+        <table className="min-w-[360px] w-full border-collapse text-left text-[12px]">
+          <thead className="bg-[#f8fafc]">
+            <tr>
+              {table.header.map((cell, cellIndex) => (
+                <th key={`${index}-h-${cellIndex}`} className="border border-[#ddd] px-2 py-2 font-semibold text-[#1d2023]">
+                  {renderInlineMarkdown(cell)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.map((row, rowIndex) => (
+              <tr key={`${index}-r-${rowIndex}`}>
+                {row.map((cell, cellIndex) => (
+                  <td key={`${index}-c-${rowIndex}-${cellIndex}`} className="border border-[#ddd] px-2 py-2 text-[#1d2023]">
+                    {renderInlineMarkdown(cell)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
 
   if (lines.length > 1 && lines.every((line) => /^[-*]\s+/.test(line))) {
     return (

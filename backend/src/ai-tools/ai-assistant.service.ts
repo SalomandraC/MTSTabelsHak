@@ -35,6 +35,15 @@ const PROFESSIONAL_TONE_RULE =
 const LIVE_REFERENCE_STRICT_RULE =
   'When mentioning any numeric values, statuses, or dates that exist in provided MWS table context, you MUST use live reference token format [Ref:tableId:rowId:colId]. Never output a plain numeric/status/date value if it can be bound to a table cell. This keeps documents dynamic.';
 
+const MARKDOWN_TABLE_RULE = [
+  'Если тебе нужно представить данные в виде структуры, используй стандартные Markdown-таблицы.',
+  'Формат:',
+  '| Заголовок 1 | Заголовок 2 |',
+  '|---|---|',
+  '| Значение 1 | Значение 2 |',
+  'Никогда не используй имитацию таблиц через пробелы или табуляцию. Только стандартный Markdown.',
+].join(' ');
+
 const TRANSFORM_OUTPUT_RULES = [
   'Return only the transformed selected fragment text, without comments or explanations.',
   'Do not output labels or metadata like "Page title", "Transformation", "Context snapshot", "Wiki", "Исходный текст", or "Переработанный вариант".',
@@ -712,6 +721,7 @@ export class AiAssistantService {
           'Use only paragraph, heading, bulletList, orderedList, listItem, blockquote, and text nodes unless the context requires another common ProseMirror node.',
           'If user asks to reference a live MWS cell, insert token [Ref:tableId:rowId:colId] directly in text, without extra markup.',
           LIVE_REFERENCE_STRICT_RULE,
+          MARKDOWN_TABLE_RULE,
           SAME_LANGUAGE_RULE,
           PROFESSIONAL_TONE_RULE,
         ].join(' '),
@@ -738,7 +748,7 @@ export class AiAssistantService {
     return [
       {
         role: 'system',
-        content: `${prompt} ${SAME_LANGUAGE_RULE} ${PROFESSIONAL_TONE_RULE} ${TRANSFORM_OUTPUT_RULES}`,
+        content: `${prompt} ${SAME_LANGUAGE_RULE} ${PROFESSIONAL_TONE_RULE} ${MARKDOWN_TABLE_RULE} ${TRANSFORM_OUTPUT_RULES}`,
       },
       {
         role: 'user',

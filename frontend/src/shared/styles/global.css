@@ -290,6 +290,31 @@
     color: #596273;
   }
 
+  .tiptap .tableWrapper {
+    margin: 1rem 0;
+    overflow-x: auto;
+  }
+
+  .tiptap table {
+    border-collapse: collapse;
+    min-width: 24rem;
+    width: max-content;
+    max-width: 100%;
+  }
+
+  .tiptap table th,
+  .tiptap table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    vertical-align: top;
+    background: #fff;
+  }
+
+  .tiptap table th {
+    font-weight: 600;
+    background: #fafafa;
+  }
+
   .tiptap hr {
     border: none;
     border-top: 1px solid var(--editor-border-subtle);
