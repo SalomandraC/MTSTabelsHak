@@ -1026,6 +1026,7 @@ export function WorkspacePage() {
   const [isCreatingTablePage, setIsCreatingTablePage] = useState(false);
   const [isDeletingTable, setIsDeletingTable] = useState(false);
   const [isDeletingPage, setIsDeletingPage] = useState(false);
+  const [isDeletePageConfirmOpen, setIsDeletePageConfirmOpen] = useState(false);
   const [isBlankAreaCreateOpen, setIsBlankAreaCreateOpen] = useState(false);
   const [blankAreaCreateMode, setBlankAreaCreateMode] = useState<'page' | 'folder' | null>(null);
   const [isBlankAreaSubmitting, setIsBlankAreaSubmitting] = useState(false);
@@ -1830,6 +1831,7 @@ export function WorkspacePage() {
 
     setSelectedTableNode(null);
     setActivePage(null);
+    setIsPageLoading(true);
     setActivePageId(pageId);
     writeWorkspaceRoute(selectedSpaceId, pageId, 'push');
   };
@@ -2259,12 +2261,6 @@ export function WorkspacePage() {
   };
 
   const handleDeletePage = async (pageId: string, title: string) => {
-    const confirmed = window.confirm(`Удалить страницу "${title}"? Таблицы MWS при этом не удаляются.`);
-
-    if (!confirmed) {
-      return;
-    }
-
     setIsDeletingPage(true);
     setStatusMessage('Удаляем страницу');
 
@@ -3230,14 +3226,46 @@ export function WorkspacePage() {
                     </span>
                   </button>
                   {activePageId && (activePage?.access?.capabilities.canDelete ?? true) ? (
-                    <button
-                      type="button"
-                      onClick={() => void handleDeletePage(activePageId, activePage?.title ?? 'Без названия')}
-                      disabled={isDeletingPage}
-                      className="mt-2 w-full rounded-lg border border-[#ffd2d9] bg-[#fff7f8] px-3 py-2 text-sm font-semibold text-[#b00025] transition-colors hover:border-[#d70032] hover:bg-[#fff1f3] disabled:cursor-wait disabled:opacity-60"
-                    >
-                      {isDeletingPage ? 'Удаляем страницу...' : 'Удалить страницу'}
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setIsDeletePageConfirmOpen(true)}
+                        disabled={isDeletingPage}
+                        className="mt-2 w-full rounded-lg border border-[#ffd2d9] bg-[#fff7f8] px-3 py-2 text-sm font-semibold text-[#b00025] transition-colors hover:border-[#d70032] hover:bg-[#fff1f3] disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {isDeletingPage ? 'Удаляем страницу...' : 'Удалить страницу'}
+                      </button>
+                      {isDeletePageConfirmOpen ? createPortal(
+                        <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/30 p-4" role="dialog" aria-modal="true" aria-label="Подтверждение удаления страницы">
+                          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-lg">
+                            <p className="text-sm leading-6 text-[#1f1f1f]">
+                              Удалить страницу «{activePage?.title ?? 'Без названия'}»? Таблицы MWS при этом не удаляются.
+                            </p>
+                            <div className="mt-6 flex justify-end gap-3">
+                              <button
+                                type="button"
+                                onClick={() => setIsDeletePageConfirmOpen(false)}
+                                className="rounded-lg border border-editor-border-subtle bg-white px-4 py-2 text-sm font-semibold text-[#505762] hover:bg-[#f7f8fa]"
+                              >
+                                Отмена
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsDeletePageConfirmOpen(false);
+                                  void handleDeletePage(activePageId, activePage?.title ?? 'Без названия');
+                                }}
+                                disabled={isDeletingPage}
+                                className="rounded-lg bg-[#d70032] px-4 py-2 text-sm font-semibold text-white hover:bg-[#b8002b] disabled:cursor-wait disabled:opacity-60"
+                              >
+                                {isDeletingPage ? 'Удаляем страницу...' : 'Удалить страницу'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>,
+                        document.body,
+                      ) : null}
+                    </>
                   ) : null}
                   {canManageAccess && accessDraft ? (
                     <div className="mt-3 rounded-2xl border border-[#d7e2f2] bg-[#f7fafe] p-3">
