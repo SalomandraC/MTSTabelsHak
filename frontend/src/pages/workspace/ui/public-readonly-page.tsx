@@ -86,7 +86,7 @@ export function PublicReadOnlyPage() {
         <div className="mx-auto max-w-5xl px-4 pb-8 text-sm text-[#b00025]">{error}</div>
       ) : null}
       {page && !isLoading && !error ? (
-        <section className="mx-auto max-w-5xl rounded-2xl border border-[#ffd2d9] bg-[#fff9fa] shadow-sm">
+        <section className="mx-auto max-w-5xl rounded-2xl border border-[#ffd2d9] bg-white shadow-sm">
           <header className="border-b border-[#ffdfe4] bg-[#fff3f5] px-6 py-4">
             <h1 className="text-xl font-semibold text-[#1f1f1f]">{page.title}</h1>
           </header>
