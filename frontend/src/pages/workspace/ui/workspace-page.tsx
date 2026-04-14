@@ -70,13 +70,19 @@ const WHATS_NEW_BANNER_DURATION_SEC = 30;
 const WHATS_NEW_BANNER_STORAGE_KEY = 'wikilive:disable-whats-new-banner';
 const WHATS_NEW_BANNER_ENABLED = (import.meta.env.VITE_ENABLE_WHATS_NEW_BANNER ?? 'true') !== 'false';
 
-function getShareUrl(spaceId: string, pageId: string | null) {
+function getShareUrl(spaceId: string, pageId: string | null, readOnly = false) {
   const url = new URL(window.location.href);
   url.pathname = pageId
     ? `/spaces/${encodeURIComponent(spaceId)}/pages/${encodeURIComponent(pageId)}`
     : `/spaces/${encodeURIComponent(spaceId)}`;
   url.searchParams.delete('spaceId');
   url.searchParams.delete('pageId');
+
+  if (readOnly) {
+    url.searchParams.set('readOnly', 'true');
+  } else {
+    url.searchParams.delete('readOnly');
+  }
 
   return url.toString();
 }
@@ -874,6 +880,7 @@ export function WorkspacePage() {
   const pendingRoutePageIdRef = useRef(initialRoute.pageId);
   const [spaces, setSpaces] = useState<MwsSpace[]>([]);
   const [selectedSpaceId, setSelectedSpaceId] = useState(initialRoute.spaceId ?? DEFAULT_WIKILIVE_SPACE_ID);
+  const [isReadOnlyViewLink, setIsReadOnlyViewLink] = useState(initialRoute.readOnly);
   const [tree, setTree] = useState<WorkspaceTreeNode[]>([]);
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
@@ -1609,8 +1616,11 @@ export function WorkspacePage() {
       if (route.spaceId && route.spaceId !== selectedSpaceId) {
         pendingRoutePageIdRef.current = route.pageId;
         setSelectedSpaceId(route.spaceId);
+        setIsReadOnlyViewLink(route.readOnly);
         return;
       }
+
+      setIsReadOnlyViewLink(route.readOnly);
 
       if (route.pageId) {
         setSelectedTableNode(null);
@@ -1749,6 +1759,20 @@ export function WorkspacePage() {
       setShareStatus('Ссылка скопирована');
     } catch {
       window.prompt('Ссылка на текущую страницу', shareUrl);
+      setShareStatus('Ссылка готова');
+    }
+
+    window.setTimeout(() => setShareStatus(''), 2200);
+  };
+
+  const handleCopyReadOnlyShareLink = async () => {
+    const shareUrl = getShareUrl(selectedSpaceId, activePageId, true);
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareStatus('Ссылка для просмотра скопирована');
+    } catch {
+      window.prompt('Ссылка на текущую страницу в режиме только чтения', shareUrl);
       setShareStatus('Ссылка готова');
     }
 
@@ -2772,13 +2796,6 @@ export function WorkspacePage() {
           <div className="flex h-12 items-center justify-center gap-4 border-t border-[#e5e6eb]">
             <button
               type="button"
-              className="flex h-8 w-8 items-center justify-center rounded-md text-[#30c28b] hover:bg-[#f2f3f5]"
-              title="Корзина"
-            >
-              <Trash2 size={18} strokeWidth={2.1} />
-            </button>
-            <button
-              type="button"
               onClick={() => setIsPluginsModalOpen(true)}
               aria-haspopup="dialog"
               aria-expanded={isPluginsModalOpen}
@@ -2789,8 +2806,9 @@ export function WorkspacePage() {
             </button>
             <button
               type="button"
+              onClick={() => void handleCopyReadOnlyShareLink()}
               className="flex h-8 w-8 items-center justify-center rounded-md text-[#7b67ee] hover:bg-[#f2f3f5]"
-              title="Пригласить"
+              title="Копировать ссылку на страницу в режиме только чтения"
             >
               <Users size={18} strokeWidth={2.1} />
             </button>
@@ -2896,6 +2914,11 @@ export function WorkspacePage() {
         {statusMessage ? (
           <div className="border-b border-editor-border-subtle bg-white px-4 py-2 text-sm text-editor-text-tertiary">{statusMessage}</div>
         ) : null}
+        {isReadOnlyViewLink ? (
+          <div className="border-b border-[#dbeafe] bg-[#eff6ff] px-4 py-2 text-sm text-[#1d4ed8]">
+            Открыто по ссылке только для просмотра
+          </div>
+        ) : null}
         {isCommentsEnabled && comments.errorMessage && !comments.isPanelOpen ? (
           <div className="border-b border-[#efe9ff] bg-[#f7f4ff] px-4 py-2 text-sm text-[#6d5dd3]">{comments.errorMessage}</div>
         ) : null}
@@ -2911,6 +2934,7 @@ export function WorkspacePage() {
             ]
               .filter(Boolean)
               .join(' ')}
+            isReadOnlyViewLink={isReadOnlyViewLink}
             onRenamePage={handleRenamePage}
             onToggleHeadingNumbering={handleToggleHeadingNumbering}
             onCheckpoint={handleCheckpoint}
@@ -3070,14 +3094,7 @@ export function WorkspacePage() {
                   </div>
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">Связи</p>
                   <h2 className="mt-1 font-wide text-base font-semibold">{activePage?.title ?? 'Страница не выбрана'}</h2>
-                  <button
-                    type="button"
-                    onClick={() => void handleCopyShareLink()}
-                    disabled={!activePageId}
-                    className="mt-3 w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm font-semibold text-editor-text-secondary transition-colors hover:bg-editor-bg-control disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {shareStatus || 'Скопировать ссылку'}
-                  </button>
+                  
                   <button
                     type="button"
                     onClick={() => {
