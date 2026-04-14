@@ -934,7 +934,11 @@ export function usePageEditorController({
     deleteSlashRange();
 
     if (item.id === 'link') {
-      const modalAnchor = { top: slashState.top, left: slashState.left };
+      const selectionCoords = editor.view.coordsAtPos(editor.state.selection.from);
+      const modalAnchor = {
+        top: selectionCoords.bottom + 8,
+        left: selectionCoords.left,
+      };
       setSlashState(baseSlashState);
       openLinkModal(modalAnchor);
       return;

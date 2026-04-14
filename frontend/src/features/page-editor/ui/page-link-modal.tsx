@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { ModalActionButton } from '../../../shared/ui';
 
 type PageLinkModalProps = {
@@ -29,15 +30,15 @@ export function PageLinkModal({
   onDeleteLink,
   onClose,
 }: PageLinkModalProps) {
-  if (!isOpen) {
+  if (!isOpen || typeof document === 'undefined') {
     return null;
   }
 
   const canSubmit = linkText.trim().length > 0 && url.trim().length > 0;
 
-  return (
+  return createPortal(
     <div
-      className="fixed z-[80] flex w-[min(26.5rem,calc(100vw-1rem))] flex-col items-start justify-center gap-3 rounded-xl bg-white p-6 shadow-[0px_4px_24px_rgba(0,0,0,0.12),0px_8px_16px_rgba(0,0,0,0.08)]"
+      className="fixed z-[220] flex w-[min(26.5rem,calc(100vw-1rem))] flex-col items-start justify-center gap-3 rounded-xl bg-white p-6 shadow-[0px_4px_24px_rgba(0,0,0,0.12),0px_8px_16px_rgba(0,0,0,0.08)]"
       style={{ top: position.top, left: position.left }}
       role="dialog"
       aria-modal="false"
@@ -93,5 +94,5 @@ export function PageLinkModal({
         </ModalActionButton>
       </div>
     </div>
-  );
+  , document.body);
 }
