@@ -101,57 +101,84 @@ export const RootBlock = Node.create({
 	},
 
 	addKeyboardShortcuts() {
+		const resolveRootBlockContext = () => {
+			const { state } = this.editor.view;
+			const { selection } = state;
+
+			const { $from } = selection;
+			let rootBlockDepth = -1;
+
+			for (let depth = $from.depth; depth > 0; depth -= 1) {
+				if ($from.node(depth).type.name === this.name) {
+					rootBlockDepth = depth;
+					break;
+				}
+			}
+
+			if (rootBlockDepth < 0) {
+				return null;
+			}
+
+			const topLevelBlock = $from.node(rootBlockDepth + 1);
+			const passthroughTypes = new Set(['bulletList', 'orderedList', 'taskList', 'blockquote', 'codeBlock']);
+
+			if (passthroughTypes.has(topLevelBlock.type.name)) {
+				return null;
+			}
+
+			return {
+				rootBlockDepth,
+			};
+		};
+
+		const insertSiblingRootBlock = () => {
+			const { state, dispatch } = this.editor.view;
+			const { selection } = state;
+
+			if (!selection.empty) {
+				return false;
+			}
+
+			const context = resolveRootBlockContext();
+
+			if (!context) {
+				return false;
+			}
+
+			const { $from } = selection;
+			const rootBlockType = state.schema.nodes[this.name];
+			const paragraphType = state.schema.nodes.paragraph;
+
+			if (!rootBlockType || !paragraphType) {
+				return false;
+			}
+
+			const paragraph = paragraphType.createAndFill();
+			if (!paragraph) {
+				return false;
+			}
+
+			const insertPos = $from.after(context.rootBlockDepth);
+			const newRootBlock = rootBlockType.create(null, [paragraph]);
+
+			let tr = state.tr.insert(insertPos, newRootBlock);
+			tr = tr.setSelection(TextSelection.near(tr.doc.resolve(insertPos + 2))).scrollIntoView();
+
+			dispatch(tr);
+			return true;
+		};
+
 		return {
 			Enter: () => {
-				const { state, dispatch } = this.editor.view;
-				const { selection } = state;
+				const context = resolveRootBlockContext();
 
-				if (!selection.empty) {
+				if (!context) {
 					return false;
 				}
 
-				const { $from } = selection;
-				let rootBlockDepth = -1;
-
-				for (let depth = $from.depth; depth > 0; depth -= 1) {
-					if ($from.node(depth).type.name === this.name) {
-						rootBlockDepth = depth;
-						break;
-					}
-				}
-
-				if (rootBlockDepth < 0) {
-					return false;
-				}
-
-				const topLevelBlock = $from.node(rootBlockDepth + 1);
-				const passthroughTypes = new Set(['bulletList', 'orderedList', 'taskList', 'blockquote', 'codeBlock']);
-
-				if (passthroughTypes.has(topLevelBlock.type.name)) {
-					return false;
-				}
-
-				const rootBlockType = state.schema.nodes[this.name];
-				const paragraphType = state.schema.nodes.paragraph;
-
-				if (!rootBlockType || !paragraphType) {
-					return false;
-				}
-
-				const paragraph = paragraphType.createAndFill();
-				if (!paragraph) {
-					return false;
-				}
-
-				const insertPos = $from.after(rootBlockDepth);
-				const newRootBlock = rootBlockType.create(null, [paragraph]);
-
-				let tr = state.tr.insert(insertPos, newRootBlock);
-				tr = tr.setSelection(TextSelection.near(tr.doc.resolve(insertPos + 2))).scrollIntoView();
-
-				dispatch(tr);
-				return true;
+				return this.editor.commands.setHardBreak();
 			},
+			'Mod-Enter': () => insertSiblingRootBlock(),
 		};
 	},
 
