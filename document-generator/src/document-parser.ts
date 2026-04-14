@@ -47,7 +47,7 @@ function flattenNode(node: ProseMirrorNode, blocks: BlockNode[], link?: ParserLi
         type: 'paragraph',
         content: renderInlineContent(node.content ?? [], link),
         marks: extractMarks(node.content ?? []),
-        inlineNodes: extractInlineNodes(node.content ?? []),
+        inlineNodes: extractInlineNodes(node.content ?? [], link),
       });
       break;
     }
@@ -227,16 +227,17 @@ function renderInlineContent(nodes: ProseMirrorNode[], link?: ParserLinkContext)
 
 type InlineNode = NonNullable<import('./types.js').BlockNode['inlineNodes']>[number];
 
-function extractInlineNodes(nodes: ProseMirrorNode[]): InlineNode[] {
+function extractInlineNodes(nodes: ProseMirrorNode[], link?: ParserLinkContext): InlineNode[] {
   const result: InlineNode[] = [];
   for (const n of nodes) {
     if (n.type === 'pageLink') {
-      result.push({
-        type: 'page_link',
-        text: (n.attrs?.title as string) ?? 'Страница',
-        pageId: (n.attrs?.pageId as string) ?? undefined,
-        pageTitle: (n.attrs?.title as string) ?? undefined,
-      });
+      const pageId = (n.attrs?.pageId as string) ?? undefined;
+      const pageTitle = (n.attrs?.title as string) ?? undefined;
+      let href: string | undefined;
+      if (link?.appBaseUrl && link?.spaceId && pageId) {
+        href = `${link.appBaseUrl.replace(/\/$/, '')}/spaces/${encodeURIComponent(link.spaceId)}/pages/${encodeURIComponent(pageId)}`;
+      }
+      result.push({ type: 'page_link', text: pageTitle ?? 'Страница', pageId, pageTitle, href });
     } else if (n.type === 'text') {
       const node: InlineNode = { type: 'text', text: n.text ?? '' };
       if (n.marks) {
