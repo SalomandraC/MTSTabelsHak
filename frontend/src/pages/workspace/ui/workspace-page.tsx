@@ -269,6 +269,7 @@ function WorkspaceTreeItem({
   onCreatePage,
   onExportPage,
   onMoveNode,
+  onMoveNodeToRoot,
   dragSourceId,
   dragOverNodeId,
   dragOverPosition,
@@ -295,6 +296,7 @@ function WorkspaceTreeItem({
   onCreatePage: (title: string, parentNodeId?: string | null) => Promise<void>;
   onExportPage: (pageId: string, title: string, format: ExportFormat) => void;
   onMoveNode: (sourceId: string, targetId: string) => void | Promise<void>;
+  onMoveNodeToRoot?: (sourceId: string) => void | Promise<void>;
   dragSourceId: string | null;
   dragOverNodeId: string | null;
   dragOverPosition: 'inside' | 'unsupported' | null;
@@ -551,8 +553,7 @@ function WorkspaceTreeItem({
             event.stopPropagation();
 
             if (!canAcceptDrop) {
-              setDragOverNodeId?.(node.id);
-              setDragOverPosition?.('unsupported');
+              void onMoveNodeToRoot?.(sourceId);
               return;
             }
 
@@ -944,6 +945,9 @@ export function WorkspacePage() {
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [outgoingLinks, setOutgoingLinks] = useState<OutgoingLink[]>([]);
   const [graphEdges, setGraphEdges] = useState<DocumentGraphEdge[]>([]);
+  const pageLinkCountRef = useRef<number>(0);
+  const graphRefreshTimerRef = useRef<number | null>(null);
+  const refreshDocumentGraphRef = useRef<(() => Promise<void>) | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreatingTablePage, setIsCreatingTablePage] = useState(false);
   const [isDeletingTable, setIsDeletingTable] = useState(false);
@@ -1029,6 +1033,29 @@ export function WorkspacePage() {
   );
   const canManageAccess = activePage?.access?.capabilities.canManageAccess ?? false;
   const canEditActivePage = activePage?.access?.capabilities.canEdit ?? true;
+
+  const countPageLinks = useCallback((editor: Editor) => {
+    let count = 0;
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === 'pageLink') {
+        count += 1;
+      }
+      return true;
+    });
+    return count;
+  }, []);
+
+  const scheduleGraphRefresh = useCallback(() => {
+    if (graphRefreshTimerRef.current) {
+      window.clearTimeout(graphRefreshTimerRef.current);
+    }
+
+    graphRefreshTimerRef.current = window.setTimeout(() => {
+      void refreshDocumentGraphRef.current?.();
+      graphRefreshTimerRef.current = null;
+    }, 3000);
+  }, []);
+
   const isHistoryPreviewActive = Boolean(historyPreviewCheckpoint);
   const hasAccessChanges = Boolean(
     accessDraft &&
@@ -1041,6 +1068,33 @@ export function WorkspacePage() {
   );
   const isDocumentGraphEnabled = isWorkspaceSidebarEnabled('document-graph');
   const isCommentsEnabled = isPluginEnabled('comments');
+
+  useEffect(() => {
+    if (!activeEditor) {
+      return;
+    }
+
+    const initialCount = countPageLinks(activeEditor);
+    pageLinkCountRef.current = initialCount;
+
+    const handleTransaction = () => {
+      const currentCount = countPageLinks(activeEditor);
+      if (currentCount !== pageLinkCountRef.current) {
+        pageLinkCountRef.current = currentCount;
+        scheduleGraphRefresh();
+      }
+    };
+
+    activeEditor.on('transaction', handleTransaction);
+
+    return () => {
+      activeEditor.off('transaction', handleTransaction);
+      if (graphRefreshTimerRef.current) {
+        window.clearTimeout(graphRefreshTimerRef.current);
+        graphRefreshTimerRef.current = null;
+      }
+    };
+  }, [activeEditor, countPageLinks, scheduleGraphRefresh]);
   const isTimeMachineEnabled = isPluginEnabled('time-machine');
   const isNavigationEnabled = isWorkspaceSidebarEnabled('navigation');
   const isAiSidebarEnabled = isWorkspaceSidebarEnabled('sidebar');
@@ -1253,6 +1307,42 @@ export function WorkspacePage() {
         setErrorMessage(error instanceof Error ? error.message : 'Не удалось переместить объект');
       } finally {
         clearTreeDragState();
+        setDragSourceId(null);
+      }
+    },
+    [activePageId, clearTreeDragState, findNodeAndParent, refreshTree, selectedSpaceId, tree],
+  );
+
+  const moveTreeNodeToRoot = useCallback(
+    async (sourceId: string) => {
+      const sourceInfo = findNodeAndParent(tree, sourceId);
+
+      if (!sourceInfo) {
+        clearTreeDragState();
+        setDragSourceId(null);
+        return;
+      }
+
+      if (!isWorkspaceMovableNode(sourceInfo.node)) {
+        setErrorMessage('Можно перемещать только локальные страницы и папки');
+        clearTreeDragState();
+        setDragSourceId(null);
+        return;
+      }
+
+      try {
+        await wikiliveApi.moveNode(sourceId, {
+          targetParentId: null,
+          targetExternalParentNodeId: null,
+        });
+
+        setErrorMessage('');
+        await refreshTree(selectedSpaceId, activePageId);
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Не удалось переместить объект');
+      } finally {
+        clearTreeDragState();
+        setDragSourceId(null);
       }
     },
     [activePageId, clearTreeDragState, findNodeAndParent, refreshTree, selectedSpaceId, tree],
@@ -1265,6 +1355,10 @@ export function WorkspacePage() {
 
     await refreshGraphLinks(tree);
   }, [refreshGraphLinks, tree]);
+
+  useEffect(() => {
+    refreshDocumentGraphRef.current = refreshDocumentGraph;
+  }, [refreshDocumentGraph]);
 
   const refreshLinks = async (pageId: string) => {
     const [backlinksResponse, outgoingResponse] = await Promise.all([
@@ -2434,10 +2528,67 @@ export function WorkspacePage() {
 
           <div
             ref={workbenchTreeWrapperRef}
-            className="relative mt-2 min-h-0 flex-1 overflow-y-auto px-2 pb-2"
+            className={['relative mt-2 min-h-0 flex-1 overflow-y-auto px-2 pb-2',
+              dragOverNodeId === null && dragOverPosition === 'inside' ? 'bg-[#fff1f3]/30' : '',
+            ].join(' ')}
             id="WORKBENCH_SIDE_NODE_WRAPPER"
             onContextMenu={handleWorkbenchBlankAreaContextMenu}
+            onDragOver={(event) => {
+              if (!dragSourceId || event.target !== event.currentTarget) {
+                return;
+              }
+
+              const sourceInfo = findNodeAndParent(tree, dragSourceId);
+              if (!sourceInfo || !isWorkspaceMovableNode(sourceInfo.node)) {
+                return;
+              }
+
+              event.preventDefault();
+              event.dataTransfer.dropEffect = 'move';
+              setDragOverNodeId?.(null);
+              setDragOverPosition?.('inside');
+            }}
+            onDragEnter={(event) => {
+              if (!dragSourceId || event.target !== event.currentTarget) {
+                return;
+              }
+
+              const sourceInfo = findNodeAndParent(tree, dragSourceId);
+              if (!sourceInfo || !isWorkspaceMovableNode(sourceInfo.node)) {
+                return;
+              }
+
+              event.preventDefault();
+              setDragOverNodeId?.(null);
+              setDragOverPosition?.('inside');
+            }}
+            onDragLeave={(event) => {
+              if (event.currentTarget.contains(event.relatedTarget as Node)) {
+                return;
+              }
+
+              if (dragOverNodeId === null) {
+                setDragOverPosition?.(null);
+              }
+            }}
+            onDrop={(event) => {
+              if (event.target !== event.currentTarget) {
+                return;
+              }
+
+              const sourceId = dragSourceId ?? event.dataTransfer.getData('application/x-wikilive-node-id');
+              if (!sourceId) {
+                return;
+              }
+
+              event.preventDefault();
+              event.stopPropagation();
+              void moveTreeNodeToRoot(sourceId);
+            }}
           >
+            {dragOverNodeId === null && dragOverPosition === 'inside' ? (
+              <div className="pointer-events-none absolute inset-0 rounded-2xl bg-[#fff1f3]/20" />
+            ) : null}
             {isLoading ? (
               <WorkspaceTreeSkeleton />
             ) : (
@@ -2470,6 +2621,7 @@ export function WorkspacePage() {
                       }}
                       onExportPage={handleExportPage}
                       onMoveNode={moveTreeNode}
+                      onMoveNodeToRoot={moveTreeNodeToRoot}
                       dragSourceId={dragSourceId}
                       dragOverNodeId={dragOverNodeId}
                       dragOverPosition={dragOverPosition}
