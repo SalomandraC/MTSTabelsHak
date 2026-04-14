@@ -64,6 +64,7 @@ export class AiToolsController {
     return this.aiChatService.askQuestion(
       {
         question: dto.question,
+        intent: dto.intent,
         pageId: dto.pageId,
         datasheetId: dto.datasheetId,
         viewId: dto.viewId,

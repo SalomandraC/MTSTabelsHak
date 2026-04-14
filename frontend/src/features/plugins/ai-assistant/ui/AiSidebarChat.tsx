@@ -1,5 +1,5 @@
 import type { Editor } from '@tiptap/core';
-import { Files, Search, SendHorizontal, Trash2, X } from 'lucide-react';
+import { Files, Search, SendHorizontal, Square, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { wikiliveApi } from '../../../../shared/api/wikilive';
@@ -131,6 +131,7 @@ export function AiSidebarChat({
   const [contextSearch, setContextSearch] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
   const contextRowRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const { handleAiChatResponse } = useAiTableContext();
 
   const contextPages = useMemo(() => {
@@ -215,6 +216,17 @@ export function AiSidebarChat({
     return () => window.removeEventListener('keydown', handleEscape);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+    };
+  }, []);
+
+  const handleStop = () => {
+    abortControllerRef.current?.abort();
+  };
+
   const handleAddDocument = async (page: AvailableContextPage) => {
     setIsContextMenuOpen(false);
     setContextSearch('');
@@ -268,6 +280,9 @@ export function AiSidebarChat({
     setErrorMessage('');
     setIsSending(true);
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       const response = await wikiliveApi.aiChat({
         question: trimmed,
@@ -279,14 +294,24 @@ export function AiSidebarChat({
         },
         contextDocuments: selectedContextPayload,
         useVectorSearch: true,
+        intent: 'chat',
+      }, {
+        signal: controller.signal,
       });
 
       handleAiChatResponse(response);
 
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: 'assistant', text: response.answer }]);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Не удалось получить ответ ИИ');
+      if (error instanceof Error && error.name === 'AbortError') {
+        setErrorMessage('Генерация остановлена');
+      } else {
+        setErrorMessage(error instanceof Error ? error.message : 'Не удалось получить ответ ИИ');
+      }
     } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
       setIsSending(false);
     }
   };
@@ -334,6 +359,11 @@ export function AiSidebarChat({
             className="border-t border-editor-border-subtle bg-white p-2"
             onSubmit={(event) => {
               event.preventDefault();
+              if (isSending) {
+                handleStop();
+                return;
+              }
+
               void handleSend();
             }}
           >
@@ -448,11 +478,17 @@ export function AiSidebarChat({
                 </button>
                 <button
                   type="submit"
-                  disabled={isSending || !draft.trim() || !enabled || hasPendingContext}
+                  disabled={(!isSending && !draft.trim()) || !enabled || hasPendingContext}
                   className="inline-flex h-7 w-11 items-center justify-center rounded-lg border border-editor-border-subtle bg-[#d70032] text-sm font-semibold text-white transition-colors hover:bg-[#b00025] disabled:cursor-not-allowed disabled:opacity-50"
-                  title={hasPendingContext ? 'Контекст загружается' : 'Отправить'}
+                  title={
+                    hasPendingContext
+                      ? 'Контекст загружается'
+                      : isSending
+                        ? 'Остановить генерацию'
+                        : 'Отправить'
+                  }
                 >
-                  <SendHorizontal size={16} />
+                  {isSending ? <Square size={14} /> : <SendHorizontal size={16} />}
                 </button>
               </div>
             </div>

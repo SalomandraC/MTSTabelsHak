@@ -1,3 +1,5 @@
+import { AiIntent } from './ai-assistant.types';
+
 export interface AiChatToolDefinition {
   type: 'function';
   function: {
@@ -9,6 +11,7 @@ export interface AiChatToolDefinition {
 
 export interface ChatQuestionInput {
   question: string;
+  intent?: AiIntent;
   pageId?: string;
   pageTitle?: string;
   pageSnapshot?: Record<string, unknown> | string;

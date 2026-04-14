@@ -4,6 +4,8 @@ import { AiProviderClientService, AiChatMessage } from './ai-provider-client.ser
 import { ChatQuestionInput, ChatQuestionResponse } from './ai-chat.types';
 import { AiToolRegistryService } from './ai-tool-registry.service';
 import { ToolExecutionResult } from './ai-tool-registry.types';
+import { AiAssistantService } from './ai-assistant.service';
+import { AiIntent } from './ai-assistant.types';
 
 @Injectable()
 export class AiChatService {
@@ -12,11 +14,16 @@ export class AiChatService {
   constructor(
     private readonly aiProviderClientService: AiProviderClientService,
     private readonly aiToolRegistryService: AiToolRegistryService,
+    private readonly aiAssistantService: AiAssistantService,
   ) {}
 
   async askQuestion(input: ChatQuestionInput, user: UserContext): Promise<ChatQuestionResponse> {
+    const intent: AiIntent = input.intent ?? 'chat';
+    const model = this.aiAssistantService.resolveModelForIntent(intent);
+    const maxTokens = intent === 'write_report' ? 4096 : 512;
+
     const contextMarkdown = this.snapshotToMarkdown(input.pageSnapshot);
-    const messages = this.buildMessages(input.question, contextMarkdown, input);
+    const messages = this.buildMessages(input.question, contextMarkdown, input, intent);
 
     const toolDefinitions = this.aiToolRegistryService
       .getToolDefinitions()
@@ -27,9 +34,10 @@ export class AiChatService {
     let needsRefresh = false;
 
     let response = await this.aiProviderClientService.complete({
+      model,
       messages,
       temperature: 0.25,
-      maxTokens: 512,
+      maxTokens,
       tools: toolDefinitions,
       toolChoice: 'auto',
     });
@@ -83,9 +91,10 @@ export class AiChatService {
       }
 
       response = await this.aiProviderClientService.complete({
+        model,
         messages: conversation,
         temperature: 0.2,
-        maxTokens: 512,
+        maxTokens,
         tools: toolDefinitions,
         toolChoice: 'none',
       });
@@ -120,7 +129,12 @@ export class AiChatService {
     });
   }
 
-  private buildMessages(question: string, contextMarkdown: string, input: ChatQuestionInput): AiChatMessage[] {
+  private buildMessages(
+    question: string,
+    contextMarkdown: string,
+    input: ChatQuestionInput,
+    intent: AiIntent,
+  ): AiChatMessage[] {
     const tableContextLines = [
       input.datasheetId ? `Target MWS datasheetId: ${input.datasheetId}` : null,
       input.viewId ? `Target MWS viewId: ${input.viewId}` : null,
@@ -153,6 +167,12 @@ export class AiChatService {
           'When tool arguments require a datasheetId, use the exact Target MWS datasheetId from the context.',
             'Only answer the user after the table has already been changed by tools.',
             'Keep the answer concise, factual, and grounded in the provided context or tool output.',
+            intent === 'plan_mutation'
+              ? 'STRICT MWS TABLE MODE: for table operations use tools first, produce deterministic tool arguments, and do not ask clarifying questions.'
+              : null,
+            intent === 'write_report'
+              ? 'Напиши подробный отчет объемом на одну полную страницу А4. Всегда используй [Ref:tableId:rowId:colId] для живых ссылок на данные.'
+              : null,
         ].join(' '),
       },
       {

@@ -1,4 +1,4 @@
-import { SendHorizontal, X } from 'lucide-react';
+import { SendHorizontal, Square, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/core';
 
@@ -510,7 +510,8 @@ export function AiInlineCopilot({
   const [createdPage, setCreatedPage] = useState<{ id: string; title: string } | null>(null);
   const [selectedContextId, setSelectedContextId] = useState('detected');
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
-  const { handleAiChatResponse, refreshTable: requestRefresh } = useAiTableContext();
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const { handleAiChatResponse } = useAiTableContext();
 
   useEffect(() => {
     if (!isOpen) {
@@ -545,6 +546,13 @@ export function AiInlineCopilot({
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose, showContextMenu]);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+    };
+  }, []);
 
   const contextOptions = useMemo(() => {
     const options: ContextOption[] = [
@@ -648,22 +656,37 @@ export function AiInlineCopilot({
     return null;
   }
 
-  const withBusy = async <T,>(job: () => Promise<T>) => {
+  const withBusy = async <T,>(job: (signal: AbortSignal) => Promise<T>) => {
     setIsBusy(true);
     setStatus('Выполняю команду...');
     setCreatedPage(null);
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
-      const result = await job();
+      const result = await job(controller.signal);
       setStatus('Готово');
       return result;
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        setStatus('Генерация остановлена');
+        return undefined as T;
+      }
+
       const message = error instanceof Error ? error.message : 'Ошибка выполнения';
       setStatus(message);
       throw error;
     } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
       setIsBusy(false);
     }
+  };
+
+  const handleStop = () => {
+    abortControllerRef.current?.abort();
   };
 
   const applyPromptSuggestion = (suggestion: string) => {
@@ -861,7 +884,7 @@ export function AiInlineCopilot({
       return;
     }
 
-    await withBusy(async () => {
+    await withBusy(async (signal) => {
       const context = await getTableContext({
         datasheetId,
         viewId: activeContext.viewId,
@@ -883,16 +906,24 @@ export function AiInlineCopilot({
           total: context.total,
           updatedAt: Date.now(),
         },
+      }, {
+        signal,
       });
 
       const normalizedPlan = forceExistingRowsUpdate(prompt.trim(), planned, context.records);
 
       setOutput(`AI план: ${normalizedPlan.summary}`);
       await applyWorkflow(normalizedPlan, datasheetId);
-      requestRefresh({
-        datasheetId,
-        viewId: activeContext.viewId,
-      });
+      handleAiChatResponse(
+        {
+          answer: normalizedPlan.summary,
+          needsRefresh: true,
+        },
+        {
+          datasheetId,
+          viewId: activeContext.viewId,
+        },
+      );
       setOutput(`${normalizedPlan.summary}\n\n${normalizedPlan.commands.map((command) => JSON.stringify(command)).join('\n')}`);
     });
   };
@@ -929,7 +960,7 @@ export function AiInlineCopilot({
   };
 
   const runAnalyze = async () => {
-    await withBusy(async () => {
+    await withBusy(async (signal) => {
       if (activeContext.kind === 'table' && activeContext.datasheetId) {
         const context = await getTableContext({
           datasheetId: activeContext.datasheetId,
@@ -950,6 +981,9 @@ export function AiInlineCopilot({
           pageSnapshot: {
             markdown: getEditorMarkdown(editor),
           },
+          intent: 'chat',
+        }, {
+          signal,
         });
 
         handleAiChatResponse(response, {
@@ -975,6 +1009,9 @@ export function AiInlineCopilot({
           pageId: pageId ?? undefined,
           pageTitle,
           pageSnapshot: { markdown },
+          intent: 'chat',
+        }, {
+          signal,
         });
 
         handleAiChatResponse(response);
@@ -992,6 +1029,9 @@ export function AiInlineCopilot({
         pageId: pageId ?? undefined,
         pageTitle,
         pageSnapshot: { markdown },
+        intent: 'chat',
+      }, {
+        signal,
       });
 
       handleAiChatResponse(response);
@@ -1000,7 +1040,7 @@ export function AiInlineCopilot({
     });
   };
 
-  const createReportText = async (): Promise<string> => {
+  const createReportText = async (signal: AbortSignal): Promise<string> => {
     if (activeContext.kind === 'table' && activeContext.datasheetId) {
       const context = await getTableContext({
         datasheetId: activeContext.datasheetId,
@@ -1024,6 +1064,9 @@ export function AiInlineCopilot({
         pageSnapshot: {
           markdown: getEditorMarkdown(editor),
         },
+        intent: 'write_report',
+      }, {
+        signal,
       });
 
       handleAiChatResponse(response, {
@@ -1047,6 +1090,9 @@ export function AiInlineCopilot({
         pageId: pageId ?? undefined,
         pageTitle,
         pageSnapshot: { markdown },
+        intent: 'write_report',
+      }, {
+        signal,
       });
 
       handleAiChatResponse(response);
@@ -1063,6 +1109,9 @@ export function AiInlineCopilot({
       pageId: pageId ?? undefined,
       pageTitle,
       pageSnapshot: { markdown },
+      intent: 'write_report',
+    }, {
+      signal,
     });
 
     handleAiChatResponse(response);
@@ -1071,8 +1120,8 @@ export function AiInlineCopilot({
   };
 
   const reportToCurrentFile = async () => {
-    await withBusy(async () => {
-      const reportText = await createReportText();
+    await withBusy(async (signal) => {
+      const reportText = await createReportText(signal);
       if (editor) {
         const reportRootBlock = buildReportRootBlock(reportText, spaceId);
         const insertPos = activeContext.kind === 'table' && activeContext.datasheetId
@@ -1091,8 +1140,8 @@ export function AiInlineCopilot({
   };
 
   const reportToNewFile = async () => {
-    await withBusy(async () => {
-      const reportText = await createReportText();
+    await withBusy(async (signal) => {
+      const reportText = await createReportText(signal);
       const title = buildReportTitle(pageTitle);
       const created = await wikiliveApi.aiExecuteTool({
         toolName: 'create_wiki_page',
@@ -1102,6 +1151,8 @@ export function AiInlineCopilot({
         },
         pageId: pageId ?? undefined,
         workspaceId: spaceId,
+      }, {
+        signal,
       });
 
       if (!created.ok) {
@@ -1154,7 +1205,7 @@ export function AiInlineCopilot({
       return;
     }
 
-    await withBusy(async () => {
+    await withBusy(async (signal) => {
       const markdown = getEditorMarkdown(editor);
       const response = await wikiliveApi.aiChat({
         question: [
@@ -1167,6 +1218,9 @@ export function AiInlineCopilot({
         pageId: pageId ?? undefined,
         pageTitle,
         pageSnapshot: { markdown },
+        intent: 'chat',
+      }, {
+        signal,
       });
 
       if (editor) {
@@ -1180,7 +1234,7 @@ export function AiInlineCopilot({
   };
 
   const handleStructureDocument = async () => {
-    await withBusy(async () => {
+    await withBusy(async (signal) => {
       const sourceBlocks = collectStructureSourceBlocks(editor);
       const sourceText = sourceBlocks.map((block) => block.text).join('\n\n') || getEditorMarkdown(editor);
       const request = prompt.trim();
@@ -1212,6 +1266,9 @@ export function AiInlineCopilot({
         pageId: pageId ?? undefined,
         pageTitle,
         pageSnapshot: { markdown: sourceText },
+        intent: 'chat',
+      }, {
+        signal,
       });
 
       handleAiChatResponse(response);
@@ -1335,11 +1392,18 @@ export function AiInlineCopilot({
         <button
           type="button"
           className="inline-flex h-9 w-9 items-center justify-center self-end rounded-md border border-[#d70032] bg-[#d70032] text-white hover:bg-[#b8002b] disabled:cursor-not-allowed disabled:opacity-50"
-          onClick={() => void handleSend()}
-          disabled={isBusy || !prompt.trim()}
-          title="Отправить"
+          onClick={() => {
+            if (isBusy) {
+              handleStop();
+              return;
+            }
+
+            void handleSend();
+          }}
+          disabled={(!isBusy && !prompt.trim()) || !enabled}
+          title={isBusy ? 'Остановить генерацию' : 'Отправить'}
         >
-          <SendHorizontal size={14} />
+          {isBusy ? <Square size={12} /> : <SendHorizontal size={14} />}
         </button>
       </div>
 

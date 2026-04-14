@@ -34,6 +34,7 @@ export interface AiChatResponse {
 }
 
 export interface AiChatRequest {
+  model?: string;
   messages: AiChatMessage[];
   temperature?: number;
   maxTokens?: number;
@@ -54,7 +55,7 @@ export interface AiChatRequest {
 export class AiProviderClientService {
   private readonly baseUrl: string;
   private readonly apiKey?: string;
-  private readonly model: string;
+  private readonly defaultModel: string;
 
   constructor(
     private readonly httpService: HttpService,
@@ -65,7 +66,7 @@ export class AiProviderClientService {
       this.configService.get<string>('MWS_AI_TOKEN') ??
       this.configService.get<string>('AI_PROVIDER_API_KEY') ??
       undefined;
-    this.model = this.configService.get<string>('MWS_AI_MODEL', 'kimi-k2-instruct');
+    this.defaultModel = this.configService.get<string>('MWS_AI_MODEL', 'kimi-k2-instruct');
   }
 
   async complete(request: AiChatRequest): Promise<AiChatResponse> {
@@ -77,7 +78,7 @@ export class AiProviderClientService {
       this.httpService.post(
         `${this.baseUrl}/chat/completions`,
         {
-          model: this.model,
+          model: request.model ?? this.defaultModel,
           messages: request.messages,
           temperature: request.temperature ?? 0.2,
           max_tokens: request.maxTokens ?? 256,

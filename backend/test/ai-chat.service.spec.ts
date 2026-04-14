@@ -10,7 +10,15 @@ describe('AiChatService', () => {
     executeTool: jest.fn(),
   };
 
-  const service = new AiChatService(aiProviderClientService as any, aiToolRegistryService as any);
+  const aiAssistantService = {
+    resolveModelForIntent: jest.fn().mockReturnValue('qwen2.5-72b-instruct'),
+  };
+
+  const service = new AiChatService(
+    aiProviderClientService as any,
+    aiToolRegistryService as any,
+    aiAssistantService as any,
+  );
 
   const toolDefinitions = [
     {
