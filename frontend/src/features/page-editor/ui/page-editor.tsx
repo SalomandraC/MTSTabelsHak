@@ -616,8 +616,8 @@ function LivePageEditor({
   }, [controller.editor]);
 
   return (
-    <main className="flex h-full min-h-0 flex-col bg-editor-bg-page px-0 py-0">
-      <section className="flex min-h-0 w-full flex-1 flex-col bg-editor-bg-page">
+    <main className="flex min-h-full flex-col bg-editor-bg-page px-0 py-0">
+      <section className="flex w-full flex-col bg-editor-bg-page">
         <PageEditorHeader
           title={controller.title}
           description={controller.description}
