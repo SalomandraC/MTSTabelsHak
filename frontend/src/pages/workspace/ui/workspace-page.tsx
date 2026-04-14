@@ -80,6 +80,19 @@ function getShareUrl(spaceId: string, pageId: string | null) {
   return url.toString();
 }
 
+function calculateContextMenuPosition(rect: DOMRect, menuWidth: number, menuHeight: number) {
+  return {
+    left: Math.min(rect.right + 8, window.innerWidth - menuWidth - 8),
+    top: Math.max(
+      8,
+      Math.min(
+        rect.top + rect.height / 2 - menuHeight / 2 + rect.height * 0.25,
+        window.innerHeight - menuHeight - 8,
+      ),
+    ),
+  };
+}
+
 function flattenWorkspacePages(nodes: WorkspaceTreeNode[]): DocumentGraphPage[] {
   return nodes.flatMap((node) => [
     ...(node.kind === 'wikiPage' && node.linkedPageId ? [{ id: node.linkedPageId, title: node.title }] : []),
@@ -410,32 +423,25 @@ function WorkspaceTreeItem({
     const menuWidth = 176;
     const menuHeight = 224;
     const rect = event.currentTarget.getBoundingClientRect();
-    const left = Math.min(rect.right + 8, window.innerWidth - menuWidth - 8);
-    const top = Math.max(
-      8,
-      Math.min(
-        rect.top + rect.height / 2 - menuHeight / 2 + rect.height * 2,
-        window.innerHeight - menuHeight - 8,
-      ),
-    );
+    const position = calculateContextMenuPosition(rect, menuWidth, menuHeight);
 
     setCreateMode(null);
     setCreateError('');
     setCreateTitle('');
-    setContextMenuPosition({ left, top });
+    setContextMenuPosition(position);
     setIsActionsMenuOpen(true);
   };
 
   const openActionsMenuAtCursor = (event: React.MouseEvent) => {
     const menuWidth = 176;
     const menuHeight = 224;
-    const left = Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8));
-    const top = Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8));
+    const rect = new DOMRect(event.clientX, event.clientY, 0, 0);
+    const position = calculateContextMenuPosition(rect, menuWidth, menuHeight);
 
     setCreateMode(null);
     setCreateError('');
     setCreateTitle('');
-    setContextMenuPosition({ left, top });
+    setContextMenuPosition(position);
     setIsActionsMenuOpen(true);
   };
 
@@ -1785,26 +1791,14 @@ export function WorkspacePage() {
 
       event.preventDefault();
 
-      const wrapperRect = workbenchTreeWrapperRef.current?.getBoundingClientRect();
-      const sidebarRect = workbenchTreeWrapperRef.current?.closest('aside')?.getBoundingClientRect();
-
-      if (!wrapperRect) {
-        return;
-      }
-
-      const estimatedHeight = 96;
-      const left = event.clientX - wrapperRect.left;
-      const top = Math.max(
-        8,
-        Math.min(
-          event.clientY - wrapperRect.top,
-          Math.max(8, (sidebarRect?.height ?? wrapperRect.height) - estimatedHeight - 8),
-        ),
-      );
+      const menuWidth = 236;
+      const menuHeight = 180;
+      const rect = new DOMRect(event.clientX, event.clientY, 0, 0);
+      const position = calculateContextMenuPosition(rect, menuWidth, menuHeight);
 
       setBlankAreaCreateTitle('');
       setBlankAreaCreateError('');
-      setBlankAreaCreatePosition({ left, top });
+      setBlankAreaCreatePosition(position);
       setIsBlankAreaCreateOpen(true);
       setBlankAreaCreateMode(null);
     },
@@ -2481,7 +2475,7 @@ export function WorkspacePage() {
                       data-workspace-inline-create="true"
                       role="menu"
                       aria-label="Действия в пустой области проводника"
-                      className="absolute z-[120] w-[236px] rounded-xl border border-editor-border-subtle bg-white p-2 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
+                      className="fixed z-[120] w-[236px] rounded-xl border border-editor-border-subtle bg-white p-2 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
                       style={{
                         left: blankAreaCreatePosition.left,
                         top: blankAreaCreatePosition.top,
