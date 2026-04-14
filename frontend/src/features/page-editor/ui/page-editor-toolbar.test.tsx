@@ -3,6 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { PageEditorToolbar } from './page-editor-toolbar';
 
+vi.mock('../../plugins', () => ({
+  usePlugins: () => ({ items: [] }),
+}));
+
 vi.mock('@tiptap/react', () => ({
   useEditorState: () => ({
     isBold: false,

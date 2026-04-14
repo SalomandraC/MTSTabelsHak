@@ -51,6 +51,7 @@ import { WorkspacePageActionsMenu } from './workspace-page-actions-menu';
 import { shouldShowWorkspacePageActions } from './workspace-node-permissions';
 import { getWorkspaceNodeIcon } from './workspace-node-icon';
 import { readWorkspaceRoute, resolveAccessibleSpaceId, writeWorkspaceRoute } from '../../../shared/lib/workspace-route';
+import { exportDocument, type ExportFormat } from '../../../shared/lib/export-document';
 import {
   LEFT_SIDEBAR_MAX_WIDTH,
   LEFT_SIDEBAR_MIN_WIDTH,
@@ -176,6 +177,7 @@ function WorkspaceTreeItem({
   onToggleFolder,
   onDeletePage,
   onCreatePage,
+  onExportPage,
 }: {
   node: WorkspaceTreeNode;
   depth: number;
@@ -187,6 +189,7 @@ function WorkspaceTreeItem({
   onToggleFolder: (folderId: string) => void;
   onDeletePage: (pageId: string, title: string) => void;
   onCreatePage: (title: string, parentNodeId?: string | null) => Promise<void>;
+  onExportPage: (pageId: string, title: string, format: ExportFormat) => void;
 }) {
   const actionsMenuRef = useRef<HTMLDivElement>(null);
   const createInputRef = useRef<HTMLInputElement>(null);
@@ -371,7 +374,13 @@ function WorkspaceTreeItem({
                 setIsCreateMode(false);
                 setCreateError('');
                 setCreatePageTitle('');
-                setContextMenuPosition(null);
+                // Вычисляем fixed-позицию от кнопки, чтобы меню не обрезалось sidebar'ом
+                const rect = event.currentTarget.getBoundingClientRect();
+                const menuWidth = 176;
+                const menuHeight = 224;
+                const left = Math.max(8, Math.min(rect.right + 4, window.innerWidth - menuWidth - 8));
+                const top = Math.max(8, Math.min(rect.top, window.innerHeight - menuHeight - 8));
+                setContextMenuPosition({ left, top });
                 setIsActionsMenuOpen(true);
               }}
               className="flex h-6 w-6 items-center justify-center rounded text-[#b6b6b6] opacity-0 transition-opacity hover:bg-[#f2f3f5] hover:text-[#1f1f1f] group-hover:opacity-100"
@@ -404,6 +413,7 @@ function WorkspaceTreeItem({
               }}
               onSelectPage={onSelectPage}
               onDeletePage={() => onDeletePage(node.linkedPageId!, node.title)}
+              onExport={node.linkedPageId ? (format) => onExportPage(node.linkedPageId!, node.title, format) : undefined}
             />
           </div>
         ) : null}
@@ -424,6 +434,7 @@ function WorkspaceTreeItem({
               onToggleFolder={onToggleFolder}
               onDeletePage={onDeletePage}
               onCreatePage={onCreatePage}
+              onExportPage={onExportPage}
             />
           ))}
         </ul>
@@ -1324,6 +1335,32 @@ export function WorkspacePage() {
     }
   };
 
+  const handleExportPage = (pageId: string, title: string, format: ExportFormat) => {
+    const doExport = async () => {
+      let doc: unknown;
+
+      if (pageId === activePageId && activeEditor) {
+        // Активная страница — берём JSON прямо из редактора (самый свежий контент)
+        doc = activeEditor.getJSON();
+      } else {
+        // Другая страница — загружаем последний checkpoint через history API
+        const history = await wikiliveApi.listPageHistory(pageId, 1);
+        const checkpointId = history.items[0]?.id;
+        if (!checkpointId) {
+          throw new Error('Нет сохранённых версий страницы');
+        }
+        const checkpoint = await wikiliveApi.getPageHistoryCheckpoint(pageId, checkpointId);
+        doc = checkpoint.document;
+      }
+
+      await exportDocument(title, doc, format);
+    };
+
+    void doExport().catch((err) => {
+      setErrorMessage(err instanceof Error ? err.message : 'Не удалось экспортировать страницу');
+    });
+  };
+
   const handleRenamePage = async (title: string) => {
     if (!activePageId) {
       return;
@@ -1595,6 +1632,7 @@ export function WorkspacePage() {
                         onToggleFolder={handleToggleFolder}
                         onDeletePage={(pageId, title) => void handleDeletePage(pageId, title)}
                         onCreatePage={(title, parentNodeId) => handleCreatePage(title, parentNodeId)}
+                        onExportPage={handleExportPage}
                       />
                     ))}
                   </ul>

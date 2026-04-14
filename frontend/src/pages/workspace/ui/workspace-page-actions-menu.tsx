@@ -1,4 +1,7 @@
 import type { RefObject } from 'react';
+import { useState } from 'react';
+import { ChevronRight, FileDown } from 'lucide-react';
+import type { ExportFormat } from '../../../shared/lib/export-document';
 
 type WorkspacePageActionsMenuProps = {
   title: string;
@@ -18,7 +21,14 @@ type WorkspacePageActionsMenuProps = {
   onCancelCreateMode: () => void;
   onSelectPage: (pageId: string) => void;
   onDeletePage: () => void;
+  onExport?: (format: ExportFormat) => void;
 };
+
+const EXPORT_FORMATS: { format: ExportFormat; label: string }[] = [
+  { format: 'pdf', label: 'PDF' },
+  { format: 'docx', label: 'DOCX' },
+  { format: 'md', label: 'Markdown' },
+];
 
 export function WorkspacePageActionsMenu({
   title,
@@ -38,7 +48,10 @@ export function WorkspacePageActionsMenu({
   onCancelCreateMode,
   onSelectPage,
   onDeletePage,
+  onExport,
 }: WorkspacePageActionsMenuProps) {
+  const [exportSubmenuOpen, setExportSubmenuOpen] = useState(false);
+
   if (!isOpen) {
     return null;
   }
@@ -48,15 +61,12 @@ export function WorkspacePageActionsMenu({
       role="menu"
       aria-label={`Действия для страницы ${title}`}
       className={[
-        'z-30 w-44 overflow-hidden rounded-xl border border-editor-border-subtle bg-white py-1 shadow-[0_16px_40px_rgba(15,23,42,0.12)]',
+        'z-30 w-44 rounded-xl border border-editor-border-subtle bg-white py-1 shadow-[0_16px_40px_rgba(15,23,42,0.12)]',
         contextMenuPosition ? 'fixed' : 'absolute right-0 top-7',
       ].join(' ')}
       style={
         contextMenuPosition
-          ? {
-              left: contextMenuPosition.left,
-              top: contextMenuPosition.top,
-            }
+          ? { left: contextMenuPosition.left, top: contextMenuPosition.top }
           : undefined
       }
     >
@@ -73,7 +83,6 @@ export function WorkspacePageActionsMenu({
                 event.preventDefault();
                 onCreatePageSubmit();
               }
-
               if (event.key === 'Escape') {
                 event.preventDefault();
                 onCancelCreateMode();
@@ -126,6 +135,47 @@ export function WorkspacePageActionsMenu({
           >
             Создать страницу
           </button>
+
+          {onExport ? (
+            <div
+              className="relative"
+              onMouseEnter={() => setExportSubmenuOpen(true)}
+              onMouseLeave={() => setExportSubmenuOpen(false)}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
+              >
+                <span className="flex items-center gap-2">
+                  <FileDown size={13} strokeWidth={2} className="text-[#6b7280]" />
+                  Экспортировать
+                </span>
+                <ChevronRight size={13} strokeWidth={2} className="text-[#9ca3af]" />
+              </button>
+
+              {exportSubmenuOpen && (
+                <div className="absolute left-full top-0 z-50 w-32 rounded-xl border border-editor-border-subtle bg-white py-1 shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
+                  {EXPORT_FORMATS.map(({ format, label }) => (
+                    <button
+                      key={format}
+                      type="button"
+                      role="menuitem"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onCloseActionsMenu();
+                        onExport(format);
+                      }}
+                      className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
+
           {canDeletePage ? (
             <button
               type="button"

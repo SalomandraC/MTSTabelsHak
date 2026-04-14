@@ -3,6 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { FloatingToolbar } from './floating-toolbar';
 
+vi.mock('../../plugins', () => ({
+  usePlugins: () => ({ items: [] }),
+}));
+
 vi.mock('@tiptap/react', () => ({
   useEditorState: () => ({
     isBold: false,
