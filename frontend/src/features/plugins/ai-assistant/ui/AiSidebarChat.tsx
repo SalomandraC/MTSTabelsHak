@@ -1,5 +1,5 @@
 import type { Editor } from '@tiptap/core';
-import { ChevronDown, Files, FolderSearch, Search, SendHorizontal, Sparkles, Trash2, X } from 'lucide-react';
+import { ChevronDown, FolderSearch, Search, SendHorizontal, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -381,7 +381,7 @@ function ContextChip({
         <button
           type="button"
           onClick={onRemove}
-          className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-[#7b8391] hover:bg-[#f1f4f8] hover:text-[#2a3242]"
+          className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-[#d70032] text-white transition-colors hover:bg-[#b00025]"
           aria-label={`Удалить контекст ${title}`}
           title={`Удалить контекст ${title}`}
         >
@@ -416,6 +416,8 @@ export function AiSidebarChat({
   const [isContextTreeLoading, setIsContextTreeLoading] = useState(false);
   const [dragDropHint, setDragDropHint] = useState('');
   const [isContextPickerOpen, setIsContextPickerOpen] = useState(false);
+  const [isSourceMenuOpen, setIsSourceMenuOpen] = useState(false);
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState('');
   const [loadingPhraseIndex, setLoadingPhraseIndex] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -640,6 +642,7 @@ export function AiSidebarChat({
     setContextScope('space');
     setContextTree(null);
     setIsContextPickerOpen(false);
+    setIsSourceMenuOpen(false);
     setPickerQuery('');
   }, [spaceId]);
 
@@ -650,7 +653,11 @@ export function AiSidebarChat({
   }, [contextScope, spaceId]);
 
   useEffect(() => {
-    setIsContextPickerOpen(false);
+    if (contextScope !== 'documents' && contextScope !== 'folders') {
+      setIsContextPickerOpen(false);
+    }
+    setIsSourceMenuOpen(false);
+    setIsAddMenuOpen(false);
     setPickerQuery('');
   }, [contextScope]);
 
@@ -832,16 +839,65 @@ export function AiSidebarChat({
 
   const contextSummary =
     contextScope === 'currentFile'
-      ? pageTitle ?? 'Текущий файл'
+      ? pageTitle ?? 'Текущий документ'
       : contextScope === 'documents'
         ? selectedDocuments.length > 0
-          ? `Документы: ${selectedDocuments.length}`
+          ? `Документы (${selectedDocuments.length})`
           : 'Документы'
         : contextScope === 'folders'
           ? selectedFolders.length > 0
-            ? `Папки: ${selectedFolders.length}`
+            ? `Папки (${selectedFolders.length})`
             : 'Папки'
-          : `Пространство: ${currentContextSpace.name}`;
+          : currentContextSpace.name;
+
+  const handleContextSourceChange = (value: string) => {
+    setIsContextPickerOpen(false);
+    setIsSourceMenuOpen(false);
+    setIsAddMenuOpen(false);
+    setPickerQuery('');
+
+    if (value.startsWith('space:')) {
+      const nextSpaceId = value.slice('space:'.length) || spaceId;
+      setContextScope('space');
+      setContextSpaceId(nextSpaceId);
+      setSelectedDocuments([]);
+      setSelectedFolders([]);
+      return;
+    }
+
+    const nextScope = value as ContextScope;
+    setContextScope(nextScope);
+    setIsContextPickerOpen(nextScope === 'documents' || nextScope === 'folders');
+
+    if (nextScope === 'currentFile') {
+      setContextSpaceId(spaceId);
+    }
+
+    if (nextScope !== 'documents') {
+      setSelectedDocuments([]);
+    }
+
+    if (nextScope !== 'folders') {
+      setSelectedFolders([]);
+    }
+  };
+
+  const handleOpenAddContext = (targetScope?: 'documents' | 'folders') => {
+    setIsSourceMenuOpen(false);
+    setIsAddMenuOpen(false);
+
+    if (targetScope) {
+      setContextScope(targetScope);
+      setIsContextPickerOpen(true);
+      return;
+    }
+
+    if (contextScope !== 'documents' && contextScope !== 'folders') {
+      setContextScope('documents');
+    }
+
+    setIsContextPickerOpen((current) => !current);
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white text-editor-text-primary">
@@ -849,7 +905,6 @@ export function AiSidebarChat({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-lg font-semibold text-[#1d2023]">ИИ-ассистент</h2>
-            <p className="mt-1 text-sm text-[#5f3647]">Добавляйте документы в контекст и сравнивайте их в одном диалоге.</p>
           </div>
           <button
             type="button"
@@ -861,7 +916,6 @@ export function AiSidebarChat({
           </button>
         </div>
       </header>
-
       {enabled ? (
         <>
           <div className="min-h-0 flex-1 overflow-y-auto bg-[#fafbfd] px-4 py-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
@@ -891,99 +945,106 @@ export function AiSidebarChat({
               void handleSend();
             }}
           >
-            <div className="mb-2 mt-1 rounded-2xl border border-editor-border-subtle bg-[#fafbfd] p-2.5">
-              <div className="flex items-center gap-2">
-                <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-[#d70032] shadow-sm">
-                  <Sparkles size={15} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-editor-text-tertiary">Контекст</div>
-                  <div className="truncate text-sm font-medium text-[#2a3242]">{contextSummary}</div>
-                </div>
-              </div>
+            <div className="mb-2 mt-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddMenuOpen(false);
+                      setIsContextPickerOpen(false);
+                      setIsSourceMenuOpen((current) => !current);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-full border border-editor-border-subtle bg-[#f8fafd] px-3 py-1.5 text-xs font-medium text-[#2a3242] transition hover:border-[#d70032]"
+                    title="Изменить источник контекста"
+                  >
+                    {contextSummary}
+                    <ChevronDown size={13} className="text-[#7b8391]" />
+                  </button>
 
-              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                <label className="min-w-0 sm:max-w-[180px] sm:flex-[0_0_180px]">
-                  <span className="sr-only">Тип контекста</span>
-                  <div className="relative">
-                    <select
-                      value={contextScope}
-                      onChange={(event) => setContextScope(event.target.value as ContextScope)}
-                      className="w-full appearance-none rounded-xl border border-[#e1e6ef] bg-white px-3 py-2 pr-9 text-sm text-[#2a3242] outline-none transition-colors focus:border-[#d70032]"
-                    >
-                      <option value="space">Пространство</option>
-                      <option value="documents">Документы</option>
-                      <option value="folders">Папки</option>
-                      {pageId ? <option value="currentFile">Файл</option> : null}
-                    </select>
-                    <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#7b8391]" />
-                  </div>
-                </label>
-
-                {contextScope !== 'currentFile' ? (
-                  <label className="min-w-0 flex-1">
-                    <span className="sr-only">Пространство контекста</span>
-                    <div className="relative">
-                      <select
-                        value={contextSpaceId}
-                        onChange={(event) => {
-                        setContextSpaceId(event.target.value);
-                        setSelectedDocuments([]);
-                        setSelectedFolders([]);
-                        setIsContextPickerOpen(false);
-                        setPickerQuery('');
-                      }}
-                        className="w-full appearance-none rounded-xl border border-[#e1e6ef] bg-white px-3 py-2 pr-9 text-sm text-[#2a3242] outline-none transition-colors focus:border-[#d70032]"
+                  {isSourceMenuOpen ? (
+                    <div className="absolute bottom-full left-0 z-20 mb-1 min-w-[220px] rounded-lg border border-editor-border-subtle bg-white p-1 shadow-lg">
+                      {pageId ? (
+                        <button
+                          type="button"
+                          onClick={() => handleContextSourceChange('currentFile')}
+                          className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs text-[#2a3242] transition hover:bg-[#f8fafd]"
+                        >
+                          Текущий документ
+                        </button>
+                      ) : null}
+                      {contextSpaces.map((space) => (
+                        <button
+                          key={space.id}
+                          type="button"
+                          onClick={() => handleContextSourceChange(`space:${space.id}`)}
+                          className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs text-[#2a3242] transition hover:bg-[#f8fafd]"
+                        >
+                          {space.name}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => handleContextSourceChange('documents')}
+                        className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs text-[#2a3242] transition hover:bg-[#f8fafd]"
                       >
-                        {contextSpaces.map((space) => (
-                          <option key={space.id} value={space.id}>
-                            {space.name}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#7b8391]" />
+                        Документы
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleContextSourceChange('folders')}
+                        className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs text-[#2a3242] transition hover:bg-[#f8fafd]"
+                      >
+                        Папки
+                      </button>
                     </div>
-                  </label>
-                ) : null}
+                  ) : null}
+                </div>
 
-                {contextScope === 'documents' ? (
-                  <label className="min-w-0 flex-1">
-                    <span className="sr-only">Выбрать документы</span>
-                    <button
-                      type="button"
-                      onClick={() => setIsContextPickerOpen((current) => !current)}
-                      disabled={isContextTreeLoading}
-                      className="flex h-[42px] w-full items-center justify-between rounded-xl border border-[#e1e6ef] bg-white px-3 text-sm text-[#2a3242] outline-none transition-colors hover:border-[#d70032] disabled:opacity-60"
-                    >
-                      <span>{selectedDocuments.length > 0 ? `Выбрано документов: ${selectedDocuments.length}` : 'Выбрать документы…'}</span>
-                      <Search size={15} className="text-[#7b8391]" />
-                    </button>
-                  </label>
-                ) : null}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSourceMenuOpen(false);
+                      setIsAddMenuOpen((current) => !current);
+                    }}
+                    disabled={isContextTreeLoading && (contextScope === 'documents' || contextScope === 'folders')}
+                    className="inline-flex items-center gap-1 rounded-full bg-[#f0f3f9] px-3 py-1.5 text-xs font-medium text-[#2a3242] transition hover:bg-[#e6ebf5] disabled:opacity-60"
+                  >
+                    + Добавить
+                    <ChevronDown size={13} className="text-[#7b8391]" />
+                  </button>
 
-                {contextScope === 'folders' ? (
-                  <label className="min-w-0 flex-1">
-                    <span className="sr-only">Выбрать папки</span>
-                    <button
-                      type="button"
-                      onClick={() => setIsContextPickerOpen((current) => !current)}
-                      disabled={isContextTreeLoading}
-                      className="flex h-[42px] w-full items-center justify-between rounded-xl border border-[#e1e6ef] bg-white px-3 text-sm text-[#2a3242] outline-none transition-colors hover:border-[#d70032] disabled:opacity-60"
-                    >
-                      <span>{selectedFolders.length > 0 ? `Выбрано папок: ${selectedFolders.length}` : 'Выбрать папки…'}</span>
-                      <FolderSearch size={15} className="text-[#7b8391]" />
-                    </button>
-                  </label>
-                ) : null}
+                  {isAddMenuOpen ? (
+                    <div className="absolute bottom-full right-0 z-20 mb-1 w-40 rounded-lg border border-editor-border-subtle bg-white p-1 shadow-lg">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAddContext('documents')}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-[#2a3242] transition hover:bg-[#f8fafd]"
+                      >
+                        <Search size={13} className="text-[#7b8391]" />
+                        Документы
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAddContext('folders')}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-[#2a3242] transition hover:bg-[#f8fafd]"
+                      >
+                        <FolderSearch size={13} className="text-[#7b8391]" />
+                        Папки
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
 
               {isContextPickerOpen && (contextScope === 'documents' || contextScope === 'folders') ? (
-                <div className="mt-2 rounded-2xl border border-[#e1e6ef] bg-white p-2 shadow-sm">
+                <div className="mt-2 rounded-xl border border-editor-border-subtle bg-white p-2">
                   <input
                     value={pickerQuery}
                     onChange={(event) => setPickerQuery(event.target.value)}
                     placeholder={contextScope === 'documents' ? 'Найти документ…' : 'Найти папку…'}
-                    className="h-9 w-full rounded-xl border border-[#e1e6ef] bg-[#fafbfd] px-3 text-sm text-[#2a3242] outline-none focus:border-[#d70032]"
+                    className="h-9 w-full rounded-lg border border-editor-border-subtle bg-[#fafbfd] px-3 text-sm text-[#2a3242] outline-none focus:border-[#d70032]"
                   />
                   <div className="mt-2 max-h-52 space-y-1 overflow-y-auto">
                     {contextScope === 'documents'
@@ -994,7 +1055,7 @@ export function AiSidebarChat({
                           return (
                             <label
                               key={page.id}
-                              className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 text-sm text-[#2a3242] hover:bg-[#fafbfd]"
+                              className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-sm text-[#2a3242] hover:bg-[#fafbfd]"
                             >
                               <input
                                 type="checkbox"
@@ -1014,7 +1075,7 @@ export function AiSidebarChat({
                           return (
                             <label
                               key={folder.id}
-                              className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 text-sm text-[#2a3242] hover:bg-[#fafbfd]"
+                              className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-sm text-[#2a3242] hover:bg-[#fafbfd]"
                             >
                               <input
                                 type="checkbox"
@@ -1027,70 +1088,69 @@ export function AiSidebarChat({
                           );
                         })}
                     {contextScope === 'documents' && filteredContextPages.length === 0 ? (
-                      <div className="rounded-xl px-2 py-3 text-sm text-[#8a93a3]">Подходящих документов не найдено</div>
+                      <div className="rounded-lg px-2 py-3 text-sm text-[#8a93a3]">Подходящих документов не найдено</div>
                     ) : null}
                     {contextScope === 'folders' && filteredContextFolders.length === 0 ? (
-                      <div className="rounded-xl px-2 py-3 text-sm text-[#8a93a3]">Подходящих папок не найдено</div>
+                      <div className="rounded-lg px-2 py-3 text-sm text-[#8a93a3]">Подходящих папок не найдено</div>
                     ) : null}
                   </div>
                 </div>
               ) : null}
-            </div>
 
-            <div
-              className={[
-                'mb-1 mt-1 rounded-lg border bg-[#f8fafd] px-2 py-1.5 transition-colors',
-                dragDropHint ? 'border-[#d70032] ring-1 ring-[#ffd2d9]' : 'border-editor-border-subtle',
-              ].join(' ')}
-              onDragOver={(event) => {
-                const droppedNodeId = event.dataTransfer.getData('application/x-wikilive-node-id');
-                if (!droppedNodeId) {
-                  return;
-                }
+              {(contextScope === 'documents' || contextScope === 'folders' || dragDropHint) ? (
+                <div
+                  className={[
+                    'mt-2 rounded-lg border px-2 py-1.5 transition-colors',
+                    dragDropHint ? 'border-[#d70032] bg-[#fff8f9] ring-1 ring-[#ffd2d9]' : 'border-editor-border-subtle bg-[#fafbfd]',
+                  ].join(' ')}
+                  onDragOver={(event) => {
+                    const droppedNodeId = event.dataTransfer.getData('application/x-wikilive-node-id');
+                    if (!droppedNodeId) {
+                      return;
+                    }
 
-                event.preventDefault();
-                const canDropDocument = Boolean(currentSpacePageMap.get(droppedNodeId));
-                const canDropFolder = Boolean(currentSpaceFolderMap.get(droppedNodeId));
+                    event.preventDefault();
+                    const canDropDocument = Boolean(currentSpacePageMap.get(droppedNodeId));
+                    const canDropFolder = Boolean(currentSpaceFolderMap.get(droppedNodeId));
 
-                if (canDropDocument || canDropFolder) {
-                  setDragDropHint('Отпустите, чтобы добавить в контекст');
-                }
-              }}
-              onDragLeave={() => setDragDropHint('')}
-              onDrop={(event) => void handleDropOnContext(event)}
-            >
-              <div
-                ref={contextRowRef}
-                className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-              >
-                {contextScope === 'currentFile' && pageId ? <ContextChip title={pageTitle ?? 'Текущая страница'} /> : null}
-                {contextScope === 'space' ? <ContextChip title={`Пространство: ${currentContextSpace.name}`} /> : null}
-                {contextScope === 'documents' &&
-                  selectedDocuments.map((document) => (
-                  <ContextChip
-                    key={document.pageId}
-                    title={document.title}
-                    loading={document.isLoading}
-                    removable
-                    onRemove={() => handleRemoveDocument(document.pageId)}
-                  />
-                ))}
-                {contextScope === 'folders' &&
-                  selectedFolders.map((folder) => (
-                  <ContextChip
-                    key={folder.folderId}
-                    title={`Папка: ${folder.title}`}
-                    removable
-                    onRemove={() => handleRemoveFolder(folder.folderId)}
-                  />
-                ))}
-                {((contextScope === 'currentFile' && !pageId) ||
-                  (contextScope === 'documents' && selectedDocuments.length === 0) ||
-                  (contextScope === 'folders' && selectedFolders.length === 0)) ? (
-                  <span className="text-[11px] text-editor-text-tertiary">Контекст не выбран</span>
-                ) : null}
-              </div>
-              {dragDropHint ? <p className="mt-2 text-[11px] font-semibold text-[#b00025]">{dragDropHint}</p> : null}
+                    if (canDropDocument || canDropFolder) {
+                      setDragDropHint('Отпустите, чтобы добавить в контекст');
+                    }
+                  }}
+                  onDragLeave={() => setDragDropHint('')}
+                  onDrop={(event) => void handleDropOnContext(event)}
+                >
+                  <div
+                    ref={contextRowRef}
+                    className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+                  >
+                    {contextScope === 'documents' &&
+                      selectedDocuments.map((document) => (
+                        <ContextChip
+                          key={document.pageId}
+                          title={document.title}
+                          loading={document.isLoading}
+                          removable
+                          onRemove={() => handleRemoveDocument(document.pageId)}
+                        />
+                      ))}
+                    {contextScope === 'folders' &&
+                      selectedFolders.map((folder) => (
+                        <ContextChip
+                          key={folder.folderId}
+                          title={folder.title}
+                          removable
+                          onRemove={() => handleRemoveFolder(folder.folderId)}
+                        />
+                      ))}
+                    {((contextScope === 'documents' && selectedDocuments.length === 0) ||
+                      (contextScope === 'folders' && selectedFolders.length === 0)) ? (
+                      <span className="text-[11px] text-editor-text-tertiary">Ничего не добавлено</span>
+                    ) : null}
+                  </div>
+                  {dragDropHint ? <p className="mt-2 text-[11px] font-semibold text-[#b00025]">{dragDropHint}</p> : null}
+                </div>
+              ) : null}
             </div>
 
             <label className="sr-only" htmlFor="ai-sidebar-chat-input">
@@ -1109,28 +1169,23 @@ export function AiSidebarChat({
                 }}
                 placeholder="Спросите про страницу или сравните документы"
                 rows={2}
-                className="min-h-14 max-h-36 flex-1 resize-none rounded-xl border border-editor-border-subtle bg-white px-4 py-3 text-sm outline-none transition-colors focus:border-[#5586ff]"
+                className="min-h-14 max-h-36 flex-1 resize-none rounded-xl border border-editor-border-subtle bg-white px-4 py-3 text-sm outline-none transition-colors hover:border-[#d70032] focus:border-[#d70032]"
                 disabled={isSending || !enabled || hasPendingContext}
               />
-              <div className="flex w-11 shrink-0 self-stretch flex-col justify-between">
-                <div className="inline-flex h-6 w-11 items-center justify-center rounded-lg border border-editor-border-subtle bg-white text-editor-text-secondary">
-                  <Files size={13} />
-                </div>
-                <button
-                  type="submit"
-                  disabled={isSending || !draft.trim() || !enabled || hasPendingContext || !isScopeReady}
-                  className="inline-flex h-7 w-11 items-center justify-center rounded-lg border border-editor-border-subtle bg-[#d70032] text-sm font-semibold text-white transition-colors hover:bg-[#b00025] disabled:cursor-not-allowed disabled:opacity-50"
-                  title={
-                    hasPendingContext
-                      ? 'Контекст загружается'
-                      : !isScopeReady
-                        ? 'Выберите область контекста или добавьте элементы в выбранную область'
-                        : 'Отправить'
-                  }
-                >
-                  <SendHorizontal size={16} />
-                </button>
-              </div>
+              <button
+                type="submit"
+                disabled={isSending || !draft.trim() || !enabled || hasPendingContext || !isScopeReady}
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-editor-border-subtle bg-[#d70032] text-sm font-semibold text-white transition-colors hover:bg-[#b00025] disabled:cursor-not-allowed disabled:opacity-50"
+                title={
+                  hasPendingContext
+                    ? 'Контекст загружается'
+                    : !isScopeReady
+                      ? 'Выберите область контекста или добавьте элементы в выбранную область'
+                      : 'Отправить'
+                }
+              >
+                <SendHorizontal size={16} />
+              </button>
             </div>
           </form>
         </>
