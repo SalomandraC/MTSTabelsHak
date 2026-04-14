@@ -74,7 +74,7 @@ type RemoveBlockMenuState = {
   x: number;
   y: number;
   pos: number;
-  kind: 'iframe' | 'markdown-table' | 'canvas' | 'live-table';
+  kind: 'iframe' | 'markdown-table' | 'canvas' | 'live-table' | 'diagram';
 };
 
 function resolveRemoveBlockTarget(
@@ -89,6 +89,7 @@ function resolveRemoveBlockTarget(
     table: 'markdown-table',
     canvasBlock: 'canvas',
     mwsTableEmbed: 'live-table',
+    mermaidDiagram: 'diagram',
   };
 
   // For atom blocks (iframe/canvas), DOM coordinates may resolve to a node boundary.
@@ -674,6 +675,8 @@ function LivePageEditor({
         ? 'canvasBlock'
         : removeBlockMenu.kind === 'live-table'
           ? 'mwsTableEmbed'
+          : removeBlockMenu.kind === 'diagram'
+            ? 'mermaidDiagram'
         : 'table';
     if (node.type.name !== expectedType) {
       setRemoveBlockMenu(null);
@@ -885,15 +888,17 @@ function LivePageEditor({
             const iframeNode = target?.closest('[data-type="iframeBlock"]') as HTMLElement | null;
             const canvasNode = target?.closest('[data-type="canvasBlock"]') as HTMLElement | null;
             const liveTableNode = target?.closest('[data-type="mws-table-embed"]') as HTMLElement | null;
+            const diagramNode = target?.closest('[data-type="mermaid-diagram"]') as HTMLElement | null;
             const markdownTableNode = target?.closest('table') as HTMLTableElement | null;
             const isInsideMwsTable = Boolean(target?.closest('[data-type="mws-table-embed"]'));
 
-            if (effectiveCanEdit && (iframeNode || canvasNode || liveTableNode || (markdownTableNode && !isInsideMwsTable))) {
-              const menuTarget = iframeNode ?? canvasNode ?? liveTableNode ?? markdownTableNode;
+            if (effectiveCanEdit && (iframeNode || canvasNode || liveTableNode || diagramNode || (markdownTableNode && !isInsideMwsTable))) {
+              const menuTarget = iframeNode ?? canvasNode ?? liveTableNode ?? diagramNode ?? markdownTableNode;
               const preferredKinds: Array<RemoveBlockMenuState['kind']> = [
                 ...(iframeNode ? ['iframe' as const] : []),
                 ...(canvasNode ? ['canvas' as const] : []),
                 ...(liveTableNode ? ['live-table' as const] : []),
+                ...(diagramNode ? ['diagram' as const] : []),
                 ...(markdownTableNode && !isInsideMwsTable ? ['markdown-table' as const] : []),
               ];
 
@@ -945,6 +950,8 @@ function LivePageEditor({
                       ? 'Удалить холст из документа'
                       : removeBlockMenu.kind === 'live-table'
                         ? 'Удалить live-таблицу из документа'
+                        : removeBlockMenu.kind === 'diagram'
+                          ? 'Удалить диаграмму из документа'
                       : 'Удалить таблицу из документа'}
                 </span>
               </button>
