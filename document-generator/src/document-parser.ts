@@ -43,6 +43,11 @@ function flattenNode(node: ProseMirrorNode, blocks: BlockNode[], link?: ParserLi
         flattenNode(node.content[0], blocks, link);
         return;
       }
+      const inlineTypes = node.content?.map(n => n.type).join(',') ?? '';
+      const pageLinkCount = node.content?.filter(n => n.type === 'pageLink').length ?? 0;
+      if (pageLinkCount > 0) {
+        console.log(`[parser] paragraph inlineTypes="${inlineTypes}" pageLinkCount=${pageLinkCount}`);
+      }
       blocks.push({
         type: 'paragraph',
         content: renderInlineContent(node.content ?? [], link),
@@ -165,6 +170,11 @@ function flattenNode(node: ProseMirrorNode, blocks: BlockNode[], link?: ParserLi
 
     default: {
       const text = extractText(node);
+      // Log nodes that might contain pageLinks
+      const hasPageLink = JSON.stringify(node).includes('"pageLink"');
+      if (hasPageLink) {
+        console.log(`[parser] node type="${node.type}" contains pageLink, content types: ${node.content?.map(n => n.type).join(',') ?? 'none'}`);
+      }
       if (text.trim()) {
         blocks.push({ type: 'paragraph', content: text });
       }

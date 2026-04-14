@@ -41,7 +41,9 @@ app.post('/generate', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Document has no content blocks' });
     }
 
-    console.log(`[generate] format=${format} title="${title}" appBaseUrl=${appBaseUrl} spaceId=${spaceId} blocks=${blocks.length}`);
+    const pageLinkBlocks = blocks.filter(b => b.inlineNodes?.some(n => n.type === 'page_link'));
+    const pageLinkStandalone = blocks.filter(b => b.type === 'page_link');
+    console.log(`[generate] format=${format} title="${title}" blocks=${blocks.length} pageLinkParagraphs=${pageLinkBlocks.length} pageLinkStandalone=${pageLinkStandalone.length}`);
 
     let buffer: Buffer;
     let contentType: string;
