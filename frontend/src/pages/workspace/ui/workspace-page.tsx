@@ -2048,8 +2048,14 @@ export function WorkspacePage() {
 
   const handleExportPage = (pageId: string, title: string, format: ExportFormat) => {
     const doExport = async () => {
-      // Always use the latest checkpoint — it contains the full document
-      // regardless of whether the page is currently open in the editor
+      // If exporting the active page, force-save a checkpoint first so we get the latest content
+      if (pageId === activePageId && documentStateEncoder) {
+        const value = documentStateEncoder();
+        if (value) {
+          await wikiliveApi.createCheckpoint(pageId, value, 'manual');
+        }
+      }
+
       const history = await wikiliveApi.listPageHistory(pageId, 1);
       const checkpointId = history.items[0]?.id;
 
@@ -2058,7 +2064,6 @@ export function WorkspacePage() {
         const checkpoint = await wikiliveApi.getPageHistoryCheckpoint(pageId, checkpointId);
         doc = checkpoint.document;
       } else if (pageId === activePageId && activeEditor) {
-        // Fallback: no checkpoint yet, use live editor state
         doc = activeEditor.getJSON();
       } else {
         throw new Error('Нет сохранённых версий страницы');

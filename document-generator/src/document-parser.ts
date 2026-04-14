@@ -117,7 +117,7 @@ function flattenNode(node: ProseMirrorNode, blocks: BlockNode[], link?: ParserLi
     case 'bulletList': {
       const items: BlockNode[] = [];
       for (const child of node.content ?? []) {
-        flattenNode(child, items, link);
+        flattenListItem(child, items, link);
       }
       blocks.push({ type: 'bullet_list', children: items });
       break;
@@ -126,7 +126,7 @@ function flattenNode(node: ProseMirrorNode, blocks: BlockNode[], link?: ParserLi
     case 'orderedList': {
       const items: BlockNode[] = [];
       for (const child of node.content ?? []) {
-        flattenNode(child, items, link);
+        flattenListItem(child, items, link);
       }
       blocks.push({ type: 'ordered_list', children: items });
       break;
@@ -181,6 +181,23 @@ function flattenNode(node: ProseMirrorNode, blocks: BlockNode[], link?: ParserLi
       break;
     }
   }
+}
+
+function flattenListItem(node: ProseMirrorNode, blocks: BlockNode[], link?: ParserLinkContext): void {
+  // listItem wraps a paragraph — extract it preserving inlineNodes
+  if (node.type === 'listItem') {
+    const para = node.content?.find(c => c.type === 'paragraph');
+    if (para) {
+      blocks.push({
+        type: 'paragraph',
+        content: renderInlineContent(para.content ?? [], link),
+        inlineNodes: extractInlineNodes(para.content ?? [], link),
+      });
+      return;
+    }
+  }
+  // Fallback for other structures
+  flattenNode(node, blocks, link);
 }
 
 function extractText(node: ProseMirrorNode): string {

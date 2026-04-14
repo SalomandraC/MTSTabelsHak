@@ -363,11 +363,11 @@ async function blockToDocxElements(block: BlockNode, auth?: AuthContext, link?: 
 
     case 'bullet_list': {
       const items = await Promise.all((block.children ?? []).map(async (child) => {
-        await blockToDocxElements(child, auth);
         return new Paragraph({
           bullet: { level: 0 },
-          children: [new TextRun(renderChildren(child))],
+          children: buildInlineRuns(child.inlineNodes, link),
           spacing: { after: 60 },
+          indent: { left: 360, hanging: 360 },
         });
       }));
       return items;
@@ -377,8 +377,9 @@ async function blockToDocxElements(block: BlockNode, auth?: AuthContext, link?: 
       const items = await Promise.all((block.children ?? []).map(async (child) => {
         return new Paragraph({
           numbering: { reference: 'default-numbering', level: 0 },
-          children: [new TextRun(renderChildren(child))],
+          children: buildInlineRuns(child.inlineNodes, link),
           spacing: { after: 60 },
+          indent: { left: 360, hanging: 360 },
         });
       }));
       return items;

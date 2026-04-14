@@ -219,7 +219,24 @@ async function compileBlock(block: BlockNode, auth?: AuthContext, link?: LinkCon
 }
 
 async function compileChildContent(block: BlockNode, auth?: AuthContext, link?: LinkContext): Promise<string> {
-  if (block.content) return esc(block.content);
+  // Use inlineNodes if available — preserves bold, italic, links etc.
+  if (block.inlineNodes && block.inlineNodes.length > 0) {
+    return block.inlineNodes.map((n) => {
+      if (n.type === 'page_link' && n.href) {
+        return `<a href="${escAttr(n.href)}">${esc(n.text ?? n.pageTitle ?? 'Страница')}</a>`;
+      }
+      if (n.type === 'link' && n.href) {
+        return `<a href="${escAttr(n.href)}">${esc(n.text ?? n.href)}</a>`;
+      }
+      let text = esc(n.text ?? '');
+      if (n.bold) text = `<strong>${text}</strong>`;
+      if (n.italic) text = `<em>${text}</em>`;
+      if (n.strike) text = `<s>${text}</s>`;
+      if (n.code) text = `<code>${text}</code>`;
+      return text;
+    }).join('');
+  }
+  if (block.content) return block.content;
   if (block.children) {
     const parts = await Promise.all(block.children.map((c) => compileBlock(c, auth, link)));
     return parts.join('');
