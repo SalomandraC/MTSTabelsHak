@@ -277,7 +277,7 @@ export function PageEditorHeader({
               />
             ) : (
               <p
-                className="truncate text-sm leading-5 cursor-text hover:bg-editor-bg-control/50 rounded px-1 transition-colors"
+                className="mx-auto w-full max-w-[14rem] truncate text-sm leading-5 cursor-text hover:bg-editor-bg-control/50 rounded px-1 transition-colors"
                 style={{ ...fontFamilyStyle, color: 'rgba(150, 159, 168, 1)' }}
                 onDoubleClick={() => {
                   if (!editable) {
