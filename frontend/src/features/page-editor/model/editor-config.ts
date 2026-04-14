@@ -5,7 +5,6 @@ import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import Document from '@tiptap/extension-document';
 import Dropcursor from '@tiptap/extension-dropcursor';
 import Highlight from '@tiptap/extension-highlight';
-import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
@@ -14,6 +13,10 @@ import TaskList from '@tiptap/extension-task-list';
 import Typography from '@tiptap/extension-typography';
 import Underline from '@tiptap/extension-underline';
 import HorizontalRule from '@tiptap/extension-horizontal-rule';
+import { Table } from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableHeader from '@tiptap/extension-table-header';
+import TableCell from '@tiptap/extension-table-cell';
 import StarterKit from '@tiptap/starter-kit';
 import bash from 'highlight.js/lib/languages/bash';
 import csharp from 'highlight.js/lib/languages/csharp';
@@ -50,6 +53,9 @@ import { LiveReference } from './live-reference';
 import { LiveFormula } from './live-formula';
 import { TemplateVariable } from './template-variable';
 import { Bookmark, BookmarkLink } from './bookmark';
+import { CustomHardBreak } from './custom-hard-break';
+import { CustomLink } from './custom-link';
+import { ListExitOnDoubleEnter } from './list-exit-on-double-enter';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 
 const bookmarkClickKey = new PluginKey('bookmarkClick');
@@ -173,6 +179,7 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     BookmarkClickHandler,
     Typography,
     DashShortcut,
+    CustomHardBreak,
     Dropcursor.configure({
       color: '#d92c2c',
       width: 2,
@@ -192,12 +199,19 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     IframeBlock,
     TaskList,
     TaskItem.configure({ nested: true }),
-    Link.configure({
+    ListExitOnDoubleEnter,
+    CustomLink.configure({
       openOnClick: false,
       autolink: true,
     }),
     Underline,
     CustomHorizontalRule,
+    Table.configure({
+      resizable: true,
+    }),
+    TableRow,
+    TableHeader,
+    TableCell,
     TextAlign.configure({
       types: ['heading', 'paragraph', 'taskItem'],
     }),
@@ -213,6 +227,7 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
       document: false,
       codeBlock: false,
       dropcursor: false,
+      hardBreak: false,
       link: false,
       underline: false,
       horizontalRule: false,

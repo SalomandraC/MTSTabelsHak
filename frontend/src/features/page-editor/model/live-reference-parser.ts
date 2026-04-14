@@ -11,6 +11,11 @@ export type LiveReferenceParseOptions = {
   spaceId?: string;
 };
 
+type MarkdownStorage = {
+  getMarkdown?: () => string;
+  parse?: (value: string) => Content | null | undefined;
+};
+
 const LIVE_REFERENCE_TOKEN = /^\[Ref:([^:\]\s]+):([^:\]\s]+):([^:\]\s]+)\]$/;
 
 function extractFormulaToken(text: string, from: number): { token: string; expression: string; end: number } | null {
@@ -50,7 +55,146 @@ function looksLikeMarkdown(text: string): boolean {
     return false;
   }
 
-  return /(^#{1,6}\s)|(^[-*]\s)|(^\d+\.\s)|(```)|(`[^`]+`)|(\*\*[^*]+\*\*)|(^>\s)|(^(-{3,}|\*{3,}|_{3,})$)/m.test(value);
+  return /(^#{1,6}\s)|(^[-*]\s)|(^\d+\.\s)|(```)|(`[^`]+`)|(\*\*[^*]+\*\*)|(^>\s)|(^(-{3,}|\*{3,}|_{3,})$)|(^\|.+\|\s*$)|(^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$)/m.test(value);
+}
+
+function extractParsedBlocks(content: Content | null | undefined): JSONContent[] {
+  if (!content) {
+    return [];
+  }
+
+  if (Array.isArray(content)) {
+    return content as JSONContent[];
+  }
+
+  const asNode = content as JSONContent;
+  if (asNode.type === 'doc' && Array.isArray(asNode.content)) {
+    return asNode.content;
+  }
+
+  if (typeof asNode.type === 'string') {
+    return [asNode];
+  }
+
+  return [];
+}
+
+function splitMarkdownTableRow(line: string): string[] | null {
+  const trimmed = line.trim();
+  if (!trimmed.includes('|')) {
+    return null;
+  }
+
+  const normalized = trimmed.startsWith('|') ? trimmed.slice(1) : trimmed;
+  const withoutTrailingPipe = normalized.endsWith('|') ? normalized.slice(0, -1) : normalized;
+  const cells = withoutTrailingPipe.split('|').map((cell) => cell.trim());
+
+  return cells.length > 1 ? cells : null;
+}
+
+function isMarkdownTableSeparator(line: string): boolean {
+  const cells = splitMarkdownTableRow(line);
+  if (!cells || cells.length === 0) {
+    return false;
+  }
+
+  return cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function createTableCellNode(text: string, options: LiveReferenceParseOptions, isHeader: boolean): JSONContent {
+  const content = parseInlineContentWithLiveReferences(text, options);
+
+  return {
+    type: isHeader ? 'tableHeader' : 'tableCell',
+    content: content.length > 0 ? [{ type: 'paragraph', content }] : [{ type: 'paragraph' }],
+  };
+}
+
+function parseMarkdownTableBlock(
+  lines: string[],
+  startIndex: number,
+  options: LiveReferenceParseOptions,
+): { node: JSONContent; nextIndex: number } | null {
+  const headerCells = splitMarkdownTableRow(lines[startIndex]);
+  const separatorLine = lines[startIndex + 1];
+
+  if (!headerCells || !separatorLine || !isMarkdownTableSeparator(separatorLine)) {
+    return null;
+  }
+
+  const rows: JSONContent[] = [
+    {
+      type: 'tableRow',
+      content: headerCells.map((cell) => createTableCellNode(cell, options, true)),
+    },
+  ];
+
+  let index = startIndex + 2;
+  while (index < lines.length) {
+    const rawLine = lines[index];
+    const trimmed = rawLine.trim();
+
+    if (!trimmed) {
+      break;
+    }
+
+    const rowCells = splitMarkdownTableRow(rawLine);
+    if (!rowCells || isMarkdownTableSeparator(rawLine)) {
+      break;
+    }
+
+    rows.push({
+      type: 'tableRow',
+      content: rowCells.map((cell) => createTableCellNode(cell, options, false)),
+    });
+    index += 1;
+  }
+
+  return {
+    node: {
+      type: 'table',
+      content: rows,
+    },
+    nextIndex: index,
+  };
+}
+
+function mapNodeWithLiveReferences(node: JSONContent, options: LiveReferenceParseOptions): JSONContent[] {
+  if (node.type === 'text' && typeof node.text === 'string' && hasLiveReferenceToken(node.text)) {
+    return parseInlineContentWithLiveReferences(node.text, options);
+  }
+
+  if (!Array.isArray(node.content)) {
+    return [node];
+  }
+
+  const mappedContent: JSONContent[] = [];
+  for (const child of node.content) {
+    mappedContent.push(...mapNodeWithLiveReferences(child, options));
+  }
+
+  return [
+    {
+      ...node,
+      content: mappedContent,
+    },
+  ];
+}
+
+export function parseMarkdownWithLiveReferences(
+  editor: Editor,
+  text: string,
+  options: LiveReferenceParseOptions = {},
+): JSONContent[] {
+  const markdownStorage = (editor.storage as { markdown?: MarkdownStorage }).markdown;
+  const parsed = markdownStorage?.parse?.(text);
+  const blocks = extractParsedBlocks(parsed);
+
+  if (blocks.length === 0) {
+    return [];
+  }
+
+  return blocks.flatMap((node) => mapNodeWithLiveReferences(node, options));
 }
 
 export function hasLiveReferenceToken(text: string): boolean {
@@ -154,11 +298,21 @@ export function parseMarkdownReportWithLiveReferences(text: string, options: Liv
     });
   };
 
-  for (const line of lines) {
+  for (let index = 0; index < lines.length; ) {
+    const line = lines[index];
     const trimmed = line.trim();
 
     if (!trimmed) {
       flushParagraph();
+      index += 1;
+      continue;
+    }
+
+    const tableBlock = parseMarkdownTableBlock(lines, index, options);
+    if (tableBlock) {
+      flushParagraph();
+      blocks.push(tableBlock.node);
+      index = tableBlock.nextIndex;
       continue;
     }
 
@@ -172,10 +326,12 @@ export function parseMarkdownReportWithLiveReferences(text: string, options: Liv
         },
         content: parseInlineContentWithLiveReferences(headingMatch[2].trim(), options),
       });
+      index += 1;
       continue;
     }
 
     paragraphBuffer.push(trimmed);
+    index += 1;
   }
 
   flushParagraph();
@@ -195,9 +351,15 @@ export function insertAiTextWithLiveReferences(editor: Editor, text: string, opt
     return editor.commands.insertContent(text);
   }
 
-  if (!hasLiveRef && hasMarkdown) {
+  if (hasMarkdown) {
+    const parsedBlocks = parseMarkdownWithLiveReferences(editor, text, options);
     const from = editor.state.selection.from;
     const to = editor.state.selection.to;
+
+    if (parsedBlocks.length > 0) {
+      return editor.chain().focus().insertContentAt({ from, to }, parsedBlocks).run();
+    }
+
     return editor.chain().focus().insertContentAt({ from, to }, text).run();
   }
 

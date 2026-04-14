@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AiProviderClientService, AiChatMessage } from './ai-provider-client.service';
 import {
+  AiIntent,
   PageContextInput,
   ProseMirrorDocument,
   TextStyleId,
@@ -33,6 +35,15 @@ const PROFESSIONAL_TONE_RULE =
 const LIVE_REFERENCE_STRICT_RULE =
   'When mentioning any numeric values, statuses, or dates that exist in provided MWS table context, you MUST use live reference token format [Ref:tableId:rowId:colId]. Never output a plain numeric/status/date value if it can be bound to a table cell. This keeps documents dynamic.';
 
+const MARKDOWN_TABLE_RULE = [
+  'Если тебе нужно представить данные в виде структуры, используй стандартные Markdown-таблицы.',
+  'Формат:',
+  '| Заголовок 1 | Заголовок 2 |',
+  '|---|---|',
+  '| Значение 1 | Значение 2 |',
+  'Никогда не используй имитацию таблиц через пробелы или табуляцию. Только стандартный Markdown.',
+].join(' ');
+
 const TRANSFORM_OUTPUT_RULES = [
   'Return only the transformed selected fragment text, without comments or explanations.',
   'Do not output labels or metadata like "Page title", "Transformation", "Context snapshot", "Wiki", "Исходный текст", or "Переработанный вариант".',
@@ -42,11 +53,39 @@ const TRANSFORM_OUTPUT_RULES = [
 
 @Injectable()
 export class AiAssistantService {
-  constructor(private readonly aiProviderClientService: AiProviderClientService) {}
+  private readonly modelChat: string;
+  private readonly modelMutation: string;
+  private readonly modelWriter: string;
+  private readonly modelFast: string;
+
+  constructor(
+    private readonly aiProviderClientService: AiProviderClientService,
+    private readonly configService: ConfigService,
+  ) {
+    this.modelChat = this.configService.get<string>('AI_MODEL_CHAT', 'qwen2.5-72b-instruct');
+    this.modelMutation = this.configService.get<string>('AI_MODEL_MUTATION', 'qwen2.5-72b-instruct');
+    this.modelWriter = this.configService.get<string>('AI_MODEL_WRITER', 'llama-3.3-70b-instruct');
+    this.modelFast = this.configService.get<string>('AI_MODEL_FAST', 'llama-3.1-8b-instruct');
+  }
+
+  resolveModelForIntent(intent: AiIntent): string {
+    switch (intent) {
+      case 'autocomplete':
+        return this.modelFast;
+      case 'plan_mutation':
+        return this.modelMutation;
+      case 'write_report':
+        return this.modelWriter;
+      case 'chat':
+      default:
+        return this.modelChat;
+    }
+  }
 
   async getCompletion(currentText: string, context: PageContextInput = {}): Promise<{ text: string }> {
     const messages = this.buildCompletionMessages(currentText, context);
     const response = await this.aiProviderClientService.complete({
+      model: this.resolveModelForIntent('autocomplete'),
       messages,
       temperature: 0.25,
       maxTokens: 96,
@@ -60,6 +99,7 @@ export class AiAssistantService {
   async generateContent(prompt: string, context: PageContextInput = {}): Promise<{ document: ProseMirrorDocument }> {
     const messages = this.buildGenerationMessages(prompt, context);
     const response = await this.aiProviderClientService.complete({
+      model: this.resolveModelForIntent('chat'),
       messages,
       temperature: 0.3,
       maxTokens: 1200,
@@ -80,6 +120,7 @@ export class AiAssistantService {
   ): Promise<{ text: string }> {
     const messages = this.buildTransformMessages(text, transformation, styleId, context);
     const response = await this.aiProviderClientService.complete({
+      model: this.resolveModelForIntent('chat'),
       messages,
       temperature: transformation === 'shorten' ? 0.15 : 0.25,
       maxTokens: 256,
@@ -138,6 +179,7 @@ export class AiAssistantService {
     ];
 
     const response = await this.aiProviderClientService.complete({
+      model: this.resolveModelForIntent('plan_mutation'),
       messages,
       temperature: 0.1,
       maxTokens: 700,
@@ -261,6 +303,7 @@ export class AiAssistantService {
     ];
 
     const response = await this.aiProviderClientService.complete({
+      model: this.resolveModelForIntent('plan_mutation'),
       messages,
       temperature: 0.15,
       maxTokens: 900,
@@ -678,6 +721,7 @@ export class AiAssistantService {
           'Use only paragraph, heading, bulletList, orderedList, listItem, blockquote, and text nodes unless the context requires another common ProseMirror node.',
           'If user asks to reference a live MWS cell, insert token [Ref:tableId:rowId:colId] directly in text, without extra markup.',
           LIVE_REFERENCE_STRICT_RULE,
+          MARKDOWN_TABLE_RULE,
           SAME_LANGUAGE_RULE,
           PROFESSIONAL_TONE_RULE,
         ].join(' '),
@@ -704,7 +748,7 @@ export class AiAssistantService {
     return [
       {
         role: 'system',
-        content: `${prompt} ${SAME_LANGUAGE_RULE} ${PROFESSIONAL_TONE_RULE} ${TRANSFORM_OUTPUT_RULES}`,
+        content: `${prompt} ${SAME_LANGUAGE_RULE} ${PROFESSIONAL_TONE_RULE} ${MARKDOWN_TABLE_RULE} ${TRANSFORM_OUTPUT_RULES}`,
       },
       {
         role: 'user',
@@ -764,6 +808,7 @@ export class AiAssistantService {
     }
 
     const repairResponse = await this.aiProviderClientService.complete({
+      model: this.resolveModelForIntent('plan_mutation'),
       messages: [
         {
           role: 'system',

@@ -1,3 +1,5 @@
+import { AiIntent } from './ai-assistant.types';
+
 export interface AiChatToolDefinition {
   type: 'function';
   function: {
@@ -9,12 +11,35 @@ export interface AiChatToolDefinition {
 
 export interface ChatQuestionInput {
   question: string;
+  spaceId?: string;
+  contextScope?: 'currentFile' | 'documents' | 'folders' | 'space';
+  intent?: AiIntent;
   pageId?: string;
   pageTitle?: string;
   pageSnapshot?: Record<string, unknown> | string;
   datasheetId?: string;
   viewId?: string;
   fieldKey?: 'id' | 'name';
+  selectedPageIds?: string[];
+  selectedFolderIds?: string[];
+  contextDocuments?: Array<{
+    pageId: string;
+    title: string;
+    markdown: string;
+  }>;
+  workspaceStructure?: {
+    scope: 'currentFile' | 'documents' | 'folders' | 'space';
+    spaceId: string;
+    truncated?: boolean;
+    nodes: Array<{
+      id: string;
+      title: string;
+      kind: string;
+      parentId: string | null;
+      depth: number;
+    }>;
+  };
+  useVectorSearch?: boolean;
 }
 
 export interface ChatQuestionResponse {

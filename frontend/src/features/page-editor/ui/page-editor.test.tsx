@@ -334,7 +334,7 @@ describe('PageEditor', () => {
 
     const surface = container.querySelector('[data-page-editor-surface]');
     expect(surface).toHaveAttribute('data-editor-view-mode', 'paged');
-    expect(screen.getByText('Страницы')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Вид' })).toBeInTheDocument();
   });
 
   it('forces standard view on compact viewport', () => {

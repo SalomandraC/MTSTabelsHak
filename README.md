@@ -6,6 +6,7 @@ WikiLive — это совместный вики-модуль для кейса
 
 Текущее состояние репозитория:
 - `backend/` содержит каркас бэкенда на NestJS с Prisma, PostgreSQL, Redis, BullMQ и Hocuspocus
+- `services/context-engine/` содержит Python FastAPI сервис для semantic search и AI retrieval по документам на `qdrant-client` в local persistent mode
 - `frontend/` содержит React + Tiptap workspace с MWS-first проводником, wiki-страницами рядом с таблицами, backlinks и live embeds
 - `docs/openapi.yaml` содержит HTTP/WebSocket контракт
 - `docs/MWS_TABLES_API_ANALYSIS.md` описывает, как сущности MWS Tables встраиваются в редактор
@@ -26,6 +27,8 @@ WikiLive — это совместный вики-модуль для кейса
 - picker MWS Tables поддерживает таблицы внутри папок, выбор view/полей и настройку live embed
 - MWS Tables embed отображается как scrollable live grid с догрузкой записей и inline-операциями над простыми ячейками/строками через BFF
 - кратковременный кэш на Redis и очередь обслуживания документов на BullMQ
+- контекстный semantic search по содержимому документов через `context-engine`
+- AI chat с retrieval в пределах выбранного пространства и поддержкой выбора документов/папок как контекста
 
 ## Возможности фронтенда
 
@@ -61,6 +64,7 @@ docker compose up --build
 Это запускает:
 - `postgres` на порту `5432`
 - `redis` на порту `6379`
+- `context-engine` на порту `8090`
 - HTTP API бэкенда на порту `8080`
 - сервер совместной работы на порту `8081`
 
@@ -98,6 +102,7 @@ npm run start:dev
 Важные переменные:
 - `DATABASE_URL`
 - `REDIS_URL`
+- `CONTEXT_ENGINE_URL`
 - `PORT`
 - `COLLAB_PORT`
 - `JWT_SECRET`
@@ -138,6 +143,14 @@ MWS-first проводник:
 - sidebar использует `GET /api/v1/spaces/:spaceId/workspace/tree`, где источником иерархии являются MWS Tables nodes
 - все таблицы MWS отображаются в проводнике; при клике открывается окно с действиями `Создать страницу с таблицей`, `Перейти на таблицу в tables.mws.ru` и `Удалить таблицу`
 - создание страницы для таблицы идемпотентно: повторный клик открывает существующую WikiLive-страницу рядом с этой MWS-таблицей
+
+AI retrieval и semantic search:
+- backend остаётся единственной внешней точкой входа для AI
+- `context-engine` индексирует текст страниц после сохранения snapshot в фоне через существующий BullMQ worker
+- `context-engine` хранит векторный индекс локально на диске через `qdrant-client(path=...)`, поэтому данные переживают перезапуск контейнера при сохранённом volume
+- поиск по содержимому работает только в рамках выбранного пространства
+- документы можно добавлять в AI chat как явный контекст
+- папки можно добавлять в AI chat как ограничение области semantic search
 
 ## API и документация
 

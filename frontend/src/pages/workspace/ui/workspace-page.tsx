@@ -70,13 +70,19 @@ const WHATS_NEW_BANNER_DURATION_SEC = 30;
 const WHATS_NEW_BANNER_STORAGE_KEY = 'wikilive:disable-whats-new-banner';
 const WHATS_NEW_BANNER_ENABLED = (import.meta.env.VITE_ENABLE_WHATS_NEW_BANNER ?? 'true') !== 'false';
 
-function getShareUrl(spaceId: string, pageId: string | null) {
+function getShareUrl(spaceId: string, pageId: string | null, readOnly = false) {
   const url = new URL(window.location.href);
   url.pathname = pageId
     ? `/spaces/${encodeURIComponent(spaceId)}/pages/${encodeURIComponent(pageId)}`
     : `/spaces/${encodeURIComponent(spaceId)}`;
   url.searchParams.delete('spaceId');
   url.searchParams.delete('pageId');
+
+  if (readOnly) {
+    url.searchParams.set('readOnly', 'true');
+  } else {
+    url.searchParams.delete('readOnly');
+  }
 
   return url.toString();
 }
@@ -105,6 +111,13 @@ function collectWorkspaceFolderIds(nodes: WorkspaceTreeNode[]): string[] {
   return nodes.flatMap((node) => [
     ...(isWorkspaceFolder(node) ? [node.id] : []),
     ...collectWorkspaceFolderIds(node.children ?? []),
+  ]);
+}
+
+function flattenWorkspaceFolders(nodes: WorkspaceTreeNode[]): Array<{ id: string; title: string }> {
+  return nodes.flatMap((node) => [
+    ...(isWorkspaceFolder(node) ? [{ id: node.id, title: node.title }] : []),
+    ...flattenWorkspaceFolders(node.children ?? []),
   ]);
 }
 
@@ -269,6 +282,7 @@ function WorkspaceTreeItem({
   onCreatePage,
   onExportPage,
   onMoveNode,
+  onMoveNodeToRoot,
   dragSourceId,
   dragOverNodeId,
   dragOverPosition,
@@ -295,6 +309,7 @@ function WorkspaceTreeItem({
   onCreatePage: (title: string, parentNodeId?: string | null) => Promise<void>;
   onExportPage: (pageId: string, title: string, format: ExportFormat) => void;
   onMoveNode: (sourceId: string, targetId: string) => void | Promise<void>;
+  onMoveNodeToRoot?: (sourceId: string) => void | Promise<void>;
   dragSourceId: string | null;
   dragOverNodeId: string | null;
   dragOverPosition: 'inside' | 'unsupported' | null;
@@ -551,8 +566,7 @@ function WorkspaceTreeItem({
             event.stopPropagation();
 
             if (!canAcceptDrop) {
-              setDragOverNodeId?.(node.id);
-              setDragOverPosition?.('unsupported');
+              void onMoveNodeToRoot?.(sourceId);
               return;
             }
 
@@ -873,6 +887,7 @@ export function WorkspacePage() {
   const pendingRoutePageIdRef = useRef(initialRoute.pageId);
   const [spaces, setSpaces] = useState<MwsSpace[]>([]);
   const [selectedSpaceId, setSelectedSpaceId] = useState(initialRoute.spaceId ?? DEFAULT_WIKILIVE_SPACE_ID);
+  const [isReadOnlyViewLink, setIsReadOnlyViewLink] = useState(initialRoute.readOnly);
   const [tree, setTree] = useState<WorkspaceTreeNode[]>([]);
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
@@ -944,6 +959,9 @@ export function WorkspacePage() {
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [outgoingLinks, setOutgoingLinks] = useState<OutgoingLink[]>([]);
   const [graphEdges, setGraphEdges] = useState<DocumentGraphEdge[]>([]);
+  const pageLinkCountRef = useRef<number>(0);
+  const graphRefreshTimerRef = useRef<number | null>(null);
+  const refreshDocumentGraphRef = useRef<(() => Promise<void>) | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreatingTablePage, setIsCreatingTablePage] = useState(false);
   const [isDeletingTable, setIsDeletingTable] = useState(false);
@@ -1029,6 +1047,29 @@ export function WorkspacePage() {
   );
   const canManageAccess = activePage?.access?.capabilities.canManageAccess ?? false;
   const canEditActivePage = activePage?.access?.capabilities.canEdit ?? true;
+
+  const countPageLinks = useCallback((editor: Editor) => {
+    let count = 0;
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === 'pageLink') {
+        count += 1;
+      }
+      return true;
+    });
+    return count;
+  }, []);
+
+  const scheduleGraphRefresh = useCallback(() => {
+    if (graphRefreshTimerRef.current) {
+      window.clearTimeout(graphRefreshTimerRef.current);
+    }
+
+    graphRefreshTimerRef.current = window.setTimeout(() => {
+      void refreshDocumentGraphRef.current?.();
+      graphRefreshTimerRef.current = null;
+    }, 3000);
+  }, []);
+
   const isHistoryPreviewActive = Boolean(historyPreviewCheckpoint);
   const hasAccessChanges = Boolean(
     accessDraft &&
@@ -1041,6 +1082,33 @@ export function WorkspacePage() {
   );
   const isDocumentGraphEnabled = isWorkspaceSidebarEnabled('document-graph');
   const isCommentsEnabled = isPluginEnabled('comments');
+
+  useEffect(() => {
+    if (!activeEditor) {
+      return;
+    }
+
+    const initialCount = countPageLinks(activeEditor);
+    pageLinkCountRef.current = initialCount;
+
+    const handleTransaction = () => {
+      const currentCount = countPageLinks(activeEditor);
+      if (currentCount !== pageLinkCountRef.current) {
+        pageLinkCountRef.current = currentCount;
+        scheduleGraphRefresh();
+      }
+    };
+
+    activeEditor.on('transaction', handleTransaction);
+
+    return () => {
+      activeEditor.off('transaction', handleTransaction);
+      if (graphRefreshTimerRef.current) {
+        window.clearTimeout(graphRefreshTimerRef.current);
+        graphRefreshTimerRef.current = null;
+      }
+    };
+  }, [activeEditor, countPageLinks, scheduleGraphRefresh]);
   const isTimeMachineEnabled = isPluginEnabled('time-machine');
   const isNavigationEnabled = isWorkspaceSidebarEnabled('navigation');
   const isAiSidebarEnabled = isWorkspaceSidebarEnabled('sidebar');
@@ -1253,6 +1321,42 @@ export function WorkspacePage() {
         setErrorMessage(error instanceof Error ? error.message : 'Не удалось переместить объект');
       } finally {
         clearTreeDragState();
+        setDragSourceId(null);
+      }
+    },
+    [activePageId, clearTreeDragState, findNodeAndParent, refreshTree, selectedSpaceId, tree],
+  );
+
+  const moveTreeNodeToRoot = useCallback(
+    async (sourceId: string) => {
+      const sourceInfo = findNodeAndParent(tree, sourceId);
+
+      if (!sourceInfo) {
+        clearTreeDragState();
+        setDragSourceId(null);
+        return;
+      }
+
+      if (!isWorkspaceMovableNode(sourceInfo.node)) {
+        setErrorMessage('Можно перемещать только локальные страницы и папки');
+        clearTreeDragState();
+        setDragSourceId(null);
+        return;
+      }
+
+      try {
+        await wikiliveApi.moveNode(sourceId, {
+          targetParentId: null,
+          targetExternalParentNodeId: null,
+        });
+
+        setErrorMessage('');
+        await refreshTree(selectedSpaceId, activePageId);
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Не удалось переместить объект');
+      } finally {
+        clearTreeDragState();
+        setDragSourceId(null);
       }
     },
     [activePageId, clearTreeDragState, findNodeAndParent, refreshTree, selectedSpaceId, tree],
@@ -1265,6 +1369,10 @@ export function WorkspacePage() {
 
     await refreshGraphLinks(tree);
   }, [refreshGraphLinks, tree]);
+
+  useEffect(() => {
+    refreshDocumentGraphRef.current = refreshDocumentGraph;
+  }, [refreshDocumentGraph]);
 
   const refreshLinks = async (pageId: string) => {
     const [backlinksResponse, outgoingResponse] = await Promise.all([
@@ -1515,8 +1623,11 @@ export function WorkspacePage() {
       if (route.spaceId && route.spaceId !== selectedSpaceId) {
         pendingRoutePageIdRef.current = route.pageId;
         setSelectedSpaceId(route.spaceId);
+        setIsReadOnlyViewLink(route.readOnly);
         return;
       }
+
+      setIsReadOnlyViewLink(route.readOnly);
 
       if (route.pageId) {
         setSelectedTableNode(null);
@@ -1655,6 +1766,20 @@ export function WorkspacePage() {
       setShareStatus('Ссылка скопирована');
     } catch {
       window.prompt('Ссылка на текущую страницу', shareUrl);
+      setShareStatus('Ссылка готова');
+    }
+
+    window.setTimeout(() => setShareStatus(''), 2200);
+  };
+
+  const handleCopyReadOnlyShareLink = async () => {
+    const shareUrl = getShareUrl(selectedSpaceId, activePageId, true);
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareStatus('Ссылка для просмотра скопирована');
+    } catch {
+      window.prompt('Ссылка на текущую страницу в режиме только чтения', shareUrl);
       setShareStatus('Ссылка готова');
     }
 
@@ -2335,8 +2460,8 @@ export function WorkspacePage() {
                     onClick={() => setIsSpaceMenuOpen((value) => !value)}
                     className="flex h-7 w-full items-center justify-between gap-2 rounded-md border border-[#ffd9e1] bg-white px-2 text-xs font-semibold text-[#d70032] outline-none transition-colors hover:bg-[#fff1f3] focus-visible:ring-2 focus-visible:ring-[#d70032]/25"
                     style={{
-                      minWidth: `${Math.min(longestSpaceNameChars + 6, 30)}ch`,
-                      maxWidth: '300px',
+                      minWidth: `${Math.min(longestSpaceNameChars + 4, 20)}ch`,
+                      maxWidth: '220px',
                     }}
                     aria-haspopup="menu"
                     aria-expanded={isSpaceMenuOpen}
@@ -2373,8 +2498,16 @@ export function WorkspacePage() {
             </div>
             <button
               type="button"
-              onClick={() => setIsSearchOpen((value) => !value)}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[#696969] transition-colors hover:bg-[#f2f3f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
+              onClick={() =>
+                setIsSearchOpen((value) => {
+                  if (value) {
+                    setSearchQuery('');
+                  }
+
+                  return !value;
+                })
+              }
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-[#696969] transition-colors hover:bg-[#f2f3f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
               title="Быстрый поиск"
               data-testid="fast-search-icon"
             >
@@ -2384,13 +2517,27 @@ export function WorkspacePage() {
 
           {isSearchOpen ? (
             <div className="px-4 pb-3">
-              <input
-                autoFocus
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Найти MWS таблицу, папку или wiki-страницу"
-                className="h-9 w-full rounded-md border border-[#dfe2e7] bg-[#fafafa] px-3 text-sm outline-none focus:border-[#d70032]"
-              />
+              <div className="relative">
+                <input
+                  autoFocus
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Найти MWS таблицу, папку или wiki-страницу"
+                  className="h-9 w-full rounded-md border border-[#dfe2e7] bg-[#fafafa] px-3 pr-9 text-sm outline-none focus:border-[#d70032]"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setIsSearchOpen(false);
+                  }}
+                  className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-[#7a7f88] transition-colors hover:bg-[#eceff3] hover:text-[#1f2937]"
+                  aria-label="Скрыть поиск и сбросить фильтр"
+                  title="Скрыть поиск"
+                >
+                  <X size={14} strokeWidth={2.2} />
+                </button>
+              </div>
             </div>
           ) : null}
 
@@ -2419,10 +2566,67 @@ export function WorkspacePage() {
 
           <div
             ref={workbenchTreeWrapperRef}
-            className="relative mt-2 min-h-0 flex-1 overflow-y-auto px-2 pb-2"
+            className={['relative mt-2 min-h-0 flex-1 overflow-y-auto px-2 pb-2',
+              dragOverNodeId === null && dragOverPosition === 'inside' ? 'bg-[#fff1f3]/30' : '',
+            ].join(' ')}
             id="WORKBENCH_SIDE_NODE_WRAPPER"
             onContextMenu={handleWorkbenchBlankAreaContextMenu}
+            onDragOver={(event) => {
+              if (!dragSourceId || event.target !== event.currentTarget) {
+                return;
+              }
+
+              const sourceInfo = findNodeAndParent(tree, dragSourceId);
+              if (!sourceInfo || !isWorkspaceMovableNode(sourceInfo.node)) {
+                return;
+              }
+
+              event.preventDefault();
+              event.dataTransfer.dropEffect = 'move';
+              setDragOverNodeId?.(null);
+              setDragOverPosition?.('inside');
+            }}
+            onDragEnter={(event) => {
+              if (!dragSourceId || event.target !== event.currentTarget) {
+                return;
+              }
+
+              const sourceInfo = findNodeAndParent(tree, dragSourceId);
+              if (!sourceInfo || !isWorkspaceMovableNode(sourceInfo.node)) {
+                return;
+              }
+
+              event.preventDefault();
+              setDragOverNodeId?.(null);
+              setDragOverPosition?.('inside');
+            }}
+            onDragLeave={(event) => {
+              if (event.currentTarget.contains(event.relatedTarget as Node)) {
+                return;
+              }
+
+              if (dragOverNodeId === null) {
+                setDragOverPosition?.(null);
+              }
+            }}
+            onDrop={(event) => {
+              if (event.target !== event.currentTarget) {
+                return;
+              }
+
+              const sourceId = dragSourceId ?? event.dataTransfer.getData('application/x-wikilive-node-id');
+              if (!sourceId) {
+                return;
+              }
+
+              event.preventDefault();
+              event.stopPropagation();
+              void moveTreeNodeToRoot(sourceId);
+            }}
           >
+            {dragOverNodeId === null && dragOverPosition === 'inside' ? (
+              <div className="pointer-events-none absolute inset-0 rounded-2xl bg-[#fff1f3]/20" />
+            ) : null}
             {isLoading ? (
               <WorkspaceTreeSkeleton />
             ) : (
@@ -2455,6 +2659,7 @@ export function WorkspacePage() {
                       }}
                       onExportPage={handleExportPage}
                       onMoveNode={moveTreeNode}
+                      onMoveNodeToRoot={moveTreeNodeToRoot}
                       dragSourceId={dragSourceId}
                       dragOverNodeId={dragOverNodeId}
                       dragOverPosition={dragOverPosition}
@@ -2605,13 +2810,6 @@ export function WorkspacePage() {
           <div className="flex h-12 items-center justify-center gap-4 border-t border-[#e5e6eb]">
             <button
               type="button"
-              className="flex h-8 w-8 items-center justify-center rounded-md text-[#30c28b] hover:bg-[#f2f3f5]"
-              title="Корзина"
-            >
-              <Trash2 size={18} strokeWidth={2.1} />
-            </button>
-            <button
-              type="button"
               onClick={() => setIsPluginsModalOpen(true)}
               aria-haspopup="dialog"
               aria-expanded={isPluginsModalOpen}
@@ -2622,8 +2820,9 @@ export function WorkspacePage() {
             </button>
             <button
               type="button"
+              onClick={() => void handleCopyReadOnlyShareLink()}
               className="flex h-8 w-8 items-center justify-center rounded-md text-[#7b67ee] hover:bg-[#f2f3f5]"
-              title="Пригласить"
+              title="Копировать ссылку на страницу в режиме только чтения"
             >
               <Users size={18} strokeWidth={2.1} />
             </button>
@@ -2640,7 +2839,7 @@ export function WorkspacePage() {
           <button
             type="button"
             onClick={leftSidebar.collapse}
-            className="absolute -right-4 top-24 z-30 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
+            className="absolute -right-4 top-[136px] z-30 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
             aria-label="Скрыть левое меню"
             title="Скрыть левое меню"
           >
@@ -2729,6 +2928,11 @@ export function WorkspacePage() {
         {statusMessage ? (
           <div className="border-b border-editor-border-subtle bg-white px-4 py-2 text-sm text-editor-text-tertiary">{statusMessage}</div>
         ) : null}
+        {isReadOnlyViewLink ? (
+          <div className="border-b border-[#dbeafe] bg-[#eff6ff] px-4 py-2 text-sm text-[#1d4ed8]">
+            Открыто по ссылке только для просмотра
+          </div>
+        ) : null}
         {isCommentsEnabled && comments.errorMessage && !comments.isPanelOpen ? (
           <div className="border-b border-[#efe9ff] bg-[#f7f4ff] px-4 py-2 text-sm text-[#6d5dd3]">{comments.errorMessage}</div>
         ) : null}
@@ -2737,6 +2941,14 @@ export function WorkspacePage() {
             spaceId={selectedSpaceId}
             page={isPageLoading ? null : activePage}
             isLoading={isPageLoading}
+            hideCooperationBadge={!leftSidebar.isCollapsed || !rightSidebar.isCollapsed}
+            sidebarInsetClassName={[
+              leftSidebar.isCollapsed ? 'pl-12 sm:pl-14' : '',
+              rightSidebar.isCollapsed && !isScreenNarrow ? 'pr-12 sm:pr-14' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            isReadOnlyViewLink={isReadOnlyViewLink}
             onRenamePage={handleRenamePage}
             onToggleHeadingNumbering={handleToggleHeadingNumbering}
             onCheckpoint={handleCheckpoint}
@@ -2858,10 +3070,14 @@ export function WorkspacePage() {
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
               <AiSidebarChat
                 pageId={activePageId}
+                spaceId={selectedSpaceId}
                 pageTitle={activePage?.title}
                 editor={activeEditor}
                 enabled={isAiSidebarEnabled}
+                workspaceTree={tree}
                 availablePages={flattenWorkspacePages(tree)}
+                availableFolders={flattenWorkspaceFolders(tree)}
+                availableSpaces={spaces}
                 onClose={() => setRightPanelMode('toolbar')}
               />
             </div>
@@ -2896,14 +3112,7 @@ export function WorkspacePage() {
                   </div>
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">Связи</p>
                   <h2 className="mt-1 font-wide text-base font-semibold">{activePage?.title ?? 'Страница не выбрана'}</h2>
-                  <button
-                    type="button"
-                    onClick={() => void handleCopyShareLink()}
-                    disabled={!activePageId}
-                    className="mt-3 w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm font-semibold text-editor-text-secondary transition-colors hover:bg-editor-bg-control disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {shareStatus || 'Скопировать ссылку'}
-                  </button>
+                  
                   <button
                     type="button"
                     onClick={() => {

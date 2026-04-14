@@ -37,6 +37,7 @@ const redFilter = 'brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(
 type PageEditorToolbarProps = {
   editor: Editor | null;
   canEdit?: boolean;
+  sidebarInsetClassName?: string;
   headingNumberingEnabled?: boolean;
   onToggleHeadingNumbering: (enabled: boolean) => void;
   onOpenLinkModal: (position?: { top: number; left: number }) => void;
@@ -188,6 +189,7 @@ function ToolbarButton({
 export function PageEditorToolbar({
   editor,
   canEdit = true,
+  sidebarInsetClassName = '',
   headingNumberingEnabled = false,
   onToggleHeadingNumbering,
   onOpenLinkModal,
@@ -270,8 +272,8 @@ export function PageEditorToolbar({
   };
 
   return (
-    <div className="sticky top-0 z-20 bg-[rgba(245,247,250,1)] px-2 py-2 sm:px-4">
-      <div className="flex items-center gap-0 overflow-x-auto whitespace-nowrap pb-0.5" role="toolbar" aria-label="Панель инструментов редактора">
+    <div className={`sticky top-0 z-20 bg-[rgba(245,247,250,1)] px-2 py-2 sm:px-4 ${sidebarInsetClassName}`.trim()}>
+      <div className="flex flex-wrap items-center gap-x-0 gap-y-1 overflow-x-visible pb-1" role="toolbar" aria-label="Панель инструментов редактора">
 
         <ToolbarButton 
           icon={

@@ -37,3 +37,5 @@ export interface AiChatAnswer {
   contextMarkdown: string;
   references?: Array<Record<string, unknown>>;
 }
+
+export type AiIntent = 'chat' | 'plan_mutation' | 'write_report' | 'autocomplete';
