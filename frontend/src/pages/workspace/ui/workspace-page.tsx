@@ -2299,8 +2299,8 @@ export function WorkspacePage() {
                     onClick={() => setIsSpaceMenuOpen((value) => !value)}
                     className="flex h-7 w-full items-center justify-between gap-2 rounded-md border border-[#ffd9e1] bg-white px-2 text-xs font-semibold text-[#d70032] outline-none transition-colors hover:bg-[#fff1f3] focus-visible:ring-2 focus-visible:ring-[#d70032]/25"
                     style={{
-                      minWidth: `${Math.min(longestSpaceNameChars + 6, 30)}ch`,
-                      maxWidth: '300px',
+                      minWidth: `${Math.min(longestSpaceNameChars + 4, 20)}ch`,
+                      maxWidth: '220px',
                     }}
                     aria-haspopup="menu"
                     aria-expanded={isSpaceMenuOpen}
@@ -2337,8 +2337,16 @@ export function WorkspacePage() {
             </div>
             <button
               type="button"
-              onClick={() => setIsSearchOpen((value) => !value)}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[#696969] transition-colors hover:bg-[#f2f3f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
+              onClick={() =>
+                setIsSearchOpen((value) => {
+                  if (value) {
+                    setSearchQuery('');
+                  }
+
+                  return !value;
+                })
+              }
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-[#696969] transition-colors hover:bg-[#f2f3f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
               title="Быстрый поиск"
               data-testid="fast-search-icon"
             >
@@ -2348,13 +2356,27 @@ export function WorkspacePage() {
 
           {isSearchOpen ? (
             <div className="px-4 pb-3">
-              <input
-                autoFocus
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Найти MWS таблицу, папку или wiki-страницу"
-                className="h-9 w-full rounded-md border border-[#dfe2e7] bg-[#fafafa] px-3 text-sm outline-none focus:border-[#d70032]"
-              />
+              <div className="relative">
+                <input
+                  autoFocus
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Найти MWS таблицу, папку или wiki-страницу"
+                  className="h-9 w-full rounded-md border border-[#dfe2e7] bg-[#fafafa] px-3 pr-9 text-sm outline-none focus:border-[#d70032]"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setIsSearchOpen(false);
+                  }}
+                  className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-[#7a7f88] transition-colors hover:bg-[#eceff3] hover:text-[#1f2937]"
+                  aria-label="Скрыть поиск и сбросить фильтр"
+                  title="Скрыть поиск"
+                >
+                  <X size={14} strokeWidth={2.2} />
+                </button>
+              </div>
             </div>
           ) : null}
 
