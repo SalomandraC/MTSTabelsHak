@@ -346,8 +346,18 @@ function sortRecords(
   }
 
   const fieldMap = new Map(fields.map((field) => [field.id, field] as const));
+
+  const localRules = sortRules.filter((rule) => {
+    const field = fieldMap.get(rule.fieldId);
+    return field?.type !== 'Attachment';
+  });
+
+  if (localRules.length === 0) {
+    return records;
+  }
+
   return [...records].sort((left, right) => {
-    for (const rule of sortRules) {
+    for (const rule of localRules) {
       const field = fieldMap.get(rule.fieldId);
       if (!field) {
         continue;
@@ -1767,6 +1777,28 @@ export function useWikiTableEmbed(
     setFilterRules,
     groupRule,
     setGroupRule,
+    applySort: (rules: SortRule[]) => {
+      setSortRules(rules);
+      if (attrs.spaceId && attrs.datasheetId && attrs.viewId) {
+        void wikiliveApi.setMwsViewSort(
+          attrs.spaceId,
+          attrs.datasheetId,
+          attrs.viewId,
+          rules.map(({ fieldId, desc }) => ({ fieldId, desc })),
+        ).catch(() => {});
+      }
+    },
+    applyGroup: (rule: GroupRule | null) => {
+      setGroupRule(rule);
+      if (attrs.spaceId && attrs.datasheetId && attrs.viewId) {
+        void wikiliveApi.setMwsViewGroup(
+          attrs.spaceId,
+          attrs.datasheetId,
+          attrs.viewId,
+          rule ? [{ fieldId: rule.fieldId, desc: rule.desc }] : [],
+        ).catch(() => {});
+      }
+    },
     loadEmbed,
     refreshTable,
     loadNextPage,

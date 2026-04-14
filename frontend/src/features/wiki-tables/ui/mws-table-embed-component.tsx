@@ -550,14 +550,15 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
   };
 
   const applySingleFieldSort = (field: MwsField, desc: boolean) => {
-    controller.setSortRules((current) => [
+    const next = [
       {
         id: `sort-rule-${Date.now()}`,
         fieldId: field.id,
         desc
       },
-      ...current.filter((rule) => rule.fieldId !== field.id)
-    ]);
+      ...controller.sortRules.filter((rule) => rule.fieldId !== field.id)
+    ];
+    controller.applySort(next);
   };
 
   const addFieldFilter = (field: MwsField) => {
@@ -580,10 +581,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
   };
 
   const applyFieldGrouping = (field: MwsField, desc: boolean) => {
-    controller.setGroupRule({
-      fieldId: field.id,
-      desc
-    });
+    controller.applyGroup({ fieldId: field.id, desc });
   };
 
   const hideField = (field: MwsField) => {
@@ -599,9 +597,9 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
   };
 
   const resetAllTransforms = () => {
-    controller.setSortRules([]);
+    controller.applySort([]);
     controller.setFilterRules([]);
-    controller.setGroupRule(null);
+    controller.applyGroup(null);
     setActiveFieldMenu(null);
   };
 
@@ -912,9 +910,9 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       />
       <SortFieldsModal
         isOpen={isSortFieldsModalOpen}
-        fields={controller.fields}
+        fields={controller.fields.filter(f => f.type !== 'Attachment')}
         sortRules={controller.sortRules}
-        onChangeSortRules={controller.setSortRules}
+        onChangeSortRules={controller.applySort}
         onClose={() => setIsSortFieldsModalOpen(false)}
       />
       <FilterRecordsModal
@@ -928,7 +926,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         isOpen={isGroupRecordsModalOpen}
         fields={controller.fields}
         groupRule={controller.groupRule}
-        onChangeGroupRule={controller.setGroupRule}
+        onChangeGroupRule={controller.applyGroup}
         onClose={() => setIsGroupRecordsModalOpen(false)}
       />
       <ExpandedTableModal

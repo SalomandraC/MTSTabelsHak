@@ -21,6 +21,8 @@ import {
   CreateMwsRecordsDto,
   CreateMwsTablePageDto,
   CreateMwsViewDto,
+  SetViewGroupDto,
+  SetViewSortDto,
   MoveMwsFieldDto,
   ResolveTableEmbedDto,
   UpdateMwsRecordsDto,
@@ -122,6 +124,34 @@ export class MwsController {
     @CurrentUser() user: UserContext,
   ) {
     return this.mwsService.createView(spaceId, datasheetId, dto, user);
+  }
+
+  @Post('spaces/:spaceId/datasheets/:datasheetId/views/:viewId/sort')
+  async setViewSort(
+    @Param('spaceId') spaceId: string,
+    @Param('datasheetId') datasheetId: string,
+    @Param('viewId') viewId: string,
+    @Body() dto: SetViewSortDto,
+    @CurrentUser() user: UserContext,
+  ) {
+    return this.mwsService.setViewSort(
+      spaceId, datasheetId, viewId,
+      dto.rules,
+      dto.keepSort ?? true,
+      dto.applySort ?? true,
+      user,
+    );
+  }
+
+  @Post('spaces/:spaceId/datasheets/:datasheetId/views/:viewId/group')
+  async setViewGroup(
+    @Param('spaceId') spaceId: string,
+    @Param('datasheetId') datasheetId: string,
+    @Param('viewId') viewId: string,
+    @Body() dto: SetViewGroupDto,
+    @CurrentUser() user: UserContext,
+  ) {
+    return this.mwsService.setViewGroup(spaceId, datasheetId, viewId, dto.rules, user);
   }
 
   @Get('datasheets/:datasheetId/records')

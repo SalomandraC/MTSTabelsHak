@@ -12,12 +12,10 @@ const PORT = parseInt(process.env.PORT ?? '3200', 10);
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '50mb' }));
 
-// Health check
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', service: 'document-generator' });
 });
 
-// Generate document
 app.post('/generate', async (req: Request, res: Response) => {
   try {
     const { format, title, document, auth, appBaseUrl, spaceId } = req.body as GenerateRequest;
