@@ -41,7 +41,7 @@ export class AiChatService {
     const explicitContextMarkdown = this.buildExplicitContextMarkdown(input.contextDocuments);
     const isTableContext = this.isTableContext(input);
     const isWorkspaceAgentMode = this.isWorkspaceAgentMode(input, isTableContext);
-    const retrievedContext = isWorkspaceAgentMode ? { items: [] } : await this.searchRelevantContext(input, user);
+    const retrievedContext = isTableContext ? { items: [] } : await this.searchRelevantContext(input, user);
     const messages = this.buildMessages(
       input.question,
       contextMarkdown,
@@ -236,6 +236,7 @@ export class AiChatService {
             'Always answer in the same language as the user input. If language is ambiguous, default to Russian.',
             'Treat the provided workspace structure only as a navigation hint, not as factual evidence.',
             'Do not invent facts from file names or folder names.',
+        'You also receive a vector-retrieved shortlist of relevant documents in the prompt. Start from those candidates before asking for more tools.',
             'To answer questions about a whole space or folder scope, first use tools.',
             'Use search_workspace_documents to find candidate documents by query.',
             'Use get_document_context to open and read the most relevant documents before answering.',

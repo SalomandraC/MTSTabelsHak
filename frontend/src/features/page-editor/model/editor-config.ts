@@ -5,7 +5,6 @@ import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import Document from '@tiptap/extension-document';
 import Dropcursor from '@tiptap/extension-dropcursor';
 import Highlight from '@tiptap/extension-highlight';
-import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
@@ -54,6 +53,9 @@ import { LiveReference } from './live-reference';
 import { LiveFormula } from './live-formula';
 import { TemplateVariable } from './template-variable';
 import { Bookmark, BookmarkLink } from './bookmark';
+import { CustomHardBreak } from './custom-hard-break';
+import { CustomLink } from './custom-link';
+import { ListExitOnDoubleEnter } from './list-exit-on-double-enter';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 
 const bookmarkClickKey = new PluginKey('bookmarkClick');
@@ -177,6 +179,7 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     BookmarkClickHandler,
     Typography,
     DashShortcut,
+    CustomHardBreak,
     Dropcursor.configure({
       color: '#d92c2c',
       width: 2,
@@ -196,7 +199,8 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     IframeBlock,
     TaskList,
     TaskItem.configure({ nested: true }),
-    Link.configure({
+    ListExitOnDoubleEnter,
+    CustomLink.configure({
       openOnClick: false,
       autolink: true,
     }),
@@ -223,6 +227,7 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
       document: false,
       codeBlock: false,
       dropcursor: false,
+      hardBreak: false,
       link: false,
       underline: false,
       horizontalRule: false,

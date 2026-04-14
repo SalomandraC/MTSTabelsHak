@@ -94,6 +94,7 @@ describe('PageEditorToolbar', () => {
         onToggleHeadingNumbering={onToggleHeadingNumbering}
         onOpenLinkModal={vi.fn()}
         onOpenImageModal={vi.fn()}
+        onOpenIframeModal={vi.fn()}
         onCreateComment={onCreateComment}
       />,
     );
