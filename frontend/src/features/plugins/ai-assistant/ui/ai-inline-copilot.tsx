@@ -3,7 +3,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Content, Editor, JSONContent } from '@tiptap/core';
 
 import { type MwsField, type MwsRecord, wikiliveApi } from '../../../../shared/api/wikilive';
-import { insertAiTextWithLiveReferences, parseMarkdownReportWithLiveReferences } from '../../../page-editor/model/live-reference-parser';
+import {
+  insertAiTextWithLiveReferences,
+  parseMarkdownReportWithLiveReferences,
+  parseMarkdownWithLiveReferences,
+} from '../../../page-editor/model/live-reference-parser';
 import { getEditorMarkdown } from '../model/editor-markdown';
 import { AiOutputView } from '../model/ai-output-renderer';
 import { useAiTableContext } from '../model/use-ai-table-context';
@@ -84,11 +88,6 @@ type StructureInstruction = {
   anchor: string;
   title: string;
   level: 1 | 2 | 3;
-};
-
-type MarkdownStorage = {
-  getMarkdown?: () => string;
-  parse?: (value: string) => Content | null | undefined;
 };
 
 function dispatchTableMutation(detail: {
@@ -469,30 +468,8 @@ function findTableRootBlockInsertPos(editor: Editor, datasheetId?: string | null
   return resolved.after(tableRootBlockDepth);
 }
 
-function extractParsedBlocks(content: Content | null | undefined): JSONContent[] {
-  if (!content) {
-    return [];
-  }
-
-  if (Array.isArray(content)) {
-    return content as JSONContent[];
-  }
-
-  const asNode = content as JSONContent;
-  if (asNode.type === 'doc' && Array.isArray(asNode.content)) {
-    return asNode.content;
-  }
-
-  if (typeof asNode.type === 'string') {
-    return [asNode];
-  }
-
-  return [];
-}
-
 function buildReportRootBlock(editor: Editor | null, reportText: string, spaceId: string) {
-  const markdownStorage = (editor?.storage as { markdown?: MarkdownStorage } | undefined)?.markdown;
-  const parsedBlocks = extractParsedBlocks(markdownStorage?.parse?.(reportText));
+  const parsedBlocks = editor ? parseMarkdownWithLiveReferences(editor, reportText, { spaceId }) : [];
 
   return {
     type: 'rootblock',
@@ -512,9 +489,7 @@ function insertAiAnswer(editor: Editor | null, text: string, options: { spaceId:
     return false;
   }
 
-  const markdownStorage = (editor.storage as { markdown?: MarkdownStorage }).markdown;
-  const parsed = markdownStorage?.parse?.(text);
-  const parsedBlocks = extractParsedBlocks(parsed);
+  const parsedBlocks = parseMarkdownWithLiveReferences(editor, text, { spaceId: options.spaceId });
 
   if (parsedBlocks.length > 0) {
     const from = editor.state.selection.from;
@@ -1061,6 +1036,7 @@ export function AiInlineCopilot({
           'Если данных таблицы недостаточно, первым делом вызови инструмент get_records.',
           'Сгенерируй отчет в markdown формате.',
           'Если данные удобнее показывать в структуре, используй стандартные Markdown-таблицы.',
+          'Для каждой строки в колонке "Значение" используй живую переменную [Ref:datasheetId:recordId:fieldId], если она доступна из данных.',
           'Когда в отчете упоминаешь конкретную ячейку таблицы, обязательно вставляй живую переменную в формате [Ref:datasheetId:recordId:fieldId].',
           'Используй живые переменные для ключевых метрик, статусов, дат и значений, которые должны обновляться вместе с таблицей.',
         ].join('\n'),
