@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { RefObject } from 'react';
 import { ChevronRight, FileDown } from 'lucide-react';
 import type { ExportFormat } from '../../../shared/lib/export-document';
@@ -177,23 +178,24 @@ export function WorkspacePageActionsMenu({
                 role="menuitem"
                 onClick={(event) => {
                   event.stopPropagation();
-                  onOpenTemplateMarketplace?.();
-                }}
-                className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
-              >
-                Создать из шаблона
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={(event) => {
-                  event.stopPropagation();
                   onOpenCreateFolderMode?.();
                 }}
                 className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
               >
                 Создать папку
               </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onOpenTemplateMarketplace?.();
+                }}
+                className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
+              >
+                Создать из шаблона
+              </button>
+              
               {canRenameFolder ? (
                 <button
                   type="button"
@@ -276,8 +278,8 @@ export function WorkspacePageActionsMenu({
               Удалить
             </button>
           ) : null}
-          {isConfirmDeleteOpen && (
-            <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/30 p-4">
+          {isConfirmDeleteOpen && createPortal(
+            <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/30 p-4" role="dialog" aria-modal="true" aria-label="Подтверждение удаления">
               <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-lg">
                 <p className="text-sm leading-6 text-[#1f1f1f]">
                   {isFolder
@@ -312,7 +314,8 @@ export function WorkspacePageActionsMenu({
                   </button>
                 </div>
               </div>
-            </div>
+            </div>,
+            document.body,
           )}
         </>
       )}
