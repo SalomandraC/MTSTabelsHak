@@ -14,12 +14,14 @@ import { DOCUMENT_MAINTENANCE_QUEUE, REINDEX_PAGE_JOB } from 'src/infra/queue/qu
 import { PrismaService } from 'src/infra/prisma/prisma.service';
 import { CommentsService } from 'src/comments/comments.service';
 import { DocumentIndexingService } from 'src/links/document-indexing.service';
+import { ContextIndexingService } from 'src/context-engine/context-indexing.service';
 
 @Injectable()
 export class CollabPersistenceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly indexingService: DocumentIndexingService,
+    private readonly contextIndexingService: ContextIndexingService,
     private readonly commentsService: CommentsService,
     @InjectQueue(DOCUMENT_MAINTENANCE_QUEUE) private readonly queue: Queue,
   ) {}
@@ -273,6 +275,19 @@ export class CollabPersistenceService {
     if (options?.restoreUser) {
       await this.commentsService.autoResolveMissingAnchorsAfterRestore(pageId, plainText, options.restoreUser);
     }
+
+    await this.contextIndexingService.indexPage({
+      pageId,
+      plainText,
+      snapshotVersion: Number(
+        (
+          await this.prisma.wikiPage.findUnique({
+            where: { nodeId: pageId },
+            select: { lastSnapshotVersion: true },
+          })
+        )?.lastSnapshotVersion ?? 0n,
+      ),
+    });
   }
 
   private mapTrigger(trigger: string): CheckpointTrigger {

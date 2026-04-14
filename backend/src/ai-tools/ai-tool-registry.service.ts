@@ -1,6 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { WikiNodeType } from '@prisma/client';
 import { UserContext } from 'src/auth/user-context';
+import { ContextSearchService } from 'src/context-engine/context-search.service';
+import { PrismaService } from 'src/infra/prisma/prisma.service';
 import { MwsService } from 'src/mws/mws.service';
+import { PageAccessService } from 'src/page-access/page-access.service';
 import { PagesService } from 'src/pages/pages.service';
 import { AI_TOOL_DEFINITIONS, AI_TOOL_SCHEMA_BY_NAME } from './tool-definitions';
 import { validateToolArguments } from './tool-schema-validator';
@@ -17,8 +21,11 @@ import { WikiDocumentInjectionService } from './wiki-document-injection.service'
 @Injectable()
 export class AiToolRegistryService {
   constructor(
+    private readonly prisma: PrismaService,
     private readonly mwsService: MwsService,
     private readonly pagesService: PagesService,
+    private readonly contextSearchService: ContextSearchService,
+    private readonly pageAccessService: PageAccessService,
     private readonly wikiDocumentInjectionService: WikiDocumentInjectionService,
   ) {}
 
@@ -62,6 +69,12 @@ export class AiToolRegistryService {
           return await this.addTableColumn(args, user, context);
         case 'smart_import':
           return await this.smartImport(args, user, context);
+        case 'search_workspace_documents':
+          return await this.searchWorkspaceDocuments(args, user);
+        case 'get_document_context':
+          return await this.getDocumentContext(args, user);
+        case 'list_workspace_nodes':
+          return await this.listWorkspaceNodes(args, user);
         default:
           throw new BadRequestException({
             code: 'AI_TOOL_UNKNOWN',
@@ -267,6 +280,95 @@ export class AiToolRegistryService {
       data: {
         datasheetId: String(args.datasheetId),
         field: result.field,
+      },
+    };
+  }
+
+  private async searchWorkspaceDocuments(
+    args: Record<string, unknown>,
+    user: UserContext,
+  ): Promise<ToolExecutionSuccess> {
+    const result = await this.contextSearchService.searchInSpace(user, {
+      spaceId: String(args.spaceId),
+      query: String(args.query),
+      pageIds: Array.isArray(args.pageIds) ? args.pageIds.map((value) => String(value)) : undefined,
+      folderIds: Array.isArray(args.folderIds) ? args.folderIds.map((value) => String(value)) : undefined,
+      topK: typeof args.topK === 'number' ? args.topK : 5,
+    });
+
+    return {
+      ok: true,
+      toolName: 'search_workspace_documents',
+      data: {
+        items: result.items,
+      },
+    };
+  }
+
+  private async getDocumentContext(
+    args: Record<string, unknown>,
+    user: UserContext,
+  ): Promise<ToolExecutionSuccess> {
+    const result = await this.pagesService.getPageContextForAi(
+      String(args.pageId),
+      user,
+      typeof args.maxLength === 'number' ? args.maxLength : 6000,
+    );
+
+    return {
+      ok: true,
+      toolName: 'get_document_context',
+      data: result,
+    };
+  }
+
+  private async listWorkspaceNodes(
+    args: Record<string, unknown>,
+    user: UserContext,
+  ): Promise<ToolExecutionSuccess> {
+    const spaceId = String(args.spaceId);
+    await this.pageAccessService.assertCanAccessSpace(spaceId, user);
+
+    const parentNodeId =
+      typeof args.parentNodeId === 'string'
+        ? args.parentNodeId
+        : args.parentNodeId === null
+          ? null
+          : null;
+
+    const limit = typeof args.limit === 'number' ? args.limit : 30;
+
+    const nodes = await this.prisma.wikiNode.findMany({
+      where: {
+        spaceId,
+        parentId: parentNodeId,
+        isArchived: false,
+      },
+      orderBy: { title: 'asc' },
+      take: limit,
+      select: {
+        id: true,
+        parentId: true,
+        title: true,
+        type: true,
+        mwsDatasheetId: true,
+        sourceNodeId: true,
+        mwsSourceNodeId: true,
+      },
+    });
+
+    return {
+      ok: true,
+      toolName: 'list_workspace_nodes',
+      data: {
+        items: nodes.map((node) => ({
+          id: node.id,
+          parentId: node.parentId,
+          title: node.title,
+          kind: this.mapWorkspaceNodeKind(node.type, Boolean(node.mwsDatasheetId)),
+          sourceNodeId: node.sourceNodeId ?? node.mwsSourceNodeId ?? null,
+          datasheetId: node.mwsDatasheetId ?? null,
+        })),
       },
     };
   }
@@ -519,6 +621,26 @@ export class AiToolRegistryService {
     }
 
     return null;
+  }
+
+  private mapWorkspaceNodeKind(type: string, hasDatasheetId: boolean): string {
+    if (type === WikiNodeType.page) {
+      return 'wikiPage';
+    }
+
+    if (type === WikiNodeType.folder) {
+      return 'wikiFolder';
+    }
+
+    if (hasDatasheetId || type === 'mws_table') {
+      return 'mwsTable';
+    }
+
+    if (type === 'mws_folder') {
+      return 'mwsFolder';
+    }
+
+    return 'mwsNode';
   }
 }
 

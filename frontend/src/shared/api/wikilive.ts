@@ -507,13 +507,13 @@ export type AiTransformStyleId = 'standard' | 'business' | 'military' | 'medieva
 export type AiAutocompletePayload = {
   currentText: string;
   pageTitle?: string;
-  pageSnapshot?: Record<string, unknown>;
+  pageSnapshot?: Record<string, unknown> | string;
 };
 
 export type AiGeneratePayload = {
   prompt: string;
   pageTitle?: string;
-  pageSnapshot?: Record<string, unknown>;
+  pageSnapshot?: Record<string, unknown> | string;
 };
 
 export type AiTransformPayload = {
@@ -521,22 +521,57 @@ export type AiTransformPayload = {
   transformation: AiTransformType;
   styleId?: AiTransformStyleId;
   pageTitle?: string;
-  pageSnapshot?: Record<string, unknown>;
+  pageSnapshot?: Record<string, unknown> | string;
 };
 
 export type AiChatPayload = {
   question: string;
+  spaceId?: string;
+  contextScope?: 'currentFile' | 'documents' | 'folders' | 'space';
+  intent?: 'chat' | 'plan_mutation' | 'write_report' | 'autocomplete';
   pageId?: string;
   datasheetId?: string;
   viewId?: string;
   pageTitle?: string;
-  pageSnapshot?: Record<string, unknown>;
+  pageSnapshot?: Record<string, unknown> | string;
+  selectedPageIds?: string[];
+  selectedFolderIds?: string[];
   contextDocuments?: Array<{
     pageId: string;
     title: string;
     markdown: string;
   }>;
+  workspaceStructure?: {
+    scope: 'currentFile' | 'documents' | 'folders' | 'space';
+    spaceId: string;
+    truncated?: boolean;
+    nodes: Array<{
+      id: string;
+      title: string;
+      kind: string;
+      parentId: string | null;
+      depth: number;
+    }>;
+  };
   useVectorSearch?: boolean;
+};
+
+export type SearchDocumentsPayload = {
+  spaceId: string;
+  query: string;
+  pageIds?: string[];
+  folderIds?: string[];
+  topK?: number;
+};
+
+export type SearchDocumentsResponse = {
+  items: Array<{
+    pageId: string;
+    title: string;
+    snippet: string;
+    score: number;
+    chunkIndex: number;
+  }>;
 };
 
 export type AiGenerateResponse = {
@@ -1337,44 +1372,57 @@ export const wikiliveApi = {
       }),
     });
   },
-  aiAutocomplete(payload: AiAutocompletePayload) {
+  aiAutocomplete(payload: AiAutocompletePayload, options: RequestOptions = {}) {
     return requestWithAuth<{ text: string }>('/api/v1/ai/autocomplete', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
-  aiGenerate(payload: AiGeneratePayload) {
+  aiGenerate(payload: AiGeneratePayload, options: RequestOptions = {}) {
     return requestWithAuth<AiGenerateResponse>('/api/v1/ai/generate', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
-  aiTransform(payload: AiTransformPayload) {
+  aiTransform(payload: AiTransformPayload, options: RequestOptions = {}) {
     return requestWithAuth<{ text: string }>('/api/v1/ai/transform', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
-  aiChat(payload: AiChatPayload) {
+  aiChat(payload: AiChatPayload, options: RequestOptions = {}) {
     return requestWithAuth<AiChatResponse>('/api/v1/ai/chat', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
-  aiExecuteTool(payload: AiExecuteToolPayload) {
+  searchDocuments(payload: SearchDocumentsPayload) {
+    return requestWithAuth<SearchDocumentsResponse>('/api/v1/search/documents', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiExecuteTool(payload: AiExecuteToolPayload, options: RequestOptions = {}) {
     return requestWithAuth<AiExecuteToolResponse>('/api/v1/ai/execute', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
-  aiPlanMutation(payload: AiPlanMutationPayload) {
+  aiPlanMutation(payload: AiPlanMutationPayload, options: RequestOptions = {}) {
     return requestWithAuth<AiPlanMutationResponse>('/api/v1/ai/plan-mutation', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
-  aiPlanWorkflow(payload: AiPlanWorkflowPayload) {
+  aiPlanWorkflow(payload: AiPlanWorkflowPayload, options: RequestOptions = {}) {
     return requestWithAuth<AiPlanWorkflowResponse>('/api/v1/ai/plan-workflow', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
     });

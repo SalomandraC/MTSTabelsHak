@@ -179,6 +179,21 @@ export class PageAccessService {
     return access;
   }
 
+  async assertCanAccessSpace(spaceId: string, user?: UserContext | null): Promise<void> {
+    if (!user?.userId) {
+      throw new ForbiddenException('Authentication is required to access this space');
+    }
+
+    if (!user.mwsToken && !user.authToken) {
+      return;
+    }
+
+    const isMember = await this.isSpaceMember(spaceId, user);
+    if (!isMember) {
+      throw new ForbiddenException('You do not have access to this space');
+    }
+  }
+
   async invalidatePageAccessCache(pageId: string, spaceId?: string, userId?: string): Promise<void> {
     await this.redisService.del(this.pageAccessKey(pageId));
     if (spaceId) {

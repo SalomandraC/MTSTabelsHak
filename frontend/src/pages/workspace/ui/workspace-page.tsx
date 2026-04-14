@@ -108,6 +108,13 @@ function collectWorkspaceFolderIds(nodes: WorkspaceTreeNode[]): string[] {
   ]);
 }
 
+function flattenWorkspaceFolders(nodes: WorkspaceTreeNode[]): Array<{ id: string; title: string }> {
+  return nodes.flatMap((node) => [
+    ...(isWorkspaceFolder(node) ? [{ id: node.id, title: node.title }] : []),
+    ...flattenWorkspaceFolders(node.children ?? []),
+  ]);
+}
+
 function isWorkspaceMovableNode(node: WorkspaceTreeNode): boolean {
   return node.kind === 'wikiPage' || node.kind === 'wikiFolder';
 }
@@ -2880,10 +2887,14 @@ export function WorkspacePage() {
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
               <AiSidebarChat
                 pageId={activePageId}
+                spaceId={selectedSpaceId}
                 pageTitle={activePage?.title}
                 editor={activeEditor}
                 enabled={isAiSidebarEnabled}
+                workspaceTree={tree}
                 availablePages={flattenWorkspacePages(tree)}
+                availableFolders={flattenWorkspaceFolders(tree)}
+                availableSpaces={spaces}
                 onClose={() => setRightPanelMode('toolbar')}
               />
             </div>
