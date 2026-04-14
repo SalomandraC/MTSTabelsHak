@@ -7,7 +7,7 @@ import {
   insertAiTextWithLiveReferences,
   parseMarkdownReportWithLiveReferences,
   parseMarkdownWithLiveReferences,
-} from '../../../page-editor/model/live-reference-parser';
+} from '../../../page-editor/model/live-reference-parser.ts';
 import { getEditorMarkdown } from '../model/editor-markdown';
 import { AiOutputView } from '../model/ai-output-renderer';
 import { useAiTableContext } from '../model/use-ai-table-context';
@@ -474,10 +474,7 @@ function stripAiActionToken(value: string): string {
 
 function buildReportRootBlock(editor: Editor | null, reportText: string, spaceId: string): JSONContent[] {
   const sanitizedReportText = stripAiActionToken(reportText);
-  const parsedBlocks = editor ? parseMarkdownWithLiveReferences(editor, sanitizedReportText, { spaceId }) : [];
-  const contentBlocks = parsedBlocks.length > 0
-    ? parsedBlocks
-    : parseMarkdownReportWithLiveReferences(sanitizedReportText, { spaceId });
+  const contentBlocks = parseMarkdownReportWithLiveReferences(sanitizedReportText, { spaceId });
 
   const rootBlocks: JSONContent[] = [
     {

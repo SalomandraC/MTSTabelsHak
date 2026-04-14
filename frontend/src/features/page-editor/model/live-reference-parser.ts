@@ -79,6 +79,86 @@ function extractParsedBlocks(content: Content | null | undefined): JSONContent[]
   return [];
 }
 
+function splitMarkdownTableRow(line: string): string[] | null {
+  const trimmed = line.trim();
+  if (!trimmed.includes('|')) {
+    return null;
+  }
+
+  const normalized = trimmed.startsWith('|') ? trimmed.slice(1) : trimmed;
+  const withoutTrailingPipe = normalized.endsWith('|') ? normalized.slice(0, -1) : normalized;
+  const cells = withoutTrailingPipe.split('|').map((cell) => cell.trim());
+
+  return cells.length > 1 ? cells : null;
+}
+
+function isMarkdownTableSeparator(line: string): boolean {
+  const cells = splitMarkdownTableRow(line);
+  if (!cells || cells.length === 0) {
+    return false;
+  }
+
+  return cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function createTableCellNode(text: string, options: LiveReferenceParseOptions, isHeader: boolean): JSONContent {
+  const content = parseInlineContentWithLiveReferences(text, options);
+
+  return {
+    type: isHeader ? 'tableHeader' : 'tableCell',
+    content: content.length > 0 ? [{ type: 'paragraph', content }] : [{ type: 'paragraph' }],
+  };
+}
+
+function parseMarkdownTableBlock(
+  lines: string[],
+  startIndex: number,
+  options: LiveReferenceParseOptions,
+): { node: JSONContent; nextIndex: number } | null {
+  const headerCells = splitMarkdownTableRow(lines[startIndex]);
+  const separatorLine = lines[startIndex + 1];
+
+  if (!headerCells || !separatorLine || !isMarkdownTableSeparator(separatorLine)) {
+    return null;
+  }
+
+  const rows: JSONContent[] = [
+    {
+      type: 'tableRow',
+      content: headerCells.map((cell) => createTableCellNode(cell, options, true)),
+    },
+  ];
+
+  let index = startIndex + 2;
+  while (index < lines.length) {
+    const rawLine = lines[index];
+    const trimmed = rawLine.trim();
+
+    if (!trimmed) {
+      break;
+    }
+
+    const rowCells = splitMarkdownTableRow(rawLine);
+    if (!rowCells || isMarkdownTableSeparator(rawLine)) {
+      break;
+    }
+
+    rows.push({
+      type: 'tableRow',
+      content: rowCells.map((cell) => createTableCellNode(cell, options, false)),
+    });
+    index += 1;
+  }
+
+  return {
+    node: {
+      type: 'table',
+      content: rows,
+    },
+    nextIndex: index,
+  };
+}
+
 function mapNodeWithLiveReferences(node: JSONContent, options: LiveReferenceParseOptions): JSONContent[] {
   if (node.type === 'text' && typeof node.text === 'string' && hasLiveReferenceToken(node.text)) {
     return parseInlineContentWithLiveReferences(node.text, options);
@@ -218,11 +298,21 @@ export function parseMarkdownReportWithLiveReferences(text: string, options: Liv
     });
   };
 
-  for (const line of lines) {
+  for (let index = 0; index < lines.length; ) {
+    const line = lines[index];
     const trimmed = line.trim();
 
     if (!trimmed) {
       flushParagraph();
+      index += 1;
+      continue;
+    }
+
+    const tableBlock = parseMarkdownTableBlock(lines, index, options);
+    if (tableBlock) {
+      flushParagraph();
+      blocks.push(tableBlock.node);
+      index = tableBlock.nextIndex;
       continue;
     }
 
@@ -236,10 +326,12 @@ export function parseMarkdownReportWithLiveReferences(text: string, options: Liv
         },
         content: parseInlineContentWithLiveReferences(headingMatch[2].trim(), options),
       });
+      index += 1;
       continue;
     }
 
     paragraphBuffer.push(trimmed);
+    index += 1;
   }
 
   flushParagraph();
