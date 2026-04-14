@@ -468,20 +468,38 @@ function findTableRootBlockInsertPos(editor: Editor, datasheetId?: string | null
   return resolved.after(tableRootBlockDepth);
 }
 
-function buildReportRootBlock(editor: Editor | null, reportText: string, spaceId: string) {
-  const parsedBlocks = editor ? parseMarkdownWithLiveReferences(editor, reportText, { spaceId }) : [];
+function stripAiActionToken(value: string): string {
+  return String(value ?? '').replace(/^\s*\[ACTION:[^\]]+\]\s*/i, '').trim();
+}
 
-  return {
-    type: 'rootblock',
-    content: [
-      {
-        type: 'heading',
-        attrs: { level: 2 },
-        content: [{ type: 'text', text: 'AI отчет' }],
-      },
-      ...(parsedBlocks.length > 0 ? parsedBlocks : parseMarkdownReportWithLiveReferences(reportText, { spaceId })),
-    ],
-  };
+function buildReportRootBlock(editor: Editor | null, reportText: string, spaceId: string): JSONContent[] {
+  const sanitizedReportText = stripAiActionToken(reportText);
+  const parsedBlocks = editor ? parseMarkdownWithLiveReferences(editor, sanitizedReportText, { spaceId }) : [];
+  const contentBlocks = parsedBlocks.length > 0
+    ? parsedBlocks
+    : parseMarkdownReportWithLiveReferences(sanitizedReportText, { spaceId });
+
+  const rootBlocks: JSONContent[] = [
+    {
+      type: 'rootblock',
+      content: [
+        {
+          type: 'heading',
+          attrs: { level: 2 },
+          content: [{ type: 'text', text: 'AI отчет' }],
+        },
+      ],
+    },
+  ];
+
+  for (const block of contentBlocks) {
+    rootBlocks.push({
+      type: 'rootblock',
+      content: [block],
+    });
+  }
+
+  return rootBlocks;
 }
 
 function insertAiAnswer(editor: Editor | null, text: string, options: { spaceId: string }): boolean {

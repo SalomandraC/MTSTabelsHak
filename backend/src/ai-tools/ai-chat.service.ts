@@ -17,6 +17,10 @@ const MARKDOWN_TABLE_RULE = [
   'Никогда не используй имитацию таблиц через пробелы или табуляцию. Только стандартный Markdown.',
 ].join(' ');
 
+const PAGE_CONTEXT_MAX_CHARS = 50_000;
+const SELECTED_DOC_MAX_CHARS = 12_000;
+const RETRIEVED_SNIPPET_MAX_CHARS = 2_400;
+
 @Injectable()
 export class AiChatService {
   private readonly mutationToolNames = new Set(['create_records', 'patch_records', 'add_table_column']);
@@ -33,7 +37,7 @@ export class AiChatService {
     const model = this.aiAssistantService.resolveModelForIntent(intent);
     const maxTokens = intent === 'write_report' ? 4096 : 512;
 
-    const contextMarkdown = this.snapshotToMarkdown(input.pageSnapshot);
+    const contextMarkdown = this.clampText(this.snapshotToMarkdown(input.pageSnapshot), PAGE_CONTEXT_MAX_CHARS);
     const explicitContextMarkdown = this.buildExplicitContextMarkdown(input.contextDocuments);
     const isTableContext = this.isTableContext(input);
     const isWorkspaceAgentMode = this.isWorkspaceAgentMode(input, isTableContext);
@@ -196,7 +200,7 @@ export class AiChatService {
       ? retrievedContext
           .map(
             (item, index) =>
-              `### Контекст ${index + 1}: ${item.title}\n\n${item.snippet}\n\nscore=${item.score.toFixed(3)} pageId=${item.pageId}`,
+              `### Контекст ${index + 1}: ${item.title}\n\n${this.clampText(item.snippet, RETRIEVED_SNIPPET_MAX_CHARS)}\n\nscore=${item.score.toFixed(3)} pageId=${item.pageId}`,
           )
           .join('\n\n')
       : '';
@@ -303,7 +307,10 @@ export class AiChatService {
     }
 
     return documents
-      .map((document) => `## ${document.title || document.pageId}\n\n${document.markdown?.trim() || 'Контекст недоступен'}`)
+      .map((document) => {
+        const markdown = this.clampText(document.markdown?.trim() || 'Контекст недоступен', SELECTED_DOC_MAX_CHARS);
+        return `## ${document.title || document.pageId}\n\n${markdown}`;
+      })
       .join('\n\n---\n\n');
   }
 
@@ -477,6 +484,15 @@ export class AiChatService {
       .replace(/<\|tool_call_argument_begin\|>/g, '')
       .replace(/<\|tool_call_argument_end\|>/g, '')
       .trim();
+  }
+
+  private clampText(value: string, maxChars: number): string {
+    const text = String(value ?? '').trim();
+    if (text.length <= maxChars) {
+      return text;
+    }
+
+    return `${text.slice(0, maxChars)}\n\n[...context truncated...]`;
   }
 
 }
