@@ -5,7 +5,6 @@ import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import Document from '@tiptap/extension-document';
 import Dropcursor from '@tiptap/extension-dropcursor';
 import Highlight from '@tiptap/extension-highlight';
-import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
@@ -51,6 +50,7 @@ import { LiveFormula } from './live-formula';
 import { TemplateVariable } from './template-variable';
 import { Bookmark, BookmarkLink } from './bookmark';
 import { CustomHardBreak } from './custom-hard-break';
+import { CustomLink } from './custom-link';
 import { ListExitOnDoubleEnter } from './list-exit-on-double-enter';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 
@@ -196,7 +196,7 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     TaskList,
     TaskItem.configure({ nested: true }),
     ListExitOnDoubleEnter,
-    Link.configure({
+    CustomLink.configure({
       openOnClick: false,
       autolink: true,
     }),
