@@ -5,6 +5,15 @@ import { ChatQuestionInput, ChatQuestionResponse } from './ai-chat.types';
 import { AiToolRegistryService } from './ai-tool-registry.service';
 import { ToolExecutionResult } from './ai-tool-registry.types';
 
+const MARKDOWN_TABLE_RULE = [
+  'Если тебе нужно представить данные в виде структуры, используй стандартные Markdown-таблицы.',
+  'Формат:',
+  '| Заголовок 1 | Заголовок 2 |',
+  '|---|---|',
+  '| Значение 1 | Значение 2 |',
+  'Никогда не используй имитацию таблиц через пробелы или табуляцию. Только стандартный Markdown.',
+].join(' ');
+
 @Injectable()
 export class AiChatService {
   private readonly mutationToolNames = new Set(['create_records', 'patch_records', 'add_table_column']);
@@ -150,7 +159,8 @@ export class AiChatService {
             'If user asks for document structure or heading plan, return only anchor-based JSON array format [{"anchor":"...","title":"...","level":1|2|3}].',
             'For anchor-based structure: enforce strict hierarchy H1 -> H2 -> H3, keep titles short and informative, preserve automatic numbering unless user explicitly asks otherwise, and never propose a heading that duplicates an existing heading in the document context.',
             'If user asks for a report, assess expected report size. If report is likely long (more than 5 analysis points), start answer with [ACTION: CREATE_NEW_PAGE]. If report is short, start answer with [ACTION: INLINE_INSERT].',
-          'When tool arguments require a datasheetId, use the exact Target MWS datasheetId from the context.',
+            MARKDOWN_TABLE_RULE,
+            'When tool arguments require a datasheetId, use the exact Target MWS datasheetId from the context.',
             'Only answer the user after the table has already been changed by tools.',
             'Keep the answer concise, factual, and grounded in the provided context or tool output.',
         ].join(' '),

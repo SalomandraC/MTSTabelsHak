@@ -11,6 +11,11 @@ export type LiveReferenceParseOptions = {
   spaceId?: string;
 };
 
+type MarkdownStorage = {
+  getMarkdown?: () => string;
+  parse?: (value: string) => Content | null | undefined;
+};
+
 const LIVE_REFERENCE_TOKEN = /^\[Ref:([^:\]\s]+):([^:\]\s]+):([^:\]\s]+)\]$/;
 
 function extractFormulaToken(text: string, from: number): { token: string; expression: string; end: number } | null {
@@ -196,8 +201,15 @@ export function insertAiTextWithLiveReferences(editor: Editor, text: string, opt
   }
 
   if (!hasLiveRef && hasMarkdown) {
+    const markdownStorage = (editor.storage as { markdown?: MarkdownStorage }).markdown;
+    const parsed = markdownStorage?.parse?.(text);
     const from = editor.state.selection.from;
     const to = editor.state.selection.to;
+
+    if (parsed) {
+      return editor.chain().focus().insertContentAt({ from, to }, parsed).run();
+    }
+
     return editor.chain().focus().insertContentAt({ from, to }, text).run();
   }
 

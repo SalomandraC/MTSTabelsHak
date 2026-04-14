@@ -14,6 +14,10 @@ import TaskList from '@tiptap/extension-task-list';
 import Typography from '@tiptap/extension-typography';
 import Underline from '@tiptap/extension-underline';
 import HorizontalRule from '@tiptap/extension-horizontal-rule';
+import { Table } from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableHeader from '@tiptap/extension-table-header';
+import TableCell from '@tiptap/extension-table-cell';
 import StarterKit from '@tiptap/starter-kit';
 import bash from 'highlight.js/lib/languages/bash';
 import csharp from 'highlight.js/lib/languages/csharp';
@@ -198,6 +202,12 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     }),
     Underline,
     CustomHorizontalRule,
+    Table.configure({
+      resizable: true,
+    }),
+    TableRow,
+    TableHeader,
+    TableCell,
     TextAlign.configure({
       types: ['heading', 'paragraph', 'taskItem'],
     }),

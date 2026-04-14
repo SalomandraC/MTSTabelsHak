@@ -1,6 +1,6 @@
 import { SendHorizontal, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Editor } from '@tiptap/core';
+import type { Content, Editor, JSONContent } from '@tiptap/core';
 
 import { type MwsField, type MwsRecord, wikiliveApi } from '../../../../shared/api/wikilive';
 import { insertAiTextWithLiveReferences, parseMarkdownReportWithLiveReferences } from '../../../page-editor/model/live-reference-parser';
@@ -84,6 +84,11 @@ type StructureInstruction = {
   anchor: string;
   title: string;
   level: 1 | 2 | 3;
+};
+
+type MarkdownStorage = {
+  getMarkdown?: () => string;
+  parse?: (value: string) => Content | null | undefined;
 };
 
 function dispatchTableMutation(detail: {
@@ -464,7 +469,31 @@ function findTableRootBlockInsertPos(editor: Editor, datasheetId?: string | null
   return resolved.after(tableRootBlockDepth);
 }
 
-function buildReportRootBlock(reportText: string, spaceId: string) {
+function extractParsedBlocks(content: Content | null | undefined): JSONContent[] {
+  if (!content) {
+    return [];
+  }
+
+  if (Array.isArray(content)) {
+    return content as JSONContent[];
+  }
+
+  const asNode = content as JSONContent;
+  if (asNode.type === 'doc' && Array.isArray(asNode.content)) {
+    return asNode.content;
+  }
+
+  if (typeof asNode.type === 'string') {
+    return [asNode];
+  }
+
+  return [];
+}
+
+function buildReportRootBlock(editor: Editor | null, reportText: string, spaceId: string) {
+  const markdownStorage = (editor?.storage as { markdown?: MarkdownStorage } | undefined)?.markdown;
+  const parsedBlocks = extractParsedBlocks(markdownStorage?.parse?.(reportText));
+
   return {
     type: 'rootblock',
     content: [
@@ -473,9 +502,27 @@ function buildReportRootBlock(reportText: string, spaceId: string) {
         attrs: { level: 2 },
         content: [{ type: 'text', text: 'AI отчет' }],
       },
-      ...parseMarkdownReportWithLiveReferences(reportText, { spaceId }),
+      ...(parsedBlocks.length > 0 ? parsedBlocks : parseMarkdownReportWithLiveReferences(reportText, { spaceId })),
     ],
   };
+}
+
+function insertAiAnswer(editor: Editor | null, text: string, options: { spaceId: string }): boolean {
+  if (!editor) {
+    return false;
+  }
+
+  const markdownStorage = (editor.storage as { markdown?: MarkdownStorage }).markdown;
+  const parsed = markdownStorage?.parse?.(text);
+  const parsedBlocks = extractParsedBlocks(parsed);
+
+  if (parsedBlocks.length > 0) {
+    const from = editor.state.selection.from;
+    const to = editor.state.selection.to;
+    return editor.chain().focus().insertContentAt({ from, to }, parsedBlocks).run();
+  }
+
+  return insertAiTextWithLiveReferences(editor, text, { spaceId: options.spaceId });
 }
 
 export function AiInlineCopilot({
@@ -1012,8 +1059,8 @@ export function AiInlineCopilot({
           'Ты анализируешь конкретную таблицу MWS и пишешь отчет на основе ее данных.',
           `Вот ее данные JSON: ${JSON.stringify({ fields: context.fields, records: context.records.map((record) => ({ recordId: record.recordId, fields: record.fields })), total: context.total })}`,
           'Если данных таблицы недостаточно, первым делом вызови инструмент get_records.',
-          'Сгенерируй отчет в markdown формате, но без markdown-таблиц.',
-          'Используй только текст, заголовки, абзацы и маркированные списки.',
+          'Сгенерируй отчет в markdown формате.',
+          'Если данные удобнее показывать в структуре, используй стандартные Markdown-таблицы.',
           'Когда в отчете упоминаешь конкретную ячейку таблицы, обязательно вставляй живую переменную в формате [Ref:datasheetId:recordId:fieldId].',
           'Используй живые переменные для ключевых метрик, статусов, дат и значений, которые должны обновляться вместе с таблицей.',
         ].join('\n'),
@@ -1074,7 +1121,7 @@ export function AiInlineCopilot({
     await withBusy(async () => {
       const reportText = await createReportText();
       if (editor) {
-        const reportRootBlock = buildReportRootBlock(reportText, spaceId);
+        const reportRootBlock = buildReportRootBlock(editor, reportText, spaceId);
         const insertPos = activeContext.kind === 'table' && activeContext.datasheetId
           ? findTableRootBlockInsertPos(editor, activeContext.datasheetId)
           : null;
@@ -1169,9 +1216,7 @@ export function AiInlineCopilot({
         pageSnapshot: { markdown },
       });
 
-      if (editor) {
-        insertAiTextWithLiveReferences(editor, response.answer);
-      }
+      insertAiAnswer(editor, response.answer, { spaceId });
 
       handleAiChatResponse(response);
 
