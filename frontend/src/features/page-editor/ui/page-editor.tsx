@@ -261,8 +261,12 @@ function PagedLayoutControls({
     };
 
   return (
-    <div className="border-t border-editor-border-subtle bg-[rgba(245,247,250,1)] px-2 py-2 sm:px-4">
-      <div className="flex flex-wrap items-center gap-x-0 gap-y-1 overflow-x-visible pb-1" role="toolbar" aria-label="Панель макета страницы">
+    <div className="bg-[linear-gradient(to_bottom,rgba(245,247,250,0.82),rgba(245,247,250,1))] px-2 pt-2 sm:px-4 sm:pt-3">
+      <div
+        className="flex flex-wrap items-center gap-x-0 gap-y-1 overflow-x-visible border-b border-editor-border-subtle pb-2"
+        role="toolbar"
+        aria-label="Панель макета страницы"
+      >
         <span className="inline-flex h-8 items-center px-2 text-xs font-semibold uppercase tracking-[0.12em] text-editor-text-tertiary">
           A4
         </span>
