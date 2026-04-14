@@ -1,12 +1,14 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_SKIP_DOWNLOAD=true \
+    PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 COPY package.json package-lock.json* ./
 RUN npm ci
 
 FROM node:22-alpine AS build
 WORKDIR /app
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_SKIP_DOWNLOAD=true \
+    PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
@@ -22,8 +24,9 @@ RUN apk add --no-cache \
     ttf-freefont \
     font-noto
 ENV NODE_ENV=production \
+    PUPPETEER_SKIP_DOWNLOAD=true \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
