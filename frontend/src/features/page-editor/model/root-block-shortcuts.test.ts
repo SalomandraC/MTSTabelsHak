@@ -97,4 +97,78 @@ describe('RootBlock shortcuts', () => {
       ],
     });
   });
+
+  it('uses Mod-X to delete the current root block', () => {
+    const editor = new Editor({
+      extensions: [
+        RootDocument,
+        RootBlock,
+        CustomHardBreak,
+        StarterKit.configure({
+          document: false,
+          hardBreak: false,
+        }),
+      ],
+      content: {
+        type: 'doc',
+        content: [
+          {
+            type: 'rootblock',
+            content: [
+              {
+                type: 'paragraph',
+                content: [{ type: 'text', text: 'Первый' }],
+              },
+            ],
+          },
+          {
+            type: 'rootblock',
+            content: [
+              {
+                type: 'paragraph',
+                content: [{ type: 'text', text: 'Второй' }],
+              },
+            ],
+          },
+        ],
+      },
+    });
+    editors.push(editor);
+
+    editor.commands.setTextSelection(4);
+
+    expect(editor.commands.keyboardShortcut('Mod-x')).toBe(true);
+    expect(editor.getJSON()).toEqual({
+      type: 'doc',
+      content: [
+        {
+          type: 'rootblock',
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'Второй' }],
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('keeps one empty root block when deleting the last remaining block', () => {
+    const editor = createEditor();
+    editors.push(editor);
+
+    editor.commands.setTextSelection(4);
+
+    expect(editor.commands.keyboardShortcut('Mod-x')).toBe(true);
+    expect(editor.getJSON()).toEqual({
+      type: 'doc',
+      content: [
+        {
+          type: 'rootblock',
+          content: [{ type: 'paragraph' }],
+        },
+      ],
+    });
+  });
 });
