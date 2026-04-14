@@ -1,198 +1,307 @@
-Вот перевод на русский язык:
-
 # WikiLive
 
-WikiLive — это совместный вики-модуль для кейса хакатона `WikiLive: живые таблицы внутри текста`.
+WikiLive - совместный wiki-модуль для хакатон-кейса "WikiLive: живые таблицы внутри текста".
 
-Текущее состояние репозитория:
-- `backend/` содержит каркас бэкенда на NestJS с Prisma, PostgreSQL, Redis, BullMQ и Hocuspocus
-- `services/context-engine/` содержит Python FastAPI сервис для semantic search и AI retrieval по документам на `qdrant-client` в local persistent mode
-- `frontend/` содержит React + Tiptap workspace с MWS-first проводником, wiki-страницами рядом с таблицами, backlinks и live embeds
-- `docs/openapi.yaml` содержит HTTP/WebSocket контракт
-- `docs/MWS_TABLES_API_ANALYSIS.md` описывает, как сущности MWS Tables встраиваются в редактор
+Основная идея продукта: объединить обычные wiki-страницы и "живые" таблицы MWS Tables в одном рабочем пространстве, где текст, данные, ссылки между страницами и совместное редактирование работают как единый сценарий.
 
-## Возможности бэкенда
+## Что реализовано
 
-Реализованные основы бэкенда:
-- legacy wiki-дерево с папками и страницами для совместимости
-- MWS-first дерево пространства: проводник повторяет иерархию MWS Tables и накладывает WikiLive-страницы рядом с таблицами
-- CRUD-операции со страницами с иерархическим размещением
-- обратные и исходящие ссылки
-- server-driven каталог плагинов с entitlement-логикой по подписке и пользовательскими override-переключателями
-- начальная загрузка сессии совместной работы для `Tiptap + Yjs`
-- персистентность CRDT с моментальными снимками, контрольными точками и журналом обновлений в режиме append-only
-- BFF-эндпоинты живых MWS Tables для пространств, узлов, таблиц, полей, представлений, записей и разрешения встраивания таблиц
-- идемпотентное создание WikiLive-страницы для MWS таблицы через `POST /api/v1/mws/table-pages`
-- demo-каталог шаблонов страниц через `GET /api/v1/templates` с серверным инстанцированием в обычную wiki-страницу
-- picker MWS Tables поддерживает таблицы внутри папок, выбор view/полей и настройку live embed
-- MWS Tables embed отображается как scrollable live grid с догрузкой записей и inline-операциями над простыми ячейками/строками через BFF
-- кратковременный кэш на Redis и очередь обслуживания документов на BullMQ
-- контекстный semantic search по содержимому документов через `context-engine`
-- AI chat с retrieval в пределах выбранного пространства и поддержкой выбора документов/папок как контекста
+### Обязательные функции (MVP)
 
-## Возможности фронтенда
+- Интеграция с MWS Tables API через backend/BFF слой.
+- Создание и редактирование wiki-страниц рядом с сущностями MWS Tables.
+- Встраивание существующей таблицы MWS Tables в тело страницы как отдельный live-блок.
+- Автосохранение во время редактирования + восстановление из локального черновика.
+- Slash-menu для быстрой вставки блоков.
+- Клавиатурная навигация и горячие клавиши для редактора/slash-menu.
+- Ссылки между страницами + обратные ссылки (backlinks).
+- Совместное редактирование документа в проверяемом real-time сценарии.
+- Редактор на open-source стеке с permissive лицензированием (Tiptap/Hocuspocus).
 
-Таблицы MWS встраивают в текст страницы в виде живого грида с управлением:
-- **Live редактирование**: inline-редактирование текстовых и select-полей с оптимистичным обновлением (async sync в фон)
-- **Вложения**: отображение файлов как именованных ссылок, скачивание одного или всех файлов ячейки
-- **Персональное скрытие полей**: скрыть столбцы только для себя локально (не персистируется на backend)
-- **Сортировка**: многоуровневая сортировка по выбранным полям и направлению (применяется локально и передается BFF)
-- **Фильтры**: Excel-подобные правила (равно, содержит, пусто, дубликаты и т.д.), применяются через локальный фильтр
-- **Группировка**: группирует записи по выбранному полю с показом количества в заголовке группы
-- **Поиск**: быстрый фильтр по всем видимым полям через search-бокс
-- **Polling**: фоновая синхронизация каждые 5–10 сек с статусом "Обновлено N сек назад"
-- **Создание записей, столбцов, удаление**: через toolbar-кнопки
-- **Открыть в MWS**: прямая ссылка на таблицу в tables.mws.ru
+### Дополнительные функции
 
-Все фильтры, сортировка, скрытие полей и группировка хранятся только локально в памяти браузера. backend не требует изменений для их поддержки.
+- "Живой" table embed с синхронизацией с MWS Tables (не статичный снимок).
+- Комментарии к документу.
+- История правок/версии + локальные черновики.
+- AI-панель, inline-подсказки и генерация блоков через MWS GPT API.
+- Граф связей страниц.
+- Каталог плагинов и расширяемость по entitlement-модели.
+- Встраивание внешних элементов: iframe, Canvas, Mermaid.
+- Контекстный поиск по векторному индексу.
+- Вопросы по документу с помощью LLM.
+- Шаблоны страниц и маркетплейс шаблонов.
+- Live-переменные и формулы из таблиц в тексте.
+- MWS-first проводник (структура как в MWS Tables).
+- Разграничение доступов к страницам.
+- Экспорт документов в PDF/DOCX/MD.
+- Автоструктурирование по заголовкам и paged-представление документа.
+- Выбор рабочего пространства пользователя.
+- Ориентация на предоставленный Design Kit при проектировании интерфейса.
 
-Дополнительно для демонстрации доступны шаблоны страниц:
-- `Резюме в компанию МТС`
-- `Примитивный договор на связь`
-- `Ретро по спринту`
+## Стек проекта
 
-Шаблоны открываются из левого sidebar, собирают параметры в модалке и создают обычную wiki-страницу с уже подставленным содержимым. В редакторе также доступен slash-элемент `Параметр шаблона`, который вставляет специальный placeholder-чип для будущей шаблонизации страницы.
+### Frontend
 
-## Быстрый старт
+- Ядро UI: React 18 + TypeScript.
+- Сборка и dev-сервер: Vite 8.
+- Стилизация: Tailwind CSS 4.
+- Редактор: Tiptap 3 (кастомные extension-и для slash-menu, table/embed, шаблонов, комментариев, ссылок, блоков).
+- Совместное редактирование: Yjs + Hocuspocus provider.
+- Визуализация связей и графов: Cytoscape + D3.
+- Диаграммы и rich embeds: Mermaid + iframe/canvas блоки.
+- Тестирование: Vitest + Testing Library.
 
-Локальная инфраструктура одной командой:
+### Backend
+
+- Framework/API слой: NestJS 11 (REST + BFF для MWS Tables + bootstrap collaboration).
+- ORM: Prisma.
+- Основная база данных: PostgreSQL.
+- Кеш и инфраструктурный брокер: Redis.
+- Очереди и фоновые задачи: BullMQ (индексация, сервисные процессы).
+- Совместное редактирование документа: Hocuspocus server (Yjs transport/session flow).
+- Валидация DTO: class-validator + class-transformer.
+- HTTP-интеграции: @nestjs/axios + form-data.
+- Логирование: pino + nestjs-pino.
+- API-документация: Swagger (@nestjs/swagger).
+- Тестирование: Jest (unit/integration).
+
+### AI и поиск
+
+- Отдельный сервис semantic search: Python FastAPI (`services/context-engine`).
+- Векторное хранилище: Qdrant (локально-персистентный режим).
+- Retrieval pipeline: индексирование текстовых снапшотов страниц + поиск по пространству.
+- LLM-интеграция: MWS GPT API через backend (чат, генерация, трансформации, tool execution).
+
+### Document export
+
+- Отдельный сервис: Node.js + TypeScript (`document-generator`).
+- HTTP слой: Express.
+- Генерация форматов: PDF (через Puppeteer), DOCX (через docx), Markdown.
+- Шаблоны: Handlebars.
+
+### Инфраструктура и запуск
+
+- Контейнеризация и оркестрация локального стенда: Docker + Docker Compose.
+- Основные сервисы окружения: Postgres, Redis, backend API, collab endpoint, frontend, context-engine, document-generator.
+
+## Архитектура
+
+Репозиторий состоит из нескольких сервисов:
+
+- `frontend/` - клиентское приложение (редактор, проводник, backlinks, embeds, AI UI).
+- `backend/` - основной API/BFF, бизнес-логика страниц, ссылок, прав доступа, плагинов, MWS интеграции и collaboration bootstrap.
+- `services/context-engine/` - semantic search и AI retrieval по снапшотам документов.
+- `document-generator/` - сервис экспорта документов.
+- `docs/` - OpenAPI, архитектурные заметки, схемы и дополнительные материалы.
+
+Поток данных (укрупненно):
+
+1. Пользователь редактирует страницу в Tiptap.
+2. Изменения синхронизируются между клиентами через Yjs/Hocuspocus.
+3. Backend сохраняет состояние документа (snapshot/update/checkpoint), ссылки и метаданные.
+4. Фоновые задачи индексируют контент в context-engine.
+5. Встроенные таблицы читаются/обновляются через backend, который обращается к MWS Tables API.
+
+Компонентная диаграмма: [docs/component-diagram.puml](docs/component-diagram.puml)
+
+## Быстрый запуск (рекомендуется)
+
+Требования:
+
+- Docker + Docker Compose.
+
+Запуск всей системы одной командой:
 
 ```bash
 docker compose up --build
 ```
 
-Это запускает:
-- `postgres` на порту `5432`
-- `redis` на порту `6379`
-- `context-engine` на порту `8090`
-- HTTP API бэкенда на порту `8080`
-- сервер совместной работы на порту `8081`
+Поднимутся сервисы:
 
-## Локальная разработка
+- frontend: http://localhost:5173
+- backend API: http://localhost:8080
+- swagger: http://localhost:8080/docs
+- realtime (collab): порт 8081
+- context-engine: http://localhost:8090
+- document-generator: http://localhost:3200
+- postgres: 5432
+- redis: 6379
 
-Установка зависимостей:
+Остановка:
+
+```bash
+docker compose down
+```
+
+С удалением томов (если нужен "чистый" старт):
+
+```bash
+docker compose down -v
+```
+
+## Политика env.example
+
+Для хакатон-демо проект специально настроен так, чтобы запускаться без ручного редактирования переменных окружения:
+
+- `docker-compose.yml` подключает `backend/.env.example` напрямую.
+- `frontend/.env.example` содержит дефолтные локальные URL.
+
+Это сделано осознанно, чтобы упростить проверку и раскатку в рамках приватного репозитория MWS GitLab.
+
+Важно:
+
+- Текущее решение предполагает приватный контур хранения кода.
+- Для публичных репозиториев/production необходимо вынести чувствительные токены в защищенный secret storage и не хранить их в открытых env-файлах.
+
+## Локальная разработка без Docker Compose
+
+### 1) Backend
 
 ```bash
 cd backend
 npm install
-```
-
-Генерация Prisma клиента:
-
-```bash
 npx prisma generate
-```
-
-Выполнение миграций:
-
-```bash
 npx prisma migrate dev
-```
-
-Запуск бэкенда:
-
-```bash
 npm run start:dev
 ```
 
-## Окружение
+### 2) Frontend
 
-Базовый пример конфигурации находится в [backend/.env.example](/Users/nikitababicenko/PhpstormProjects/truetecharena/backend/.env.example).
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-Важные переменные:
-- `DATABASE_URL`
-- `REDIS_URL`
-- `CONTEXT_ENGINE_URL`
-- `PORT`
-- `COLLAB_PORT`
-- `JWT_SECRET`
-- `MWS_TABLES_BASE_URL`
-- `MWS_TABLES_NODE_URL_TEMPLATE`
-- `AUTH_REQUIRED`
-- `DEFAULT_PLUGIN_PLAN`
-- `PLUGIN_USER_PLAN_MAP`
-- `VITE_API_BASE_URL`
-- `VITE_WIKILIVE_SPACE_ID`
+### 3) Context Engine
 
-Плагины и entitlement-модель:
-- backend отдает каталог через `GET /api/v1/plugins/catalog`
-- пользователь может включать/выключать реализованные optional plugins через `POST /api/v1/plugins/:pluginId/activate` и `POST /api/v1/plugins/:pluginId/deactivate`
-- core-модули неотключаемы и всегда активны
-- по умолчанию `DEFAULT_PLUGIN_PLAN=enterprise`, поэтому новый пользователь получает максимальный план и видит все доступные в MVP плагины
-- `PLUGIN_USER_PLAN_MAP` принимает JSON вида `{"demo-user":"free","demo-user-2":"pro"}`
+```bash
+cd services/context-engine
+pip install -r requirements.txt
+uvicorn app.main:app --host 0.0.0.0 --port 8090
+```
 
-Авторизация по API-ключу:
-- `POST /api/v1/auth/login` принимает `{ "apiKey": "sk-..." }`, валидирует ключ через MWS `/spaces` и выставляет `HttpOnly` cookie `refresh_token`
-- `POST /api/v1/auth/refresh` ротирует refresh token и возвращает короткоживущий access token (15 минут)
-- `POST /api/v1/auth/logout` очищает refresh cookie и инвалидирует серверную сессию
-- `GET /api/v1/me` возвращает текущего пользователя
+### 4) Document Generator
 
-Особенности:
-- refresh token живет 8 часов и хранится только в `HttpOnly` cookie
-- frontend держит access token только в памяти и делает silent refresh по TTL токена до его истечения
-- auth-сессии в локальном `docker compose` теперь переживают пересоздание контейнера `redis`, потому что Redis пишет данные в named volume `redis-data`
-- по умолчанию `AUTH_REQUIRED=true`; для демо-режима можно вручную выставить `AUTH_REQUIRED=false`
+```bash
+cd document-generator
+npm install
+npm run dev
+```
 
-Совместная работа и шаринг страницы:
-- каждая открытая страница синхронизирует URL в формате `/spaces/:spaceId/pages/:pageId`
-- кнопку `Скопировать ссылку` можно использовать, чтобы открыть тот же документ во втором окне или отправить другому пользователю
-- для проверки разных реальных пользователей откройте ссылку в другом браузерном профиле/инкогнито и войдите другим MWS API-ключом
-- в демо-режиме с `AUTH_REQUIRED=false` можно открыть ссылку с query params `?userId=demo-user-2&userName=Demo%20User%202`, чтобы backend выдал отдельного demo-пользователя через `x-user-id`/`x-user-name`
+Дополнительно должны быть доступны PostgreSQL и Redis (локально или в контейнерах).
 
-MWS-first проводник:
-- sidebar использует `GET /api/v1/spaces/:spaceId/workspace/tree`, где источником иерархии являются MWS Tables nodes
-- все таблицы MWS отображаются в проводнике; при клике открывается окно с действиями `Создать страницу с таблицей`, `Перейти на таблицу в tables.mws.ru` и `Удалить таблицу`
-- создание страницы для таблицы идемпотентно: повторный клик открывает существующую WikiLive-страницу рядом с этой MWS-таблицей
+## Основные URL и API
 
-AI retrieval и semantic search:
-- backend остаётся единственной внешней точкой входа для AI
-- `context-engine` индексирует текст страниц после сохранения snapshot в фоне через существующий BullMQ worker
-- `context-engine` хранит векторный индекс локально на диске через `qdrant-client(path=...)`, поэтому данные переживают перезапуск контейнера при сохранённом volume
-- поиск по содержимому работает только в рамках выбранного пространства
-- документы можно добавлять в AI chat как явный контекст
-- папки можно добавлять в AI chat как ограничение области semantic search
+- OpenAPI контракт: [docs/openapi.yaml](docs/openapi.yaml)
+- Анализ интеграции MWS Tables: [docs/MWS_TABLES_API_ANALYSIS.md](docs/MWS_TABLES_API_ANALYSIS.md)
+- Короткая карта CRUD-синхронизации: [docs/MWS_TABLES_CRUD_SYNC_SHORT.md](docs/MWS_TABLES_CRUD_SYNC_SHORT.md)
+- История задач frontend (тикеты): [frontend/docs/tickets](frontend/docs/tickets)
+- Память проекта: [docs/PROJECT_MEMORY.md](docs/PROJECT_MEMORY.md)
+- Postman коллекция: [docs/postman/wikilive-api.postman_collection.json](docs/postman/wikilive-api.postman_collection.json)
+- Postman окружение: [docs/postman/wikilive-local.postman_environment.json](docs/postman/wikilive-local.postman_environment.json)
 
-## API и документация
+## Проверка демо-сценария
 
-- OpenAPI: [docs/openapi.yaml](/Users/nikitababicenko/PhpstormProjects/truetecharena/docs/openapi.yaml)
-- Память проекта: [docs/PROJECT_MEMORY.md](/Users/nikitababicenko/PhpstormProjects/truetecharena/docs/PROJECT_MEMORY.md)
-- Анализ MWS API: [docs/MWS_TABLES_API_ANALYSIS.md](/Users/nikitababicenko/PhpstormProjects/truetecharena/docs/MWS_TABLES_API_ANALYSIS.md)
-- Короткая карта CRUD-синхронизации MWS: [docs/MWS_TABLES_CRUD_SYNC_SHORT.md](docs/MWS_TABLES_CRUD_SYNC_SHORT.md)
-- Postman коллекция: [postman/wikilive-api.postman_collection.json](/Users/nikitababicenko/PhpstormProjects/truetecharena/postman/wikilive-api.postman_collection.json)
-- Postman окружение: [postman/wikilive-local.postman_environment.json](/Users/nikitababicenko/PhpstormProjects/truetecharena/postman/wikilive-local.postman_environment.json)
+Минимальный сценарий для проверки ключевого value proposition:
 
-Swagger доступен в бэкенде по адресу `/docs`.
+1. Открыть пространство и создать wiki-страницу.
+2. Через slash-menu встроить существующую таблицу MWS Tables в документ.
+3. Отредактировать текст и убедиться в автосохранении.
+4. Перезагрузить страницу и проверить восстановление черновика.
+5. Добавить ссылку на другую страницу и проверить backlinks.
+6. Открыть ту же страницу во втором окне/профиле и проверить real-time совместное редактирование.
 
-## Postman сценарий
+## Горячие клавиши
 
-Импортируйте оба файла из `postman/` и запустите папку `Scenario - Core Wiki Flow`.
+Ниже перечислены все явно реализованные в коде горячие клавиши и клавиатурные действия.
 
-Сценарий проверяет:
-- health endpoint
-- пустое wiki-дерево
-- создание папки
-- создание страницы внутри папки
-- вложенную структуру дерева
-- список страниц и загрузку страницы с document state
-- bootstrap сессии совместного редактирования
-- создание checkpoint
-- backlinks и outgoing links
-- перемещение страницы обратно в корень
+### Редактор и slash-menu
 
-Папка `MWS Tables BFF` требует реальные значения окружения `mwsToken`, `mwsSpaceId`, `mwsNodeId`, `mwsDatasheetId` и опционально `mwsViewId`.
+- `/` - открыть slash-menu в позиции курсора.
+- `ArrowDown` - перейти к следующему пункту slash-menu.
+- `ArrowUp` - перейти к предыдущему пункту slash-menu.
+- `ArrowRight` - применить текущий пункт slash-menu.
+- `Enter` - применить текущий пункт slash-menu.
+- `ArrowLeft` - закрыть slash-menu.
+- `Escape` - закрыть slash-menu.
 
-## Тесты
+### Блочный редактор (кастомные шорткаты)
 
-Запуск тестов бэкенда:
+- `Enter` - вставить перенос строки внутри текущего root-блока (hard break).
+- `Shift+Enter` - вставить перенос строки (hard break).
+- `Ctrl+Enter` / `Cmd+Enter` - создать новый root-блок ниже текущего.
+- `Ctrl+X` / `Cmd+X` - удалить текущий root-блок (кастомная команда удаления блока).
+- `Enter` два раза в пустом пункте списка - выйти из списка в обычный абзац.
+
+### AI inline-подсказки (ghost text)
+
+- `Tab` - принять inline-подсказку целиком.
+- `Escape` - скрыть текущую inline-подсказку.
+- `Enter` - сбросить подсказку и продолжить обычное поведение Enter.
+
+### AI чат и copilot-поля ввода
+
+- `Enter` - отправить сообщение.
+- `Shift+Enter` - перенос строки без отправки.
+
+### Таблицы и embed-редактирование
+
+- `Enter` - подтвердить редактирование ячейки.
+- `Escape` - отменить редактирование ячейки.
+
+### Модальные окна и панели
+
+- `Escape` - закрыть активное модальное окно/панель (link, image, template variable, live reference picker, live formula, plugins modal, view/participants menu и т.д.).
+- `Enter` - подтвердить действие в инпутах, где это предусмотрено (например, вставка iframe URL, подтверждение редактирования заголовка/описания страницы).
+- `Space` / `Enter` - переключить checkbox-настройки в модуле плагинов.
+
+### Базовые сочетания Tiptap
+
+Также доступны стандартные сочетания редактора (StarterKit + подключенные extensions). Основные:
+
+- `Ctrl/Cmd + B` - полужирный.
+- `Ctrl/Cmd + I` - курсив.
+- `Ctrl/Cmd + E` - inline code.
+- `Ctrl/Cmd + U` - подчеркивание.
+- `Ctrl/Cmd + Z` - undo.
+- `Ctrl/Cmd + Shift + Z` - redo.
+- `Ctrl/Cmd + Y` - redo (в ряде браузеров/платформ).
+- `Ctrl/Cmd + A` - выделить все.
+- `Ctrl/Cmd + Shift + 7` - нумерованный список.
+- `Ctrl/Cmd + Shift + 8` - маркированный список.
+- `Ctrl/Cmd + Shift + B` - цитата.
+
+Для списков/таблиц также работают стандартные клавиши навигации редактора (Tab, Shift+Tab, Enter, Backspace) в зависимости от текущего контекста курсора.
+
+## Тесты и качество
+
+Backend тесты:
 
 ```bash
 cd backend
 npm test -- --runInBand
 ```
 
-Проверка сборки:
+Сборка backend:
 
 ```bash
 cd backend
 npm run build
 ```
+
+Frontend тесты:
+
+```bash
+cd frontend
+npm test
+```
+
+## Лицензии ключевых компонентов
+
+- Tiptap (open-source core).
+- Yjs.
+- Hocuspocus.
+- React/NestJS/FastAPI и сопутствующий open-source стек.
+
+Это соответствует требованию использовать расширяемую open-source основу для редактора и коллаборации.
