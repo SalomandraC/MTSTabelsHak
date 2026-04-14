@@ -422,6 +422,7 @@ export function AiSidebarChat({
   const [loadingPhraseIndex, setLoadingPhraseIndex] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const contextRowRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const { handleAiChatResponse } = useAiTableContext();
 
   const activeTreePages = useMemo(
@@ -695,6 +696,17 @@ export function AiSidebarChat({
     };
   }, [contextScope, contextSpaceId, spaceId]);
 
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+    };
+  }, []);
+
+  const handleStop = () => {
+    abortControllerRef.current?.abort();
+  };
+
   const handleAddDocument = async (page: AvailableContextPage) => {
     if (selectedDocuments.some((document) => document.pageId === page.id) || page.id === pageId) {
       return;
@@ -806,6 +818,9 @@ export function AiSidebarChat({
     setErrorMessage('');
     setIsSending(true);
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       const response = await wikiliveApi.aiChat({
         question: trimmed,
@@ -825,14 +840,24 @@ export function AiSidebarChat({
             : [],
         workspaceStructure: workspaceStructureSummary,
         useVectorSearch: true,
+        intent: 'chat',
+      }, {
+        signal: controller.signal,
       });
 
       handleAiChatResponse(response);
 
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: 'assistant', text: response.answer }]);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Не удалось получить ответ ИИ');
+      if (error instanceof Error && error.name === 'AbortError') {
+        setErrorMessage('Генерация остановлена');
+      } else {
+        setErrorMessage(error instanceof Error ? error.message : 'Не удалось получить ответ ИИ');
+      }
     } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
       setIsSending(false);
     }
   };
@@ -942,6 +967,11 @@ export function AiSidebarChat({
             className="border-t border-editor-border-subtle bg-white p-2"
             onSubmit={(event) => {
               event.preventDefault();
+              if (isSending) {
+                handleStop();
+                return;
+              }
+
               void handleSend();
             }}
           >

@@ -66,6 +66,7 @@ export class AiToolsController {
         question: dto.question,
         spaceId: dto.spaceId,
         contextScope: dto.contextScope as 'currentFile' | 'documents' | 'folders' | 'space' | undefined,
+        intent: dto.intent,
         pageId: dto.pageId,
         datasheetId: dto.datasheetId,
         viewId: dto.viewId,

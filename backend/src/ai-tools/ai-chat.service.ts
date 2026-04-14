@@ -5,6 +5,17 @@ import { AiProviderClientService, AiChatMessage } from './ai-provider-client.ser
 import { ChatQuestionInput, ChatQuestionResponse } from './ai-chat.types';
 import { AiToolRegistryService } from './ai-tool-registry.service';
 import { ToolExecutionResult } from './ai-tool-registry.types';
+import { AiAssistantService } from './ai-assistant.service';
+import { AiIntent } from './ai-assistant.types';
+
+const MARKDOWN_TABLE_RULE = [
+  'Если тебе нужно представить данные в виде структуры, используй стандартные Markdown-таблицы.',
+  'Формат:',
+  '| Заголовок 1 | Заголовок 2 |',
+  '|---|---|',
+  '| Значение 1 | Значение 2 |',
+  'Никогда не используй имитацию таблиц через пробелы или табуляцию. Только стандартный Markdown.',
+].join(' ');
 
 @Injectable()
 export class AiChatService {
@@ -14,9 +25,14 @@ export class AiChatService {
     private readonly aiProviderClientService: AiProviderClientService,
     private readonly aiToolRegistryService: AiToolRegistryService,
     private readonly contextSearchService: ContextSearchService,
+    private readonly aiAssistantService: AiAssistantService,
   ) {}
 
   async askQuestion(input: ChatQuestionInput, user: UserContext): Promise<ChatQuestionResponse> {
+    const intent: AiIntent = input.intent ?? 'chat';
+    const model = this.aiAssistantService.resolveModelForIntent(intent);
+    const maxTokens = intent === 'write_report' ? 4096 : 512;
+
     const contextMarkdown = this.snapshotToMarkdown(input.pageSnapshot);
     const explicitContextMarkdown = this.buildExplicitContextMarkdown(input.contextDocuments);
     const isTableContext = this.isTableContext(input);
@@ -30,6 +46,7 @@ export class AiChatService {
       input,
       isTableContext,
       isWorkspaceAgentMode,
+      intent,
     );
 
     const toolDefinitions = this.aiToolRegistryService.getToolDefinitions().filter((definition) => {
@@ -59,9 +76,10 @@ export class AiChatService {
     let needsRefresh = false;
 
     let response = await this.aiProviderClientService.complete({
+      model,
       messages,
       temperature: 0.25,
-      maxTokens: 512,
+      maxTokens,
       tools: toolDefinitions,
       toolChoice: isTableContext || isWorkspaceAgentMode ? 'auto' : 'none',
     });
@@ -117,9 +135,10 @@ export class AiChatService {
       }
 
       response = await this.aiProviderClientService.complete({
+        model,
         messages: conversation,
         temperature: 0.2,
-        maxTokens: 512,
+        maxTokens,
         tools: toolDefinitions,
         toolChoice: 'none',
       });
@@ -163,6 +182,7 @@ export class AiChatService {
     input: ChatQuestionInput,
     isTableContext: boolean,
     isWorkspaceAgentMode: boolean,
+    intent: AiIntent,
   ): AiChatMessage[] {
     const tableContextLines = [
       input.datasheetId ? `Target MWS datasheetId: ${input.datasheetId}` : null,
@@ -201,6 +221,7 @@ export class AiChatService {
           'If user asks for document structure or heading plan, return only anchor-based JSON array format [{"anchor":"...","title":"...","level":1|2|3}].',
           'For anchor-based structure: enforce strict hierarchy H1 -> H2 -> H3, keep titles short and informative, preserve automatic numbering unless user explicitly asks otherwise, and never propose a heading that duplicates an existing heading in the document context.',
           'If user asks for a report, assess expected report size. If report is likely long (more than 5 analysis points), start answer with [ACTION: CREATE_NEW_PAGE]. If report is short, start answer with [ACTION: INLINE_INSERT].',
+          MARKDOWN_TABLE_RULE,
           'When tool arguments require a datasheetId, use the exact Target MWS datasheetId from the context.',
           'Only answer the user after the table has already been changed by tools.',
           'Keep the answer concise, factual, and grounded in the provided context or tool output.',
@@ -221,6 +242,7 @@ export class AiChatService {
             'Prefer short iterative searches over guessing.',
             'Never expose tool call markup, XML-like control tokens, or internal tool syntax in the final answer.',
             'After using tools, return only the user-facing answer.',
+            MARKDOWN_TABLE_RULE,
           ].join(' ')
         : [
           'You are a helpful WikiLive document assistant.',
@@ -231,12 +253,26 @@ export class AiChatService {
           'Do not say that context is missing if page or retrieved context is provided.',
           'If context is genuinely absent, clearly say that no text was provided.',
           'Do not invent facts outside the provided context.',
+          MARKDOWN_TABLE_RULE,
         ].join(' ');
+
+    const intentRules = [
+      intent === 'plan_mutation'
+        ? 'STRICT MWS TABLE MODE: for table operations use tools first, produce deterministic tool arguments, and do not ask clarifying questions.'
+        : null,
+      intent === 'write_report'
+        ? 'Напиши подробный отчет объемом на одну полную страницу А4. Всегда используй [Ref:tableId:rowId:colId] для живых ссылок на данные.'
+        : null,
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    const resolvedSystemContent = [systemContent, intentRules].filter(Boolean).join(' ');
 
     return [
       {
         role: 'system',
-        content: systemContent,
+        content: resolvedSystemContent,
       },
       {
         role: 'user',

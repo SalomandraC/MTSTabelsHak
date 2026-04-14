@@ -528,6 +528,7 @@ export type AiChatPayload = {
   question: string;
   spaceId?: string;
   contextScope?: 'currentFile' | 'documents' | 'folders' | 'space';
+  intent?: 'chat' | 'plan_mutation' | 'write_report' | 'autocomplete';
   pageId?: string;
   datasheetId?: string;
   viewId?: string;
@@ -1371,26 +1372,30 @@ export const wikiliveApi = {
       }),
     });
   },
-  aiAutocomplete(payload: AiAutocompletePayload) {
+  aiAutocomplete(payload: AiAutocompletePayload, options: RequestOptions = {}) {
     return requestWithAuth<{ text: string }>('/api/v1/ai/autocomplete', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
-  aiGenerate(payload: AiGeneratePayload) {
+  aiGenerate(payload: AiGeneratePayload, options: RequestOptions = {}) {
     return requestWithAuth<AiGenerateResponse>('/api/v1/ai/generate', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
-  aiTransform(payload: AiTransformPayload) {
+  aiTransform(payload: AiTransformPayload, options: RequestOptions = {}) {
     return requestWithAuth<{ text: string }>('/api/v1/ai/transform', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
-  aiChat(payload: AiChatPayload) {
+  aiChat(payload: AiChatPayload, options: RequestOptions = {}) {
     return requestWithAuth<AiChatResponse>('/api/v1/ai/chat', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -1401,20 +1406,23 @@ export const wikiliveApi = {
       body: JSON.stringify(payload),
     });
   },
-  aiExecuteTool(payload: AiExecuteToolPayload) {
+  aiExecuteTool(payload: AiExecuteToolPayload, options: RequestOptions = {}) {
     return requestWithAuth<AiExecuteToolResponse>('/api/v1/ai/execute', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
-  aiPlanMutation(payload: AiPlanMutationPayload) {
+  aiPlanMutation(payload: AiPlanMutationPayload, options: RequestOptions = {}) {
     return requestWithAuth<AiPlanMutationResponse>('/api/v1/ai/plan-mutation', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
-  aiPlanWorkflow(payload: AiPlanWorkflowPayload) {
+  aiPlanWorkflow(payload: AiPlanWorkflowPayload, options: RequestOptions = {}) {
     return requestWithAuth<AiPlanWorkflowResponse>('/api/v1/ai/plan-workflow', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
     });

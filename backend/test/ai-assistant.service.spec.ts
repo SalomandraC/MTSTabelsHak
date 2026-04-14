@@ -5,7 +5,20 @@ describe('AiAssistantService', () => {
     complete: jest.fn(),
   };
 
-  const service = new AiAssistantService(aiProviderClientService as any);
+  const configService = {
+    get: jest.fn((key: string, fallback: string) => {
+      const values: Record<string, string> = {
+        AI_MODEL_CHAT: 'qwen2.5-72b-instruct',
+        AI_MODEL_MUTATION: 'qwen2.5-72b-instruct',
+        AI_MODEL_WRITER: 'llama-3.3-70b-instruct',
+        AI_MODEL_FAST: 'llama-3.1-8b-instruct',
+      };
+
+      return values[key] ?? fallback;
+    }),
+  };
+
+  const service = new AiAssistantService(aiProviderClientService as any, configService as any);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -23,6 +36,7 @@ describe('AiAssistantService', () => {
     expect(result.text).toBe('continue the sentence');
     expect(aiProviderClientService.complete).toHaveBeenCalledWith(
       expect.objectContaining({
+        model: 'llama-3.1-8b-instruct',
         temperature: 0.25,
         maxTokens: 96,
       }),

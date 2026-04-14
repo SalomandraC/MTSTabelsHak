@@ -12,11 +12,15 @@ describe('AiChatService', () => {
   const contextSearchService = {
     searchInSpace: jest.fn(),
   };
+  const aiAssistantService = {
+    resolveModelForIntent: jest.fn().mockReturnValue('qwen2.5-72b-instruct'),
+  };
 
   const service = new AiChatService(
     aiProviderClientService as any,
     aiToolRegistryService as any,
     contextSearchService as any,
+    aiAssistantService as any,
   );
 
   const toolDefinitions = [

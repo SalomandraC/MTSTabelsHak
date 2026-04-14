@@ -66,6 +66,10 @@ export class ChatRequestDto {
   question!: string;
 
   @IsOptional()
+  @IsIn(['chat', 'plan_mutation', 'write_report', 'autocomplete'])
+  intent?: 'chat' | 'plan_mutation' | 'write_report' | 'autocomplete';
+
+  @IsOptional()
   @IsString()
   spaceId?: string;
 

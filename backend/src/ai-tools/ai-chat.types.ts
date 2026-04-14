@@ -1,3 +1,5 @@
+import { AiIntent } from './ai-assistant.types';
+
 export interface AiChatToolDefinition {
   type: 'function';
   function: {
@@ -11,6 +13,7 @@ export interface ChatQuestionInput {
   question: string;
   spaceId?: string;
   contextScope?: 'currentFile' | 'documents' | 'folders' | 'space';
+  intent?: AiIntent;
   pageId?: string;
   pageTitle?: string;
   pageSnapshot?: Record<string, unknown> | string;
