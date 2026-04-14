@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useState } from 'react';
 
 import type { MwsField, MwsNode, MwsRecord, MwsSpace } from '../../../shared/api/wikilive';
@@ -270,136 +271,161 @@ export function LiveReferencePickerModal({
     return null;
   }
 
-  return (
-    <div className="fixed inset-0 z-[101] bg-black/35" onMouseDown={onClose}>
+  return createPortal(
+    <div className="fixed inset-0 z-[1000] bg-[rgba(17,24,39,0.38)] p-3 sm:p-6" onMouseDown={onClose}>
       <div
-        className="fixed left-1/2 top-1/2 flex max-h-[calc(100vh-2rem)] w-[min(60rem,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 flex-col gap-3 overflow-hidden rounded-lg bg-white p-5 shadow-[0_24px_70px_rgba(17,25,40,0.22)]"
+        className="fixed left-1/2 top-1/2 flex h-[92vh] w-full max-w-4xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[24px] bg-white shadow-[0_28px_80px_rgba(17,24,39,0.26)]"
         role="dialog"
         aria-modal="true"
         aria-label="Вставить живую переменную"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div>
-          <h3 className="font-wide text-xl font-semibold">Живая переменная из таблицы</h3>
-          <p className="mt-1 text-sm text-editor-text-tertiary">Выберите таблицу, строку и колонку. В документ вставится чип, который обновляется автоматически.</p>
-        </div>
-
-        <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1fr_1fr]">
-          <section className="flex min-h-0 flex-col gap-3 rounded-lg border border-editor-border-subtle p-3">
-            <select
-              value={selectedSpaceId}
-              onChange={(event) => setSelectedSpaceId(event.target.value)}
-              className="h-10 rounded-lg border border-editor-border-control px-3 text-sm outline-none focus:border-[#7b67ee]"
-            >
-              {spaces.map((space) => (
-                <option key={space.id} value={space.id}>
-                  {space.name}
-                </option>
-              ))}
-            </select>
-
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              className="h-10 rounded-lg border border-editor-border-control px-3 text-sm outline-none focus:border-[#7b67ee]"
-              placeholder="Поиск таблицы"
-            />
-
-            <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-editor-border-subtle">
-              {isLoading ? <p className="p-3 text-sm text-editor-text-tertiary">Загружаем таблицы...</p> : null}
-              {!isLoading && searchableNodes.length === 0 ? <p className="p-3 text-sm text-editor-text-tertiary">Таблицы не найдены</p> : null}
-              {!isLoading && searchableNodes.length > 0 ? (
-                <div>
-                  {searchableNodes.map((node) => (
-                    <button
-                      key={node.id}
-                      type="button"
-                      onClick={() => setSelectedNodeId(node.id)}
-                      className={[
-                        'block w-full border-b border-editor-border-subtle px-3 py-2 text-left text-sm last:border-b-0 hover:bg-editor-bg-control',
-                        node.id === selectedNodeId ? 'bg-[#eef2ff]' : '',
-                      ].join(' ')}
-                    >
-                      <span className="block truncate font-semibold">{node.name}</span>
-                      <span className="mt-0.5 block truncate text-xs text-editor-text-tertiary">{nodePath(node)}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+        <div className="flex-shrink-0 border-b border-[#b00025] bg-[#d70032] px-4 py-5 text-white sm:px-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/85">
+                Живая переменная
+              </div>
+              <h3 className="mt-3 font-wide text-xl font-semibold sm:text-2xl">Живая переменная из таблицы</h3>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-white/84">
+                Выберите таблицу, строку и колонку. В документ вставится чип, который обновляется автоматически.
+              </p>
             </div>
-          </section>
-
-          <section className="flex min-h-0 flex-col gap-3 rounded-lg border border-editor-border-subtle p-3">
-            <h4 className="font-semibold">Параметры переменной</h4>
-            {!selectedNode ? <p className="text-sm text-editor-text-tertiary">Сначала выберите таблицу слева.</p> : null}
-
-            {selectedNode ? (
-              <>
-                <label className="text-sm font-semibold">
-                  Строка
-                  <select
-                    value={selectedRecordId}
-                    onChange={(event) => setSelectedRecordId(event.target.value)}
-                    className="mt-1 h-10 w-full rounded-lg border border-editor-border-control px-3 text-sm font-normal outline-none focus:border-[#7b67ee]"
-                  >
-                    {records.map((record) => (
-                      <option key={record.recordId} value={record.recordId}>
-                        {getRecordLabel(record, fields)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="text-sm font-semibold">
-                  Колонка
-                  <select
-                    value={selectedFieldId}
-                    onChange={(event) => setSelectedFieldId(event.target.value)}
-                    className="mt-1 h-10 w-full rounded-lg border border-editor-border-control px-3 text-sm font-normal outline-none focus:border-[#7b67ee]"
-                  >
-                    {fields.map((field) => (
-                      <option key={field.id} value={field.id}>
-                        {field.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                {isDetailsLoading ? <p className="text-sm text-editor-text-tertiary">Загружаем строки и поля...</p> : null}
-                {!isDetailsLoading && records.length === 0 ? <p className="text-sm text-editor-text-tertiary">В таблице пока нет строк</p> : null}
-                {!isDetailsLoading && fields.length === 0 ? <p className="text-sm text-editor-text-tertiary">В таблице нет колонок</p> : null}
-              </>
-            ) : null}
-
-            {errorMessage ? <p className="text-sm text-[#b00025]">{errorMessage}</p> : null}
-          </section>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Закрыть живую переменную"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/12 text-white transition-colors hover:bg-white/18"
+            >
+              ×
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2">
-          <ModalActionButton onClick={onClose} variant="secondary">
-            Отмена
-          </ModalActionButton>
-          <ModalActionButton
-            disabled={!selectedNode || !selectedRecord || !selectedField || isDetailsLoading}
-            onClick={() => {
-              if (!selectedNode || !selectedRecord || !selectedField) {
-                return;
-              }
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[#f6f7f9] px-4 py-4 sm:px-6">
+          {errorMessage ? (
+            <div className="mb-4 rounded-xl border border-[#ffd2d9] bg-[#fff7f8] px-4 py-3 text-sm text-[#b00025]">
+              {errorMessage}
+            </div>
+          ) : null}
 
-              onSelect({
-                spaceId: selectedSpaceId,
-                datasheetId: getDatasheetId(selectedNode),
-                recordId: selectedRecord.recordId,
-                fieldId: selectedField.id,
-                label: `${selectedNode.name} / ${getRecordLabel(selectedRecord, fields)} / ${selectedField.name}`,
-              });
-            }}
-            variant="primary"
-          >
-            Вставить переменную
-          </ModalActionButton>
+          <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1fr_1fr]">
+            <section className="flex min-h-0 flex-col gap-3 rounded-[20px] border border-[#dfe5ee] bg-white p-4 shadow-[0_10px_24px_rgba(17,24,39,0.05)]">
+              <select
+                value={selectedSpaceId}
+                onChange={(event) => setSelectedSpaceId(event.target.value)}
+                className="h-10 rounded-xl border border-editor-border-control px-3 text-sm outline-none focus:border-[#d70032]"
+              >
+                {spaces.map((space) => (
+                  <option key={space.id} value={space.id}>
+                    {space.name}
+                  </option>
+                ))}
+              </select>
+
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                className="h-10 rounded-xl border border-editor-border-control px-3 text-sm outline-none focus:border-[#d70032]"
+                placeholder="Поиск таблицы"
+              />
+
+              <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-editor-border-subtle bg-white">
+                {isLoading ? <p className="p-3 text-sm text-editor-text-tertiary">Загружаем таблицы...</p> : null}
+                {!isLoading && searchableNodes.length === 0 ? <p className="p-3 text-sm text-editor-text-tertiary">Таблицы не найдены</p> : null}
+                {!isLoading && searchableNodes.length > 0 ? (
+                  <div>
+                    {searchableNodes.map((node) => (
+                      <button
+                        key={node.id}
+                        type="button"
+                        onClick={() => setSelectedNodeId(node.id)}
+                        className={[
+                          'block w-full border-b border-editor-border-subtle px-3 py-2 text-left text-sm last:border-b-0 hover:bg-[#fff7f8]',
+                          node.id === selectedNodeId ? 'bg-[#fff0f3]' : '',
+                        ].join(' ')}
+                      >
+                        <span className="block truncate font-semibold">{node.name}</span>
+                        <span className="mt-0.5 block truncate text-xs text-editor-text-tertiary">{nodePath(node)}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </section>
+
+            <section className="flex min-h-0 flex-col gap-3 rounded-[20px] border border-[#dfe5ee] bg-white p-4 shadow-[0_10px_24px_rgba(17,24,39,0.05)]">
+              <h4 className="font-semibold text-editor-text-primary">Параметры переменной</h4>
+              {!selectedNode ? <p className="text-sm text-editor-text-tertiary">Сначала выберите таблицу слева.</p> : null}
+
+              {selectedNode ? (
+                <>
+                  <label className="text-sm font-semibold text-editor-text-primary">
+                    Строка
+                    <select
+                      value={selectedRecordId}
+                      onChange={(event) => setSelectedRecordId(event.target.value)}
+                      className="mt-1 h-10 w-full rounded-xl border border-editor-border-control px-3 text-sm font-normal outline-none focus:border-[#d70032]"
+                    >
+                      {records.map((record) => (
+                        <option key={record.recordId} value={record.recordId}>
+                          {getRecordLabel(record, fields)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="text-sm font-semibold text-editor-text-primary">
+                    Колонка
+                    <select
+                      value={selectedFieldId}
+                      onChange={(event) => setSelectedFieldId(event.target.value)}
+                      className="mt-1 h-10 w-full rounded-xl border border-editor-border-control px-3 text-sm font-normal outline-none focus:border-[#d70032]"
+                    >
+                      {fields.map((field) => (
+                        <option key={field.id} value={field.id}>
+                          {field.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {isDetailsLoading ? <p className="text-sm text-editor-text-tertiary">Загружаем строки и поля...</p> : null}
+                  {!isDetailsLoading && records.length === 0 ? <p className="text-sm text-editor-text-tertiary">В таблице пока нет строк</p> : null}
+                  {!isDetailsLoading && fields.length === 0 ? <p className="text-sm text-editor-text-tertiary">В таблице нет колонок</p> : null}
+                </>
+              ) : null}
+            </section>
+          </div>
+
+          <div className="mt-4 flex items-center justify-end gap-2 rounded-[20px] border border-[#dfe5ee] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(17,24,39,0.05)]">
+            <ModalActionButton onClick={onClose} variant="secondary">
+              Отмена
+            </ModalActionButton>
+            <ModalActionButton
+              disabled={!selectedNode || !selectedRecord || !selectedField || isDetailsLoading}
+              onClick={() => {
+                if (!selectedNode || !selectedRecord || !selectedField) {
+                  return;
+                }
+
+                onSelect({
+                  spaceId: selectedSpaceId,
+                  datasheetId: getDatasheetId(selectedNode),
+                  recordId: selectedRecord.recordId,
+                  fieldId: selectedField.id,
+                  label: `${selectedNode.name} / ${getRecordLabel(selectedRecord, fields)} / ${selectedField.name}`,
+                });
+              }}
+              variant="primary"
+            >
+              Вставить переменную
+            </ModalActionButton>
+          </div>
         </div>
       </div>
     </div>
+    ,
+    document.body,
   );
 }
