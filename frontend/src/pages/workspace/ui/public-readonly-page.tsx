@@ -73,7 +73,7 @@ export function PublicReadOnlyPage() {
   }, [route.pageId]);
 
   return (
-    <main className="min-h-screen bg-[#fff1f3] text-editor-text-primary">
+    <main className="min-h-screen bg-white text-editor-text-primary">
       <div className="mx-auto max-w-5xl px-4 py-6">
         <div className="rounded-xl border border-[#ffd2d9] bg-[#ffe4ea] px-4 py-2 text-sm text-[#b00025]">
           Режим только чтения по публичной ссылке. Для полноценного просмотра зарегистрируйтесь в системе.
