@@ -80,6 +80,19 @@ function getShareUrl(spaceId: string, pageId: string | null) {
   return url.toString();
 }
 
+function calculateContextMenuPosition(rect: DOMRect, menuWidth: number, menuHeight: number) {
+  return {
+    left: Math.min(rect.right + 8, window.innerWidth - menuWidth - 8),
+    top: Math.max(
+      8,
+      Math.min(
+        rect.top + rect.height / 2 - menuHeight / 2 + rect.height * 0.25,
+        window.innerHeight - menuHeight - 8,
+      ),
+    ),
+  };
+}
+
 function flattenWorkspacePages(nodes: WorkspaceTreeNode[]): DocumentGraphPage[] {
   return nodes.flatMap((node) => [
     ...(node.kind === 'wikiPage' && node.linkedPageId ? [{ id: node.linkedPageId, title: node.title }] : []),
@@ -340,10 +353,16 @@ function WorkspaceTreeItem({
       }
     };
 
+    const handleWheel = () => {
+      closeActionsMenu();
+    };
+
     window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('wheel', handleWheel, { passive: true });
 
     return () => {
       window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('wheel', handleWheel);
     };
   }, [closeActionsMenu, isActionsMenuOpen]);
 
@@ -407,16 +426,29 @@ function WorkspaceTreeItem({
     }
   };
 
-  const openActionsMenuAtCursor = (event: React.MouseEvent) => {
+  const openActionsMenuAtButton = (event: React.MouseEvent<HTMLButtonElement>) => {
     const menuWidth = 176;
     const menuHeight = 224;
-    const left = Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8));
-    const top = Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8));
+    const rect = event.currentTarget.getBoundingClientRect();
+    const position = calculateContextMenuPosition(rect, menuWidth, menuHeight);
 
     setCreateMode(null);
     setCreateError('');
     setCreateTitle('');
-    setContextMenuPosition({ left, top });
+    setContextMenuPosition(position);
+    setIsActionsMenuOpen(true);
+  };
+
+  const openActionsMenuAtCursor = (event: React.MouseEvent) => {
+    const menuWidth = 176;
+    const menuHeight = 224;
+    const rect = new DOMRect(event.clientX, event.clientY, 0, 0);
+    const position = calculateContextMenuPosition(rect, menuWidth, menuHeight);
+
+    setCreateMode(null);
+    setCreateError('');
+    setCreateTitle('');
+    setContextMenuPosition(position);
     setIsActionsMenuOpen(true);
   };
 
@@ -589,11 +621,7 @@ function WorkspaceTreeItem({
                   return;
                 }
 
-                setCreateMode(null);
-                setCreateError('');
-                setCreateTitle('');
-                setContextMenuPosition(null);
-                setIsActionsMenuOpen(true);
+                openActionsMenuAtButton(event);
               }}
               className="flex h-6 w-6 items-center justify-center rounded text-[#b6b6b6] opacity-0 transition-opacity hover:bg-[#f2f3f5] hover:text-[#1f1f1f] group-hover:opacity-100"
               title="Действия"
@@ -1770,26 +1798,14 @@ export function WorkspacePage() {
 
       event.preventDefault();
 
-      const wrapperRect = workbenchTreeWrapperRef.current?.getBoundingClientRect();
-      const sidebarRect = workbenchTreeWrapperRef.current?.closest('aside')?.getBoundingClientRect();
-
-      if (!wrapperRect) {
-        return;
-      }
-
-      const estimatedHeight = 96;
-      const left = event.clientX - wrapperRect.left;
-      const top = Math.max(
-        8,
-        Math.min(
-          event.clientY - wrapperRect.top,
-          Math.max(8, (sidebarRect?.height ?? wrapperRect.height) - estimatedHeight - 8),
-        ),
-      );
+      const menuWidth = 236;
+      const menuHeight = 180;
+      const rect = new DOMRect(event.clientX, event.clientY, 0, 0);
+      const position = calculateContextMenuPosition(rect, menuWidth, menuHeight);
 
       setBlankAreaCreateTitle('');
       setBlankAreaCreateError('');
-      setBlankAreaCreatePosition({ left, top });
+      setBlankAreaCreatePosition(position);
       setIsBlankAreaCreateOpen(true);
       setBlankAreaCreateMode(null);
     },
@@ -2207,7 +2223,7 @@ export function WorkspacePage() {
                 <p className="mt-0.5 text-xs text-[#4b5563]">
                   Добавили стили для AI-улучшения текста: Обычный, Деловой, Военный, Средневековый, Церковнославянский,
                   Исправить ошибки и Дополнить. Также улучшили ghost-подсказки: стабильнее у курсора, аккуратные пробелы
-                  при принятии, скрытие при открытии inline-копилота. Протестите ребят.
+                  при принятии, скрытие при открытии inline-копилота.
                 </p>
                 <p className="mt-1 text-xs text-[#4b5563]">
                   Еще добавили Live переменные из таблиц: можно вставлять значение ячейки в текст, открывать подсказку по hover
@@ -2353,7 +2369,7 @@ export function WorkspacePage() {
             <button
               type="button"
               onClick={() => void handleCreatePage()}
-              className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-[#d70032] px-3 text-sm font-semibold text-white transition-colors hover:bg-[#b8002b]"
+              className="flex h-9 w-[calc(100%-10px)] mr-[10px] items-center justify-center gap-2 rounded-lg bg-[#d70032] px-3 text-sm font-semibold text-white transition-colors hover:bg-[#b8002b]"
             >
               <Plus size={16} strokeWidth={2.4} />
               Создать страницу
@@ -2365,7 +2381,7 @@ export function WorkspacePage() {
               type="button"
             onClick={() => openTemplateMarketplace(null)}
               disabled={isTemplatesLoading}
-              className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-editor-border-subtle bg-white px-3 text-sm font-semibold text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa] disabled:cursor-wait disabled:opacity-60"
+              className="flex h-9 w-[calc(100%-10px)] mr-[10px]  items-center justify-center gap-2 rounded-lg border border-editor-border-subtle bg-white px-3 text-sm font-semibold text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa] disabled:cursor-wait disabled:opacity-60"
             >
               <FileDown size={16} strokeWidth={2.2} />
               {isTemplatesLoading ? 'Загружаем шаблоны...' : 'Маркетплейс шаблонов'}
@@ -2466,7 +2482,7 @@ export function WorkspacePage() {
                       data-workspace-inline-create="true"
                       role="menu"
                       aria-label="Действия в пустой области проводника"
-                      className="absolute z-[120] w-[236px] rounded-xl border border-editor-border-subtle bg-white p-2 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
+                      className="fixed z-[120] w-[236px] rounded-xl border border-editor-border-subtle bg-white p-2 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
                       style={{
                         left: blankAreaCreatePosition.left,
                         top: blankAreaCreatePosition.top,

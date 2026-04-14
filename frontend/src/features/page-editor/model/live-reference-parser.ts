@@ -11,7 +11,38 @@ export type LiveReferenceParseOptions = {
   spaceId?: string;
 };
 
-const LIVE_REFERENCE_TOKEN = /\[Ref:([^:\]\s]+):([^:\]\s]+):([^:\]\s]+)\]/g;
+const LIVE_REFERENCE_TOKEN = /^\[Ref:([^:\]\s]+):([^:\]\s]+):([^:\]\s]+)\]$/;
+
+function extractFormulaToken(text: string, from: number): { token: string; expression: string; end: number } | null {
+  const prefix = '[Formula:';
+  if (!text.startsWith(prefix, from)) {
+    return null;
+  }
+
+  let depth = 1;
+  let index = from + 1;
+
+  while (index < text.length) {
+    const char = text[index];
+    if (char === '[') {
+      depth += 1;
+    } else if (char === ']') {
+      depth -= 1;
+      if (depth === 0) {
+        const token = text.slice(from, index + 1);
+        const expression = text.slice(from + prefix.length, index).trim();
+        return {
+          token,
+          expression,
+          end: index + 1,
+        };
+      }
+    }
+    index += 1;
+  }
+
+  return null;
+}
 
 function looksLikeMarkdown(text: string): boolean {
   const value = text.trim();
@@ -23,49 +54,77 @@ function looksLikeMarkdown(text: string): boolean {
 }
 
 export function hasLiveReferenceToken(text: string): boolean {
-  LIVE_REFERENCE_TOKEN.lastIndex = 0;
-  return LIVE_REFERENCE_TOKEN.test(text);
+  return text.includes('[Ref:') || text.includes('[Formula:');
 }
 
 export function parseInlineContentWithLiveReferences(text: string, options: LiveReferenceParseOptions = {}): JSONContent[] {
   const value = String(text ?? '');
   const parts: JSONContent[] = [];
-
-  LIVE_REFERENCE_TOKEN.lastIndex = 0;
   let cursor = 0;
-  let match = LIVE_REFERENCE_TOKEN.exec(value);
 
-  while (match) {
-    const [token, datasheetId, recordId, fieldId] = match;
-    const start = match.index;
+  while (cursor < value.length) {
+    const nextRef = value.indexOf('[Ref:', cursor);
+    const nextFormula = value.indexOf('[Formula:', cursor);
+    const candidates = [nextRef, nextFormula].filter((index) => index >= 0);
+    const nextTokenStart = candidates.length > 0 ? Math.min(...candidates) : -1;
 
-    if (start > cursor) {
+    if (nextTokenStart < 0) {
       parts.push({
         type: 'text',
-        text: value.slice(cursor, start),
+        text: value.slice(cursor),
+      });
+      break;
+    }
+
+    if (nextTokenStart > cursor) {
+      parts.push({
+        type: 'text',
+        text: value.slice(cursor, nextTokenStart),
       });
     }
 
-    parts.push({
-      type: 'liveReference',
-      attrs: {
-        spaceId: options.spaceId ?? '',
-        datasheetId,
-        recordId,
-        fieldId,
-        label: `${recordId} / ${fieldId}`,
-      },
-    });
+    if (value.startsWith('[Ref:', nextTokenStart)) {
+      const end = value.indexOf(']', nextTokenStart);
+      if (end > nextTokenStart) {
+        const token = value.slice(nextTokenStart, end + 1);
+        const match = token.match(LIVE_REFERENCE_TOKEN);
 
-    cursor = start + token.length;
-    match = LIVE_REFERENCE_TOKEN.exec(value);
-  }
+        if (match) {
+          const [, datasheetId, recordId, fieldId] = match;
+          parts.push({
+            type: 'liveReference',
+            attrs: {
+              spaceId: options.spaceId ?? '',
+              datasheetId,
+              recordId,
+              fieldId,
+              label: `${recordId} / ${fieldId}`,
+            },
+          });
+          cursor = end + 1;
+          continue;
+        }
+      }
+    }
 
-  if (cursor < value.length) {
+    const formulaToken = extractFormulaToken(value, nextTokenStart);
+    if (formulaToken) {
+      parts.push({
+        type: 'liveFormula',
+        attrs: {
+          spaceId: options.spaceId ?? '',
+          expression: formulaToken.expression,
+        },
+      });
+      cursor = formulaToken.end;
+      continue;
+    }
+
     parts.push({
       type: 'text',
-      text: value.slice(cursor),
+      text: value.slice(nextTokenStart, nextTokenStart + 1),
     });
+    cursor = nextTokenStart + 1;
   }
 
   if (parts.length === 0) {

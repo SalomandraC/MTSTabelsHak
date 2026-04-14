@@ -185,7 +185,7 @@ export function NavigationSidebar({ editor, enabled, onClose }: NavigationSideba
               type="button"
               onClick={() => void handleAutomaticMarkup()}
               disabled={!editor || isAutoMarkupRunning}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#d70032] bg-[#fff1f3] px-3 py-2.5 text-sm font-semibold text-[#d70032] transition-colors hover:bg-[#ffe5eb] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-[#d70032] px-3 text-sm font-semibold text-white transition-colors hover:bg-[#b8002b] disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Sparkles size={15} strokeWidth={2.2} />
               {isAutoMarkupRunning ? 'Автоматическая разметка...' : 'Автоматическая разметка'}

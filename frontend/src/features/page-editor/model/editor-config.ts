@@ -47,6 +47,7 @@ import { ImageBlock } from './image-block';
 import { PageLink } from './page-link';
 import { RootBlock } from './root-block';
 import { LiveReference } from './live-reference';
+import { LiveFormula } from './live-formula';
 import { TemplateVariable } from './template-variable';
 import { Bookmark, BookmarkLink } from './bookmark';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
@@ -181,6 +182,7 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     ImageBlock,
     TemplateVariable,
     LiveReference,
+    LiveFormula,
     PageLink,
     CommentAnchor.configure({
       onOpenThread: options.onOpenCommentThread,
