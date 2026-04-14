@@ -90,6 +90,9 @@ type StructureInstruction = {
   level: 1 | 2 | 3;
 };
 
+type AiChatApiResponse = Awaited<ReturnType<typeof wikiliveApi.aiChat>>;
+const MAX_INLINE_CONTEXT_MARKDOWN = 20000;
+
 function dispatchTableMutation(detail: {
   datasheetId: string;
   op: 'create_records' | 'add_table_column' | 'refresh';
@@ -472,6 +475,96 @@ function stripAiActionToken(value: string): string {
   return String(value ?? '').replace(/^\s*\[ACTION:[^\]]+\]\s*/i, '').trim();
 }
 
+function capContextMarkdown(value: string, maxLength = MAX_INLINE_CONTEXT_MARKDOWN): string {
+  const normalized = String(value ?? '').trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength)}\n\n[...context truncated...]`;
+}
+
+function isMarkdownTableSeparator(line: string): boolean {
+  return /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(line.trim());
+}
+
+function hasMarkdownTable(text: string): boolean {
+  const lines = String(text ?? '').replace(/\r\n/g, '\n').split('\n');
+  return lines.some((line, index) => {
+    if (!isMarkdownTableSeparator(line)) {
+      return false;
+    }
+
+    const prev = lines[index - 1]?.trim() ?? '';
+    return prev.includes('|');
+  });
+}
+
+function isUnfinishedMarkdownTable(text: string): boolean {
+  const lines = String(text ?? '').replace(/\r\n/g, '\n').split('\n').map((line) => line.trimEnd());
+  const nonEmptyIndexes = lines
+    .map((line, index) => ({ line, index }))
+    .filter(({ line }) => line.trim().length > 0)
+    .map(({ index }) => index);
+
+  if (nonEmptyIndexes.length === 0) {
+    return false;
+  }
+
+  const lastIndex = nonEmptyIndexes[nonEmptyIndexes.length - 1];
+  const blockStartCandidates = lines.slice(0, lastIndex + 1);
+  let blockStart = 0;
+
+  for (let i = blockStartCandidates.length - 1; i >= 0; i -= 1) {
+    if (!blockStartCandidates[i].trim()) {
+      blockStart = i + 1;
+      break;
+    }
+  }
+
+  const blockLines = lines.slice(blockStart, lastIndex + 1).filter((line) => line.trim().length > 0);
+  if (blockLines.length < 2) {
+    return false;
+  }
+
+  const hasSeparator = blockLines.some((line) => isMarkdownTableSeparator(line));
+  if (!hasSeparator) {
+    return false;
+  }
+
+  const lastLine = blockLines[blockLines.length - 1].trim();
+  if (!lastLine.includes('|')) {
+    return false;
+  }
+
+  return !lastLine.endsWith('|');
+}
+
+function extractTableContinuationChunk(text: string): string {
+  const cleaned = stripAiActionToken(text);
+  const lines = cleaned.replace(/\r\n/g, '\n').split('\n');
+  const tableLines = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return false;
+    }
+
+    return trimmed.includes('|') || isMarkdownTableSeparator(trimmed);
+  });
+
+  return tableLines.join('\n').trim();
+}
+
+function buildTableContinuationQuestion(currentAnswer: string): string {
+  return [
+    'Продолжи только оборванную Markdown-таблицу из конца ответа.',
+    'Верни только недостающие строки таблицы в формате markdown, без пояснений, без заголовков и без повтора уже выданного текста.',
+    'Если таблица уже завершена, верни пустую строку.',
+    'Текущий ответ:',
+    currentAnswer,
+  ].join('\n\n');
+}
+
 function buildReportRootBlock(editor: Editor | null, reportText: string, spaceId: string): JSONContent[] {
   const sanitizedReportText = stripAiActionToken(reportText);
   const contentBlocks = parseMarkdownReportWithLiveReferences(sanitizedReportText, { spaceId });
@@ -513,6 +606,10 @@ function insertAiAnswer(editor: Editor | null, text: string, options: { spaceId:
   }
 
   return insertAiTextWithLiveReferences(editor, text, { spaceId: options.spaceId });
+}
+
+function getInlineContextMarkdown(editor: Editor | null): string {
+  return capContextMarkdown(getEditorMarkdown(editor));
 }
 
 export function AiInlineCopilot({
@@ -739,6 +836,43 @@ export function AiInlineCopilot({
 
   const refreshTable = (datasheetId: string) => {
     dispatchTableMutation({ datasheetId, op: 'refresh' });
+  };
+
+  const fetchAiAnswerWithTableRecovery = async (
+    payload: Parameters<typeof wikiliveApi.aiChat>[0],
+    signal: AbortSignal,
+  ): Promise<{ response: AiChatApiResponse; answer: string }> => {
+    const response = await wikiliveApi.aiChat(payload, { signal });
+    let answer = response.answer;
+
+    if (!hasMarkdownTable(answer) || !isUnfinishedMarkdownTable(answer)) {
+      return { response, answer };
+    }
+
+    let merged = answer.trimEnd();
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const continuationResponse = await wikiliveApi.aiChat(
+        {
+          ...payload,
+          question: buildTableContinuationQuestion(merged),
+        },
+        { signal },
+      );
+
+      const continuationChunk = extractTableContinuationChunk(continuationResponse.answer);
+      if (!continuationChunk) {
+        break;
+      }
+
+      merged = `${merged}\n${continuationChunk}`.replace(/\n{3,}/g, '\n\n').trimEnd();
+
+      if (!isUnfinishedMarkdownTable(merged)) {
+        break;
+      }
+    }
+
+    return { response, answer: merged };
   };
 
   const getTableContext = async (input: {
@@ -1016,7 +1150,7 @@ export function AiInlineCopilot({
           viewId: activeContext.viewId,
           pageTitle,
           pageSnapshot: {
-            markdown: getEditorMarkdown(editor),
+            markdown: getInlineContextMarkdown(editor),
           },
           intent: 'chat',
         }, {
@@ -1034,7 +1168,7 @@ export function AiInlineCopilot({
       }
 
       if (activeContext.kind === 'all') {
-        const markdown = getEditorMarkdown(editor);
+        const markdown = getInlineContextMarkdown(editor);
         const tables = await buildAllTablesContextPayload();
         const response = await wikiliveApi.aiChat({
           question: [
@@ -1056,7 +1190,7 @@ export function AiInlineCopilot({
         return;
       }
 
-      const markdown = getEditorMarkdown(editor);
+      const markdown = getInlineContextMarkdown(editor);
       const response = await wikiliveApi.aiChat({
         question: [
           'Ты помощник по тексту.',
@@ -1084,7 +1218,7 @@ export function AiInlineCopilot({
         viewId: activeContext.viewId,
         tableSnapshot: activeContext.tableSnapshot,
       });
-      const response = await wikiliveApi.aiChat({
+      const { response, answer } = await fetchAiAnswerWithTableRecovery({
         question: [
           'Ты анализируешь конкретную таблицу MWS и пишешь отчет на основе ее данных.',
           `Вот ее данные JSON: ${JSON.stringify({ fields: context.fields, records: context.records.map((record) => ({ recordId: record.recordId, fields: record.fields })), total: context.total })}`,
@@ -1100,25 +1234,23 @@ export function AiInlineCopilot({
         viewId: activeContext.viewId,
         pageTitle,
         pageSnapshot: {
-          markdown: getEditorMarkdown(editor),
+          markdown: getInlineContextMarkdown(editor),
         },
         intent: 'write_report',
-      }, {
-        signal,
-      });
+      }, signal);
 
       handleAiChatResponse(response, {
         datasheetId: activeContext.datasheetId,
         viewId: activeContext.viewId,
       });
 
-      return response.answer;
+      return answer;
     }
 
     if (activeContext.kind === 'all') {
-      const markdown = getEditorMarkdown(editor);
       const tables = await buildAllTablesContextPayload();
-      const response = await wikiliveApi.aiChat({
+      const markdown = getInlineContextMarkdown(editor);
+      const { response, answer } = await fetchAiAnswerWithTableRecovery({
         question: [
           'Сформируй общий отчет по документу и всем таблицам на странице.',
           `Содержание документа: ${markdown}`,
@@ -1129,16 +1261,14 @@ export function AiInlineCopilot({
         pageTitle,
         pageSnapshot: { markdown },
         intent: 'write_report',
-      }, {
-        signal,
-      });
+      }, signal);
 
       handleAiChatResponse(response);
-      return response.answer;
+      return answer;
     }
 
-    const markdown = getEditorMarkdown(editor);
-    const response = await wikiliveApi.aiChat({
+    const markdown = getInlineContextMarkdown(editor);
+    const { response, answer } = await fetchAiAnswerWithTableRecovery({
       question: [
         'Ты помощник по тексту.',
         `Вот содержание документа: ${markdown}`,
@@ -1148,13 +1278,11 @@ export function AiInlineCopilot({
       pageTitle,
       pageSnapshot: { markdown },
       intent: 'write_report',
-    }, {
-      signal,
-    });
+    }, signal);
 
     handleAiChatResponse(response);
 
-    return response.answer;
+    return answer;
   };
 
   const reportToCurrentFile = async () => {
@@ -1244,8 +1372,8 @@ export function AiInlineCopilot({
     }
 
     await withBusy(async (signal) => {
-      const markdown = getEditorMarkdown(editor);
-      const response = await wikiliveApi.aiChat({
+      const markdown = getInlineContextMarkdown(editor);
+      const { response, answer } = await fetchAiAnswerWithTableRecovery({
         question: [
           'Ты помощник по тексту.',
           `Вот содержание документа: ${markdown}`,
@@ -1257,22 +1385,20 @@ export function AiInlineCopilot({
         pageTitle,
         pageSnapshot: { markdown },
         intent: 'chat',
-      }, {
-        signal,
-      });
+      }, signal);
 
-      insertAiAnswer(editor, response.answer, { spaceId });
+      insertAiAnswer(editor, answer, { spaceId });
 
       handleAiChatResponse(response);
 
-      setOutput(response.answer);
+      setOutput(answer);
     });
   };
 
   const handleStructureDocument = async () => {
     await withBusy(async (signal) => {
       const sourceBlocks = collectStructureSourceBlocks(editor);
-      const sourceText = sourceBlocks.map((block) => block.text).join('\n\n') || getEditorMarkdown(editor);
+      const sourceText = sourceBlocks.map((block) => block.text).join('\n\n') || getInlineContextMarkdown(editor);
       const request = prompt.trim();
       const wantsNoNumbers = /(без\s+нумерац|without\s+number)/i.test(request);
       const response = await wikiliveApi.aiChat({

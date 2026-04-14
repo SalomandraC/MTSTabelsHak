@@ -62,6 +62,11 @@ const AI_LOADING_PHRASES = [
   'Ищем релевантные фрагменты',
 ];
 
+const MAX_CURRENT_FILE_MARKDOWN = 12000;
+const MAX_CONTEXT_DOCUMENTS_TOTAL = 24000;
+const MAX_CONTEXT_DOCUMENT_SINGLE = 4000;
+const MAX_WORKSPACE_NODES = 40;
+
 function normalizeMarkdownSnippet(text: string, maxLength = 6000) {
   const trimmed = text.trim();
 
@@ -70,6 +75,36 @@ function normalizeMarkdownSnippet(text: string, maxLength = 6000) {
   }
 
   return `${trimmed.slice(0, maxLength)}\n\n[...контекст сокращен...]`;
+}
+
+function capContextDocuments(
+  documents: Array<{ pageId: string; title: string; markdown: string }>,
+  maxTotalLength = MAX_CONTEXT_DOCUMENTS_TOTAL,
+) {
+  const result: Array<{ pageId: string; title: string; markdown: string }> = [];
+  let remaining = maxTotalLength;
+
+  for (const document of documents) {
+    if (remaining <= 0) {
+      break;
+    }
+
+    const normalized = normalizeMarkdownSnippet(document.markdown || 'Предпросмотр недоступен', MAX_CONTEXT_DOCUMENT_SINGLE);
+    const allowedLength = Math.min(remaining, normalized.length);
+    const markdown = allowedLength < normalized.length
+      ? `${normalized.slice(0, Math.max(0, allowedLength - 24))}\n\n[...контекст сокращен...]`
+      : normalized;
+
+    result.push({
+      pageId: document.pageId,
+      title: document.title,
+      markdown,
+    });
+
+    remaining -= markdown.length;
+  }
+
+  return result;
 }
 
 function buildChatContextMarkdown(
@@ -112,7 +147,7 @@ function summarizeWorkspaceStructure(
   nodes: WorkspaceTreeNode[],
   scope: ContextScope,
   spaceId: string,
-  limit = 60,
+  limit = MAX_WORKSPACE_NODES,
 ) {
   const summaryNodes: Array<{
     id: string;
@@ -501,7 +536,10 @@ export function AiSidebarChat({
     return contextFolders.filter((folder) => folder.title.toLowerCase().includes(normalizedQuery));
   }, [contextFolders, pickerQuery]);
 
-  const currentMarkdown = useMemo(() => getEditorMarkdown(editor), [editor]);
+  const currentMarkdown = useMemo(
+    () => normalizeMarkdownSnippet(getEditorMarkdown(editor), MAX_CURRENT_FILE_MARKDOWN),
+    [editor],
+  );
   const contextSpaces = useMemo(() => {
     const unique = new Map<string, MwsSpace>();
 
@@ -555,14 +593,17 @@ export function AiSidebarChat({
   );
 
   const selectedContextPayload = useMemo(
-    () =>
-      selectedDocuments
+    () => {
+      const documents = selectedDocuments
         .filter((document) => !document.isLoading)
         .map((document) => ({
           pageId: document.pageId,
           title: document.title,
-          markdown: normalizeMarkdownSnippet(document.markdown || 'Предпросмотр недоступен'),
-        })),
+          markdown: document.markdown || 'Предпросмотр недоступен',
+        }));
+
+      return capContextDocuments(documents);
+    },
     [selectedDocuments],
   );
 
