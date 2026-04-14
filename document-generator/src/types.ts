@@ -12,7 +12,7 @@ export interface ProseMirrorDocument {
 }
 
 export interface BlockNode {
-  type: 'heading' | 'paragraph' | 'text' | 'image' | 'iframe' | 'table' | 'code_block' | 'bullet_list' | 'ordered_list' | 'task_list' | 'task_item' | 'blockquote' | 'horizontal_rule' | 'link';
+  type: 'heading' | 'paragraph' | 'text' | 'image' | 'iframe' | 'table' | 'code_block' | 'bullet_list' | 'ordered_list' | 'task_list' | 'task_item' | 'blockquote' | 'horizontal_rule' | 'link' | 'page_link';
   level?: number;
   content?: string;
   children?: BlockNode[];
@@ -28,27 +28,34 @@ export interface BlockNode {
   datasheetId?: string | null;
   viewId?: string | null;
   spaceId?: string | null;
+  // Page link attrs
+  pageId?: string | null;
+  pageTitle?: string | null;
+  // Structured inline nodes for rich rendering in docx
+  inlineNodes?: Array<{
+    type: 'text' | 'page_link' | 'link';
+    text?: string;
+    pageId?: string;
+    pageTitle?: string;
+    href?: string;
+    bold?: boolean;
+    italic?: boolean;
+    strike?: boolean;
+    code?: boolean;
+  }>;
 }
 
 export interface GenerateRequest {
-  /** Format to generate: pdf, docx, or md */
   format: 'pdf' | 'docx' | 'md';
-  /** Page title */
   title: string;
-  /**
-   * ProseMirror JSON document.
-   * Can be:
-   * - Full { type: 'doc', content: [...] } object
-   * - Just the content array
-   * - JSON string of either of the above
-   */
   document: ProseMirrorDocument | ProseMirrorNode[] | string;
-  /** Auth credentials to proxy to backend API */
   auth?: {
     accessToken?: string;
     userId?: string;
     displayName?: string;
   };
+  appBaseUrl?: string;
+  spaceId?: string;
 }
 
 export interface PdfOptions {

@@ -28,6 +28,16 @@ type AuthContext = {
   displayName?: string;
 };
 
+type LinkContext = {
+  appBaseUrl: string;
+  spaceId: string;
+};
+
+function pageUrl(ctx: LinkContext, pageId: string): string {
+  const base = ctx.appBaseUrl.replace(/\/$/, '');
+  return `${base}/spaces/${encodeURIComponent(ctx.spaceId)}/pages/${encodeURIComponent(pageId)}`;
+}
+
 function buildAuthHeaders(auth?: AuthContext): Record<string, string> {
   if (auth?.accessToken) return { Authorization: `Bearer ${auth.accessToken}` };
   if (auth?.userId) return { 'x-user-id': auth.userId, 'x-user-name': auth.displayName ?? auth.userId };
@@ -204,6 +214,36 @@ async function fetchImageBuffer(src: string): Promise<{ data: Buffer; type: 'png
 
 // ─── Inline runs ─────────────────────────────────────────────────────────────
 
+function buildInlineRuns(
+  inlineNodes: BlockNode['inlineNodes'],
+  link?: LinkContext,
+): (TextRun | ExternalHyperlink)[] {
+  if (!inlineNodes || inlineNodes.length === 0) return [new TextRun('')];
+
+  return inlineNodes.map((n) => {
+    if (n.type === 'page_link' && n.pageId && link?.appBaseUrl && link?.spaceId) {
+      const url = pageUrl(link, n.pageId);
+      return new ExternalHyperlink({
+        link: url,
+        children: [new TextRun({ text: n.text ?? n.pageTitle ?? 'Страница', style: 'Hyperlink' })],
+      });
+    }
+    if (n.type === 'link' && n.href) {
+      return new ExternalHyperlink({
+        link: n.href,
+        children: [new TextRun({ text: n.text ?? n.href, style: 'Hyperlink' })],
+      });
+    }
+    return new TextRun({
+      text: n.text ?? '',
+      bold: n.bold,
+      italics: n.italic,
+      strike: n.strike,
+      font: n.code ? 'Courier New' : undefined,
+    });
+  });
+}
+
 function makeRuns(content: string, marks?: Array<{ type: string; attrs?: Record<string, unknown> }>): (TextRun | ExternalHyperlink)[] {
   if (!marks || marks.length === 0) return [new TextRun(content)];
 
@@ -229,7 +269,7 @@ function makeRuns(content: string, marks?: Array<{ type: string; attrs?: Record<
 
 // ─── Block → docx elements (async for images) ────────────────────────────────
 
-async function blockToDocxElements(block: BlockNode, auth?: AuthContext): Promise<Paragraph[]> {
+async function blockToDocxElements(block: BlockNode, auth?: AuthContext, link?: LinkContext): Promise<Paragraph[]> {
   switch (block.type) {
     case 'heading': {
       const hLevel = Math.min(Math.max(block.level ?? 1, 1), 3) as 1 | 2 | 3;
@@ -242,11 +282,13 @@ async function blockToDocxElements(block: BlockNode, auth?: AuthContext): Promis
     }
 
     case 'paragraph':
-    case 'text':
+    case 'text': {
+      const runs = buildInlineRuns(block.inlineNodes, link);
       return [new Paragraph({
-        children: makeRuns(block.content ?? '', block.marks),
+        children: runs,
         spacing: { after: 120 },
       })];
+    }
 
     case 'image': {
       const src = block.src ?? '';
@@ -289,6 +331,24 @@ async function blockToDocxElements(block: BlockNode, auth?: AuthContext): Promis
       return [new Paragraph({
         children: [new TextRun({ text: block.content ?? 'Таблица MWS', italics: true, color: '6B7898' })],
         spacing: { after: 120 },
+      })];
+    }
+
+    case 'page_link': {
+      const label = block.pageTitle ?? block.content ?? 'Страница';
+      if (link?.appBaseUrl && link?.spaceId && block.pageId) {
+        const url = pageUrl(link, block.pageId);
+        return [new Paragraph({
+          children: [new ExternalHyperlink({
+            link: url,
+            children: [new TextRun({ text: label, style: 'Hyperlink' })],
+          })],
+          spacing: { after: 80 },
+        })];
+      }
+      return [new Paragraph({
+        children: [new TextRun(label)],
+        spacing: { after: 80 },
       })];
     }
 
@@ -363,7 +423,7 @@ function renderChildren(block: BlockNode): string {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-export async function generateDocx(title: string, blocks: BlockNode[], auth?: AuthContext): Promise<Buffer> {
+export async function generateDocx(title: string, blocks: BlockNode[], auth?: AuthContext, link?: LinkContext): Promise<Buffer> {
   const children: (Paragraph | Table)[] = [];
 
   children.push(new Paragraph({
@@ -373,7 +433,7 @@ export async function generateDocx(title: string, blocks: BlockNode[], auth?: Au
   }));
 
   for (const block of blocks) {
-    const elements = await blockToDocxElements(block, auth);
+    const elements = await blockToDocxElements(block, auth, link);
     children.push(...elements);
   }
 

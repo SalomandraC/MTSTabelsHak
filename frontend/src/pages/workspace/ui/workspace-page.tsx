@@ -2062,7 +2062,7 @@ export function WorkspacePage() {
         doc = checkpoint.document;
       }
 
-      await exportDocument(title, doc, format);
+      await exportDocument(title, doc, format, selectedSpaceId);
     };
 
     void doExport().catch((err) => {

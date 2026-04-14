@@ -58,6 +58,16 @@ type AuthContext = {
   displayName?: string;
 };
 
+type LinkContext = {
+  appBaseUrl: string;
+  spaceId: string;
+};
+
+function pageUrl(ctx: LinkContext, pageId: string): string {
+  const base = ctx.appBaseUrl.replace(/\/$/, '');
+  return `${base}/spaces/${encodeURIComponent(ctx.spaceId)}/pages/${encodeURIComponent(pageId)}`;
+}
+
 function buildAuthHeaders(auth?: AuthContext): Record<string, string> {
   if (auth?.accessToken) {
     return { Authorization: `Bearer ${auth.accessToken}` };
@@ -117,16 +127,16 @@ function renderTableHtml(title: string, fields: MwsField[], records: MwsRecord[]
 
 // ─── Block compiler ───────────────────────────────────────────────────────────
 
-async function compileBlock(block: BlockNode, auth?: AuthContext): Promise<string> {
+async function compileBlock(block: BlockNode, auth?: AuthContext, link?: LinkContext): Promise<string> {
   switch (block.type) {
     case 'heading': {
       const level = Math.min(Math.max(block.level ?? 1, 1), 6);
-      return `<h${level}>${esc(block.content ?? '')}</h${level}>`;
+      return `<h${level}>${block.content ?? ''}</h${level}>`;
     }
 
     case 'paragraph':
     case 'text':
-      return `<p>${esc(block.content ?? '')}</p>`;
+      return `<p>${block.content ?? ''}</p>`;
 
     case 'image': {
       const src = block.src ?? '';
@@ -152,18 +162,28 @@ async function compileBlock(block: BlockNode, auth?: AuthContext): Promise<strin
       return `<div class="table-placeholder">📊 ${esc(block.content ?? 'Таблица MWS')}</div>`;
     }
 
+    case 'page_link': {
+      const label = esc(block.pageTitle ?? block.content ?? 'Страница');
+      console.log(`[pdf] page_link: pageId=${block.pageId} label=${label} appBaseUrl=${link?.appBaseUrl} spaceId=${link?.spaceId}`);
+      if (link?.appBaseUrl && link?.spaceId && block.pageId) {
+        const url = pageUrl(link, block.pageId);
+        return `<a href="${escAttr(url)}">${label}</a>`;
+      }
+      return `<span>${label}</span>`;
+    }
+
     case 'code_block': {
       const lang = block.language ? `<div class="lang-label">${esc(block.language)}</div>` : '';
       return `<pre>${lang}<code>${esc(block.content ?? '')}</code></pre>`;
     }
 
     case 'bullet_list': {
-      const items = await Promise.all((block.children ?? []).map(async (c) => `<li>${await compileChildContent(c, auth)}</li>`));
+      const items = await Promise.all((block.children ?? []).map(async (c) => `<li>${await compileChildContent(c, auth, link)}</li>`));
       return `<ul>${items.join('')}</ul>`;
     }
 
     case 'ordered_list': {
-      const items = await Promise.all((block.children ?? []).map(async (c) => `<li>${await compileChildContent(c, auth)}</li>`));
+      const items = await Promise.all((block.children ?? []).map(async (c) => `<li>${await compileChildContent(c, auth, link)}</li>`));
       return `<ol>${items.join('')}</ol>`;
     }
 
@@ -174,7 +194,7 @@ async function compileBlock(block: BlockNode, auth?: AuthContext): Promise<strin
           const text = (c.children ?? []).map((ch) => ch.content ?? '').join(' ');
           return `<li class="task-item"><span>${icon}</span><span>${esc(text)}</span></li>`;
         }
-        return `<li>${await compileChildContent(c, auth)}</li>`;
+        return `<li>${await compileChildContent(c, auth, link)}</li>`;
       }));
       return `<ul style="list-style:none;padding-left:0">${items.join('')}</ul>`;
     }
@@ -186,7 +206,7 @@ async function compileBlock(block: BlockNode, auth?: AuthContext): Promise<strin
     }
 
     case 'blockquote': {
-      const inner = await Promise.all((block.children ?? []).map((c) => compileBlock(c, auth)));
+      const inner = await Promise.all((block.children ?? []).map((c) => compileBlock(c, auth, link)));
       return `<blockquote>${inner.join('')}</blockquote>`;
     }
 
@@ -198,10 +218,10 @@ async function compileBlock(block: BlockNode, auth?: AuthContext): Promise<strin
   }
 }
 
-async function compileChildContent(block: BlockNode, auth?: AuthContext): Promise<string> {
+async function compileChildContent(block: BlockNode, auth?: AuthContext, link?: LinkContext): Promise<string> {
   if (block.content) return esc(block.content);
   if (block.children) {
-    const parts = await Promise.all(block.children.map((c) => compileBlock(c, auth)));
+    const parts = await Promise.all(block.children.map((c) => compileBlock(c, auth, link)));
     return parts.join('');
   }
   return '';
@@ -214,9 +234,10 @@ export async function generatePdf(
   blocks: BlockNode[],
   opts: PdfOptions = {},
   auth?: AuthContext,
+  link?: LinkContext,
 ): Promise<Buffer> {
   const options = { ...DEFAULT_PDF_OPTIONS, ...opts };
-  const parts = await Promise.all(blocks.map((b) => compileBlock(b, auth)));
+  const parts = await Promise.all(blocks.map((b) => compileBlock(b, auth, link)));
   const body = parts.join('\n');
   const template = loadTemplate();
   const html = template({ title, body });
