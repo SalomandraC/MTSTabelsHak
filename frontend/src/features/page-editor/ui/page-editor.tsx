@@ -35,6 +35,7 @@ type PageEditorProps = {
   page: WikiPage | null;
   isLoading?: boolean;
   sidebarInsetClassName?: string;
+  hideCooperationBadge?: boolean;
   onRenamePage: (title: string) => Promise<void>;
   onToggleHeadingNumbering: (enabled: boolean) => Promise<void>;
   onCheckpoint: () => Promise<void>;
@@ -329,6 +330,7 @@ export function PageEditor({
   page,
   isLoading = false,
   sidebarInsetClassName = '',
+  hideCooperationBadge = false,
   onRenamePage,
   onToggleHeadingNumbering,
   onCheckpoint,
@@ -363,6 +365,7 @@ export function PageEditor({
       spaceId={spaceId}
       page={page}
       sidebarInsetClassName={sidebarInsetClassName}
+      hideCooperationBadge={hideCooperationBadge}
       onRenamePage={onRenamePage}
       onToggleHeadingNumbering={onToggleHeadingNumbering}
       onCheckpoint={onCheckpoint}
@@ -384,6 +387,7 @@ function LivePageEditor({
   spaceId,
   page,
   sidebarInsetClassName = '',
+  hideCooperationBadge = false,
   onRenamePage,
   onToggleHeadingNumbering,
   onCheckpoint,
@@ -620,6 +624,7 @@ function LivePageEditor({
           editable={effectiveCanEdit}
           viewMode={effectiveViewMode}
           showViewModeControls={!isCompactViewport}
+          hideCooperationBadge={hideCooperationBadge}
           onSave={controller.handleSaveMeta}
           onViewModeChange={handleChangeViewMode}
           connectionStatus={controller.connectionStatus}

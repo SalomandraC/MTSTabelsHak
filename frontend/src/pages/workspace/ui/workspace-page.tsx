@@ -2699,6 +2699,7 @@ export function WorkspacePage() {
             spaceId={selectedSpaceId}
             page={isPageLoading ? null : activePage}
             isLoading={isPageLoading}
+            hideCooperationBadge={!leftSidebar.isCollapsed || !rightSidebar.isCollapsed}
             sidebarInsetClassName={[
               leftSidebar.isCollapsed ? 'pl-12 sm:pl-14' : '',
               rightSidebar.isCollapsed && !isScreenNarrow ? 'pr-12 sm:pr-14' : '',
