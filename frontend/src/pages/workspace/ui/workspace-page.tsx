@@ -2699,6 +2699,12 @@ export function WorkspacePage() {
             spaceId={selectedSpaceId}
             page={isPageLoading ? null : activePage}
             isLoading={isPageLoading}
+            sidebarInsetClassName={[
+              leftSidebar.isCollapsed ? 'pl-12 sm:pl-14' : '',
+              rightSidebar.isCollapsed && !isScreenNarrow ? 'pr-12 sm:pr-14' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
             onRenamePage={handleRenamePage}
             onToggleHeadingNumbering={handleToggleHeadingNumbering}
             onCheckpoint={handleCheckpoint}
