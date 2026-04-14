@@ -95,7 +95,6 @@ describe('PageEditorToolbar', () => {
         onOpenLinkModal={vi.fn()}
         onOpenIframeModal={vi.fn()}
         onOpenImageModal={vi.fn()}
-        onOpenIframeModal={vi.fn()}
         onCreateComment={onCreateComment}
       />,
     );

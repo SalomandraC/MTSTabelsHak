@@ -175,7 +175,7 @@ export function FloatingToolbar({
     let absoluteTop = Math.min(start.top, end.top);
     let absoluteLeft = (start.left + end.left) / 2;
 
-    const domSelection = view.dom.ownerDocument.getSelection();
+    const domSelection = view.dom?.ownerDocument?.getSelection();
     if (domSelection && domSelection.rangeCount > 0) {
       const range = domSelection.getRangeAt(0);
       const rect = range.getBoundingClientRect();

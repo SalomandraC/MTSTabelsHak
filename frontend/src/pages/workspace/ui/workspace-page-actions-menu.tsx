@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import type { RefObject } from 'react';
+import { ChevronRight, FileDown } from 'lucide-react';
+import type { ExportFormat } from '../../../shared/lib/export-document';
 
 type WorkspacePageActionsMenuProps = {
   nodeKind: 'wikiPage' | 'wikiFolder' | 'mwsFolder';
@@ -29,7 +31,14 @@ type WorkspacePageActionsMenuProps = {
   onDeletePage: () => void;
   onRenameFolder?: () => void;
   onDeleteFolder?: () => void;
+  onExport?: (format: ExportFormat) => void;
 };
+
+const EXPORT_FORMATS: { format: ExportFormat; label: string }[] = [
+  { format: 'pdf', label: 'PDF' },
+  { format: 'docx', label: 'DOCX' },
+  { format: 'md', label: 'Markdown' },
+];
 
 export function WorkspacePageActionsMenu({
   nodeKind,
@@ -59,11 +68,12 @@ export function WorkspacePageActionsMenu({
   onDeletePage,
   onRenameFolder,
   onDeleteFolder,
+  onExport,
 }: WorkspacePageActionsMenuProps) {
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [exportSubmenuOpen, setExportSubmenuOpen] = useState(false);
   const isFolder = nodeKind === 'wikiFolder' || nodeKind === 'mwsFolder';
   const isFolderCreateMode = createMode === 'folder';
-  const isPageCreateMode = createMode === 'page';
 
   if (!isOpen) {
     return null;
@@ -74,17 +84,14 @@ export function WorkspacePageActionsMenu({
       role="menu"
       aria-label={isFolder ? `Действия для папки ${title}` : `Действия для страницы ${title}`}
       className={[
-        'z-[900] w-44 overflow-hidden rounded-xl border border-editor-border-subtle bg-white py-1 shadow-[0_16px_40px_rgba(15,23,42,0.12)]',
+        'z-[900] w-44 rounded-xl border border-editor-border-subtle bg-white py-1 shadow-[0_16px_40px_rgba(15,23,42,0.12)]',
         contextMenuPosition
           ? 'fixed'
           : 'absolute left-full top-1/2 -translate-y-1/2 ml-2',
       ].join(' ')}
       style={
         contextMenuPosition
-          ? {
-              left: contextMenuPosition.left,
-              top: contextMenuPosition.top,
-            }
+          ? { left: contextMenuPosition.left, top: contextMenuPosition.top }
           : undefined
       }
     >
@@ -107,7 +114,6 @@ export function WorkspacePageActionsMenu({
                   onCreatePageSubmit();
                 }
               }
-
               if (event.key === 'Escape') {
                 event.preventDefault();
                 onCancelCreateMode();
@@ -217,6 +223,46 @@ export function WorkspacePageActionsMenu({
               ) : null}
             </>
           ) : null}
+
+          {nodeKind === 'wikiPage' && onExport ? (
+            <div
+              className="relative"
+              onMouseEnter={() => setExportSubmenuOpen(true)}
+              onMouseLeave={() => setExportSubmenuOpen(false)}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
+              >
+                <span className="flex items-center gap-2">
+                  <FileDown size={13} strokeWidth={2} className="text-[#6b7280]" />
+                  Экспортировать
+                </span>
+                <ChevronRight size={13} strokeWidth={2} className="text-[#9ca3af]" />
+              </button>
+              {exportSubmenuOpen && (
+                <div className="absolute left-full top-0 z-50 w-32 rounded-xl border border-editor-border-subtle bg-white py-1 shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
+                  {EXPORT_FORMATS.map(({ format, label }) => (
+                    <button
+                      key={format}
+                      type="button"
+                      role="menuitem"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onCloseActionsMenu();
+                        onExport(format);
+                      }}
+                      className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
+
           {nodeKind === 'wikiPage' && canDeletePage ? (
             <button
               type="button"
