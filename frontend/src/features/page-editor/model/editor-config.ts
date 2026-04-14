@@ -50,6 +50,7 @@ import { LiveReference } from './live-reference';
 import { LiveFormula } from './live-formula';
 import { TemplateVariable } from './template-variable';
 import { Bookmark, BookmarkLink } from './bookmark';
+import { ListExitOnDoubleEnter } from './list-exit-on-double-enter';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 
 const bookmarkClickKey = new PluginKey('bookmarkClick');
@@ -192,6 +193,7 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     IframeBlock,
     TaskList,
     TaskItem.configure({ nested: true }),
+    ListExitOnDoubleEnter,
     Link.configure({
       openOnClick: false,
       autolink: true,
