@@ -11,6 +11,7 @@ import {
 import { getEditorMarkdown } from '../model/editor-markdown';
 import { AiOutputView } from '../model/ai-output-renderer';
 import { useAiTableContext } from '../model/use-ai-table-context';
+import { DEFAULT_MERMAID_CODE } from '../../diagrams';
 
 type CopilotTarget = 'table' | 'text';
 
@@ -475,6 +476,17 @@ function stripAiActionToken(value: string): string {
   return String(value ?? '').replace(/^\s*\[ACTION:[^\]]+\]\s*/i, '').trim();
 }
 
+function extractAiActionToken(value: string): string | null {
+  const match = String(value ?? '').match(/^\s*\[ACTION:([^\]]+)\]/i);
+  return match?.[1]?.trim().toLowerCase() ?? null;
+}
+
+function sanitizeMermaidAnswer(value: string): string {
+  const withoutAction = stripAiActionToken(value);
+  const fenced = withoutAction.match(/^```(?:mermaid)?\s*([\s\S]*?)\s*```$/i);
+  return (fenced?.[1] ?? withoutAction).trim();
+}
+
 function capContextMarkdown(value: string, maxLength = MAX_INLINE_CONTEXT_MARKDOWN): string {
   const normalized = String(value ?? '').trim();
   if (normalized.length <= maxLength) {
@@ -622,6 +634,7 @@ export function AiInlineCopilot({
   pageTitle,
   isPageNavigationEnabled,
   isDocumentStructureEnabled,
+  isDiagramFeatureEnabled,
   onClose,
 }: {
   enabled: boolean;
@@ -633,6 +646,7 @@ export function AiInlineCopilot({
   pageTitle?: string;
   isPageNavigationEnabled: boolean;
   isDocumentStructureEnabled: boolean;
+  isDiagramFeatureEnabled: boolean;
   onClose: () => void;
 }) {
   const [prompt, setPrompt] = useState('');
@@ -1211,6 +1225,37 @@ export function AiInlineCopilot({
     });
   };
 
+  const runDiagramGeneration = async () => {
+    await withBusy(async (signal) => {
+      const userPrompt = stripAiActionToken(prompt.trim());
+      const markdown = getInlineContextMarkdown(editor);
+      const { response, answer } = await fetchAiAnswerWithTableRecovery({
+        question: [
+          'Ты — системный архитектор. Твоя задача — визуализировать описание пользователя в формате Mermaid.js.',
+          'Правила:',
+          'Используй только актуальный синтаксис Mermaid.',
+          'Если описывается процесс — делай Flowchart. Если структура данных — Class Diagram.',
+          'Верни ТОЛЬКО чистый код Mermaid без пояснений и без блоков кода ```.',
+          `Описание пользователя: ${userPrompt || 'Построй базовую UML диаграмму для нового модуля.'}`,
+          `Контекст документа: ${markdown}`,
+        ].join('\n'),
+        pageId: pageId ?? undefined,
+        pageTitle,
+        pageSnapshot: { markdown },
+        intent: 'chat',
+      }, signal);
+
+      const mermaidCode = sanitizeMermaidAnswer(answer) || DEFAULT_MERMAID_CODE;
+
+      if (editor) {
+        editor.chain().focus().insertMermaidDiagram({ code: mermaidCode }).run();
+      }
+
+      handleAiChatResponse(response);
+      setOutput(mermaidCode);
+    });
+  };
+
   const createReportText = async (signal: AbortSignal): Promise<string> => {
     if (activeContext.kind === 'table' && activeContext.datasheetId) {
       const context = await getTableContext({
@@ -1343,6 +1388,12 @@ export function AiInlineCopilot({
 
     const trimmed = prompt.trim();
     if (!trimmed) {
+      return;
+    }
+
+    const actionToken = extractAiActionToken(trimmed);
+    if (actionToken === 'diagram' && isDiagramFeatureEnabled) {
+      await runDiagramGeneration();
       return;
     }
 
@@ -1606,6 +1657,15 @@ export function AiInlineCopilot({
           disabled={isBusy}
         >
           Улучшения
+        </button>
+
+        <button
+          type="button"
+          className="rounded-md border border-[#ffd9e1] bg-white px-2 py-1 text-xs text-[#5a6170] transition-colors hover:bg-[#fff1f3] disabled:opacity-50"
+          onClick={() => applyPromptSuggestion('[ACTION:DIAGRAM] Нарисуй процесс заказа еды от клика до доставки.')}
+          disabled={isBusy || !isDiagramFeatureEnabled}
+        >
+          Диаграмма
         </button>
 
       </div>

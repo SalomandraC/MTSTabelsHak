@@ -78,20 +78,56 @@ function clearSuggestion(instance: {
   instance.editor.view.dispatch(instance.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
 }
 
-function buildSuggestionForCursor(editor: any, suggestion: string): string {
+function extractCurrentWordPrefix(editor: any): string {
   const selection = editor.state.selection;
-  const from = selection.to;
-  const previousChar = editor.state.doc.textBetween(Math.max(0, from - 1), from, '', '');
-  const trimmedSuggestion = suggestion.trimStart();
+  const cursorPos = selection.to;
+  const scanFrom = Math.max(0, cursorPos - 128);
+  const recentText = editor.state.doc.textBetween(scanFrom, cursorPos, '', '');
 
-  if (!trimmedSuggestion) {
+  // Extract last contiguous word (letters, digits, underscore) immediately before cursor
+  const wordMatch = recentText.match(/[\p{L}\p{N}_]+$/u);
+  return wordMatch ? wordMatch[0] : '';
+}
+
+function buildSuggestionForCursor(editor: any, suggestion: string): string {
+  if (!suggestion) {
     return '';
   }
 
-  const startsWithPunctuation = /^[,.;:!?)]/.test(trimmedSuggestion);
-  const needsLeadingSpace = previousChar.length > 0 && !/\s/.test(previousChar) && !startsWithPunctuation;
+  const selection = editor.state.selection;
+  const cursorPos = selection.to;
 
-  return needsLeadingSpace ? ` ${trimmedSuggestion}` : trimmedSuggestion;
+  // Extract current word prefix (incomplete word before cursor)
+  const currentWordPrefix = extractCurrentWordPrefix(editor);
+
+  // Check if cursor has word character immediately after it
+  const nextChar = editor.state.doc.textBetween(
+    cursorPos,
+    Math.min(cursorPos + 1, editor.state.doc.content.size),
+    '',
+    '',
+  );
+  const isMidWord = isWordChar(nextChar);
+
+  // SMART MERGE: Remove currentWordPrefix from start of suggestion if present
+  let merged = suggestion;
+
+  if (currentWordPrefix) {
+    const suggestionLower = suggestion.toLowerCase();
+    const prefixLower = currentWordPrefix.toLowerCase();
+
+    // If suggestion starts with prefix, remove it
+    if (suggestionLower.startsWith(prefixLower)) {
+      merged = suggestion.slice(currentWordPrefix.length);
+    }
+  }
+
+  // If we're mid-word, strip leading space to avoid gaps
+  if (isMidWord && merged.startsWith(' ')) {
+    merged = merged.trimStart();
+  }
+
+  return merged;
 }
 
 function countTrailingSpacesBeforeCursor(editor: any): number {
@@ -110,6 +146,14 @@ function countTrailingSpacesBeforeCursor(editor: any): number {
   }
 
   return count;
+}
+
+function buildContextWithFullWord(editor: any): string {
+  const selection = editor.state.selection;
+  const cursorPos = selection.to;
+  const scanFrom = Math.max(0, cursorPos - 1200);
+  const upToEOD = editor.state.doc.textBetween(scanFrom, cursorPos, '\n', ' ');
+  return upToEOD;
 }
 
 function buildDecorations(editor: any, suggestion: string, anchorPos: number | null): DecorationSet {
@@ -166,7 +210,7 @@ function scheduleGhostSuggestion(instance: {
     return;
   }
 
-  const currentText = instance.editor.state.doc.textBetween(Math.max(0, selection.to - 1200), selection.to, '\n', ' ');
+  const currentText = buildContextWithFullWord(instance.editor);
 
   if (currentText.trim().length < instance.options.minChars) {
     clearSuggestion(instance);

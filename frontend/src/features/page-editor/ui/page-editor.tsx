@@ -481,6 +481,7 @@ function LivePageEditor({
   const isAiToolbarEnabled = isAiPluginEnabled && isEditorSlotEnabled('toolbar_bubble') && canUseAi;
   const isAiGhostEnabled = isAiPluginEnabled && isAiAssistantFeatureEnabled('ghost_text') && canUseAi;
   const isAiInlineChatEnabled = isAiPluginEnabled && isAiAssistantFeatureEnabled('inline_chat') && canUseAi;
+  const isVisualDiagramsEnabled = isPluginEnabled('visual-diagrams');
   const isPageNavigationEnabled = isPluginEnabled('page-navigation');
   const isDocumentStructureEnabled = isAiPluginEnabled && isAiAssistantFeatureEnabled('document_structure') && canUseAi;
   const [copilotAnchor, setCopilotAnchor] = useState<CopilotAnchor | null>(null);
@@ -1039,6 +1040,7 @@ function LivePageEditor({
               pageTitle={controller.title}
               isPageNavigationEnabled={isPageNavigationEnabled}
               isDocumentStructureEnabled={isDocumentStructureEnabled}
+              isDiagramFeatureEnabled={isVisualDiagramsEnabled}
               onClose={() => setCopilotAnchor(null)}
             />
           )}
