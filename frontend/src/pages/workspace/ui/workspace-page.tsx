@@ -72,17 +72,17 @@ const WHATS_NEW_BANNER_ENABLED = (import.meta.env.VITE_ENABLE_WHATS_NEW_BANNER ?
 
 function getShareUrl(spaceId: string, pageId: string | null, readOnly = false) {
   const url = new URL(window.location.href);
-  url.pathname = pageId
-    ? `/spaces/${encodeURIComponent(spaceId)}/pages/${encodeURIComponent(pageId)}`
-    : `/spaces/${encodeURIComponent(spaceId)}`;
+  if (readOnly && pageId) {
+    url.pathname = `/spaces/${encodeURIComponent(spaceId)}/pages/${encodeURIComponent(pageId)}/read-only`;
+  } else {
+    url.pathname = pageId
+      ? `/spaces/${encodeURIComponent(spaceId)}/pages/${encodeURIComponent(pageId)}`
+      : `/spaces/${encodeURIComponent(spaceId)}`;
+  }
   url.searchParams.delete('spaceId');
   url.searchParams.delete('pageId');
 
-  if (readOnly) {
-    url.searchParams.set('readOnly', 'true');
-  } else {
-    url.searchParams.delete('readOnly');
-  }
+  url.searchParams.delete('readOnly');
 
   return url.toString();
 }
@@ -264,6 +264,64 @@ const ACCESS_SCOPE_OPTIONS: Array<{
   { value: 'space_members', label: 'Участники пространства' },
   { value: 'link_holders', label: 'Все, у кого есть ссылка' },
 ];
+
+function AccessScopeSelect({
+  label,
+  value,
+  isOpen,
+  onToggle,
+  onChange,
+}: {
+  label: string;
+  value: DocumentAccessPolicy['viewAccess'];
+  isOpen: boolean;
+  onToggle: () => void;
+  onChange: (nextValue: DocumentAccessPolicy['viewAccess']) => void;
+}) {
+  const selectedOption = ACCESS_SCOPE_OPTIONS.find((option) => option.value === value);
+
+  return (
+    <div className="block text-xs text-[#5f7189]">
+      <span className="mb-1 block font-semibold">{label}</span>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex w-full items-center justify-between gap-2 rounded-md border border-[#d4deec] bg-white px-3 py-2 text-left text-sm text-editor-text-primary outline-none transition-colors hover:border-[#c2d2e8] hover:bg-[#f9fbff] focus-visible:ring-2 focus-visible:ring-[#d70032]/20"
+        >
+          <span className="truncate">{selectedOption?.label ?? 'Выберите вариант'}</span>
+          <ChevronDown
+            size={14}
+            strokeWidth={2.2}
+            className={isOpen ? 'shrink-0 rotate-180 transition-transform' : 'shrink-0 transition-transform'}
+          />
+        </button>
+        {isOpen ? (
+          <div className="absolute left-0 top-11 z-[130] w-full rounded-lg border border-[#d4deec] bg-white p-1 shadow-[0_10px_24px_rgba(15,23,42,0.12)]">
+            {ACCESS_SCOPE_OPTIONS.map((option) => {
+              const isSelected = option.value === value;
+              return (
+                <button
+                  key={`${label}-${option.value}`}
+                  type="button"
+                  onClick={() => onChange(option.value)}
+                  className={[
+                    'flex w-full items-center rounded-md px-2.5 py-1.5 text-left text-sm transition-colors',
+                    isSelected
+                      ? 'bg-[#d70032] text-white'
+                      : 'text-editor-text-primary hover:bg-[#fff1f3] hover:text-[#b00025]',
+                  ].join(' ')}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 function WorkspaceTreeItem({
   node,
@@ -924,6 +982,8 @@ export function WorkspacePage() {
     setDragOverPosition(null);
   }, []);
   const spaceSelectMenuRef = useRef<HTMLDivElement>(null);
+  const shareMenuRef = useRef<HTMLDivElement>(null);
+  const accessSettingsRef = useRef<HTMLDivElement>(null);
   const blankAreaCreateRef = useRef<HTMLDivElement>(null);
   const blankAreaCreateInputRef = useRef<HTMLInputElement>(null);
   const [activePageId, setActivePageId] = useState<string | null>(null);
@@ -985,6 +1045,8 @@ export function WorkspacePage() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isEditingDisplayName, setIsEditingDisplayName] = useState(false);
   const [isSpaceMenuOpen, setIsSpaceMenuOpen] = useState(false);
+  const [isShareMenuOpen, setIsShareMenuOpen] = useState(false);
+  const [openAccessSelect, setOpenAccessSelect] = useState<'view' | 'comment' | 'edit' | null>(null);
   const [displayNameDraft, setDisplayNameDraft] = useState(displayName);
   const [isAccessPanelOpen, setIsAccessPanelOpen] = useState(false);
   const [templates, setTemplates] = useState<PageTemplateSummary[]>([]);
@@ -1047,6 +1109,7 @@ export function WorkspacePage() {
   );
   const canManageAccess = activePage?.access?.capabilities.canManageAccess ?? false;
   const canEditActivePage = activePage?.access?.capabilities.canEdit ?? true;
+  const canChooseShareMode = (accessDraft?.viewAccess ?? activePage?.access?.policy.viewAccess) === 'link_holders';
 
   const countPageLinks = useCallback((editor: Editor) => {
     let count = 0;
@@ -1146,6 +1209,40 @@ export function WorkspacePage() {
       window.removeEventListener('mousedown', handlePointerDown);
     };
   }, [isSpaceMenuOpen]);
+
+  useEffect(() => {
+    if (!isShareMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (shareMenuRef.current && !shareMenuRef.current.contains(event.target as Node)) {
+        setIsShareMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+    };
+  }, [isShareMenuOpen]);
+
+  useEffect(() => {
+    if (!openAccessSelect) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (accessSettingsRef.current && !accessSettingsRef.current.contains(event.target as Node)) {
+        setOpenAccessSelect(null);
+      }
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+    };
+  }, [openAccessSelect]);
 
   useEffect(() => {
     const updateRightSidebarVisibility = () => {
@@ -1786,6 +1883,24 @@ export function WorkspacePage() {
     window.setTimeout(() => setShareStatus(''), 2200);
   };
 
+  const handleCopyLinkClick = () => {
+    if (canChooseShareMode) {
+      setIsShareMenuOpen((current) => !current);
+      return;
+    }
+
+    setIsShareMenuOpen(false);
+    void handleCopyShareLink();
+  };
+
+  const handleAccessScopeChange = useCallback(
+    (field: 'viewAccess' | 'commentAccess' | 'editAccess', nextValue: DocumentAccessPolicy['viewAccess']) => {
+      setAccessDraft((current) => (current ? { ...current, [field]: nextValue } : current));
+      setOpenAccessSelect(null);
+    },
+    [],
+  );
+
   const handleToggleFolder = (folderId: string) => {
     setExpandedFolderIds((current) => {
       const next = new Set(current);
@@ -2354,55 +2469,7 @@ export function WorkspacePage() {
 
   return (
     <main className="flex h-screen overflow-hidden bg-[#f2f5fb] text-editor-text-primary">
-      {isWhatsNewBannerVisible ? (
-        <div className="pointer-events-none fixed left-1/2 top-4 z-[150] w-full max-w-3xl -translate-x-1/2 px-4">
-          <div className="pointer-events-auto overflow-hidden rounded-2xl border border-[#f8d7df] bg-gradient-to-r from-[#fff6f8] via-white to-[#f4f8ff] shadow-[0_16px_40px_rgba(15,23,42,0.14)]">
-            <div
-              className="h-1 bg-[#d70032] transition-all duration-1000"
-              style={{ width: `${Math.max(0, (whatsNewBannerSecondsLeft / WHATS_NEW_BANNER_DURATION_SEC) * 100)}%` }}
-            />
-            <div className="flex items-start gap-3 px-4 py-3 sm:px-5">
-              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#ffe1e7] text-[#d70032]">
-                <Sparkles size={16} strokeWidth={2.3} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-[#1f1f1f]">Обновление редактора</p>
-                <p className="mt-0.5 text-xs text-[#4b5563]">
-                  Добавили стили для AI-улучшения текста: Обычный, Деловой, Военный, Средневековый, Церковнославянский,
-                  Исправить ошибки и Дополнить. Также улучшили ghost-подсказки: стабильнее у курсора, аккуратные пробелы
-                  при принятии, скрытие при открытии inline-копилота.
-                </p>
-                <p className="mt-1 text-xs text-[#4b5563]">
-                  Еще добавили Live переменные из таблиц: можно вставлять значение ячейки в текст, открывать подсказку по hover
-                  и собирать AI-отчеты по таблице прямо под ней без markdown-таблиц.
-                </p>
-                <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7b8390]">
-                  Окно закроется через {whatsNewBannerSecondsLeft} сек
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <button
-                  type="button"
-                  onClick={disableWhatsNewBanner}
-                  className="rounded-lg border border-editor-border-subtle bg-white px-2.5 py-1 text-[11px] font-semibold text-[#556070] transition-colors hover:bg-[#f7f8fa]"
-                  title="Больше не показывать"
-                >
-                  Не показывать
-                </button>
-                <button
-                  type="button"
-                  onClick={closeWhatsNewBanner}
-                  className="flex h-7 w-7 items-center justify-center rounded-full text-[#7b8390] transition-colors hover:bg-[#f2f4f8] hover:text-[#1f2937]"
-                  aria-label="Закрыть уведомление"
-                  title="Закрыть"
-                >
-                  <X size={15} strokeWidth={2.2} />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      
       {!leftSidebar.isCollapsed ? (
         <aside
           className="relative z-[90] flex h-full shrink-0 flex-col border-r border-[#e5e6eb] bg-white"
@@ -3103,9 +3170,44 @@ export function WorkspacePage() {
                       </button>
                     ) : null}
                   </div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">Связи</p>
-                  <h2 className="mt-1 font-wide text-base font-semibold">{activePage?.title ?? 'Страница не выбрана'}</h2>
                   
+                  <div ref={shareMenuRef} className="relative mt-3">
+                    <button
+                      type="button"
+                      onClick={handleCopyLinkClick}
+                      disabled={!activePageId}
+                      className="w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm font-semibold text-editor-text-secondary transition-colors hover:bg-editor-bg-control disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {shareStatus || 'Скопировать ссылку'}
+                    </button>
+                    {isShareMenuOpen && canChooseShareMode ? (
+                      <div className="absolute left-0 top-11 z-[120] w-full rounded-lg border border-[#ffd9e1] bg-white p-1 shadow-[0_10px_30px_rgba(215,0,50,0.15)]" role="menu">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsShareMenuOpen(false);
+                            void handleCopyShareLink();
+                          }}
+                          className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-xs font-semibold text-[#d70032] transition-colors hover:bg-[#d70032] hover:text-white"
+                          role="menuitem"
+                        >
+                          Полная ссылка
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsShareMenuOpen(false);
+                            void handleCopyReadOnlyShareLink();
+                          }}
+                          className="mt-1 flex w-full items-center rounded-lg px-2 py-1.5 text-left text-xs font-semibold text-[#d70032] transition-colors hover:bg-[#d70032] hover:text-white"
+                          role="menuitem"
+                        >
+                          Ссылка только для чтения
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => {
@@ -3143,76 +3245,28 @@ export function WorkspacePage() {
                         {isAccessPanelOpen ? <ChevronDown size={15} strokeWidth={2.3} /> : <ChevronRight size={15} strokeWidth={2.3} />}
                       </button>
                       {isAccessPanelOpen ? (
-                        <div id="workspace-access-settings" className="mt-3 space-y-3">
-                          <label className="block text-xs text-[#5f7189]">
-                            <span className="mb-1 block font-semibold">Кто может просматривать</span>
-                            <select
-                              value={accessDraft.viewAccess}
-                              onChange={(event) =>
-                                setAccessDraft((current) =>
-                                  current
-                                    ? {
-                                        ...current,
-                                        viewAccess: event.target.value as DocumentAccessPolicy['viewAccess'],
-                                      }
-                                    : current
-                                )
-                              }
-                              className="w-full rounded-lg border border-[#d4deec] bg-white px-3 py-2 text-sm text-editor-text-primary outline-none"
-                            >
-                              {ACCESS_SCOPE_OPTIONS.map((option) => (
-                                <option key={`view-${option.value}`} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="block text-xs text-[#5f7189]">
-                            <span className="mb-1 block font-semibold">Кто может комментировать</span>
-                            <select
-                              value={accessDraft.commentAccess}
-                              onChange={(event) =>
-                                setAccessDraft((current) =>
-                                  current
-                                    ? {
-                                        ...current,
-                                        commentAccess: event.target.value as DocumentAccessPolicy['commentAccess'],
-                                      }
-                                    : current
-                                )
-                              }
-                              className="w-full rounded-lg border border-[#d4deec] bg-white px-3 py-2 text-sm text-editor-text-primary outline-none"
-                            >
-                              {ACCESS_SCOPE_OPTIONS.map((option) => (
-                                <option key={`comment-${option.value}`} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="block text-xs text-[#5f7189]">
-                            <span className="mb-1 block font-semibold">Кто может редактировать</span>
-                            <select
-                              value={accessDraft.editAccess}
-                              onChange={(event) =>
-                                setAccessDraft((current) =>
-                                  current
-                                    ? {
-                                        ...current,
-                                        editAccess: event.target.value as DocumentAccessPolicy['editAccess'],
-                                      }
-                                    : current
-                                )
-                              }
-                              className="w-full rounded-lg border border-[#d4deec] bg-white px-3 py-2 text-sm text-editor-text-primary outline-none"
-                            >
-                              {ACCESS_SCOPE_OPTIONS.map((option) => (
-                                <option key={`edit-${option.value}`} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
+                        <div id="workspace-access-settings" ref={accessSettingsRef} className="mt-3 space-y-3">
+                          <AccessScopeSelect
+                            label="Кто может просматривать"
+                            value={accessDraft.viewAccess}
+                            isOpen={openAccessSelect === 'view'}
+                            onToggle={() => setOpenAccessSelect((current) => (current === 'view' ? null : 'view'))}
+                            onChange={(nextValue) => handleAccessScopeChange('viewAccess', nextValue)}
+                          />
+                          <AccessScopeSelect
+                            label="Кто может комментировать"
+                            value={accessDraft.commentAccess}
+                            isOpen={openAccessSelect === 'comment'}
+                            onToggle={() => setOpenAccessSelect((current) => (current === 'comment' ? null : 'comment'))}
+                            onChange={(nextValue) => handleAccessScopeChange('commentAccess', nextValue)}
+                          />
+                          <AccessScopeSelect
+                            label="Кто может редактировать"
+                            value={accessDraft.editAccess}
+                            isOpen={openAccessSelect === 'edit'}
+                            onToggle={() => setOpenAccessSelect((current) => (current === 'edit' ? null : 'edit'))}
+                            onChange={(nextValue) => handleAccessScopeChange('editAccess', nextValue)}
+                          />
                           <button
                             type="button"
                             onClick={() => void handleSaveAccessSettings()}
