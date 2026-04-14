@@ -8,14 +8,12 @@ import { DEFAULT_PDF_OPTIONS } from '../types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Load template from file; fall back to inline if file not found (e.g. during tests)
 function loadTemplate(): HandlebarsTemplateDelegate {
   try {
     const tplPath = join(__dirname, '..', 'templates', 'pdf', 'document.hbs');
     const src = readFileSync(tplPath, 'utf-8');
     return Handlebars.compile(src);
   } catch {
-    // Inline fallback
     return Handlebars.compile(`<!DOCTYPE html><html><head><meta charset="utf-8">
 <style>
   @page{size:A4;margin:20mm 15mm}
@@ -40,50 +38,86 @@ function loadTemplate(): HandlebarsTemplateDelegate {
 // ─── HTML escaping ────────────────────────────────────────────────────────────
 
 function esc(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function escAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// ─── Inline content renderer (handles marks on text nodes) ───────────────────
+// ─── MWS table data fetcher ───────────────────────────────────────────────────
 
-function renderInlineNodes(nodes: BlockNode[]): string {
-  return nodes.map((n) => {
-    let text = esc(n.content ?? '');
-    if (n.marks) {
-      for (const mark of n.marks) {
-        switch (mark.type) {
-          case 'bold': text = `<strong>${text}</strong>`; break;
-          case 'italic': text = `<em>${text}</em>`; break;
-          case 'strike': text = `<s>${text}</s>`; break;
-          case 'underline': text = `<u>${text}</u>`; break;
-          case 'code': text = `<code>${text}</code>`; break;
-          case 'highlight': {
-            const color = (mark.attrs?.color as string) ?? '#fef08a';
-            text = `<mark style="background-color:${escAttr(color)}">${text}</mark>`;
-            break;
-          }
-          case 'link': {
-            const href = escAttr((mark.attrs?.href as string) ?? '#');
-            text = `<a href="${href}">${text}</a>`;
-            break;
-          }
-        }
-      }
-    }
-    return text;
+const API_BASE = process.env.API_BASE_URL ?? 'http://api:8080';
+
+type MwsField = { id: string; name: string };
+type MwsRecord = { recordId: string; fields: Record<string, unknown> };
+
+type AuthContext = {
+  accessToken?: string;
+  userId?: string;
+  displayName?: string;
+};
+
+function buildAuthHeaders(auth?: AuthContext): Record<string, string> {
+  if (auth?.accessToken) {
+    return { Authorization: `Bearer ${auth.accessToken}` };
+  }
+  if (auth?.userId) {
+    return {
+      'x-user-id': auth.userId,
+      'x-user-name': auth.displayName ?? auth.userId,
+    };
+  }
+  return { 'x-user-id': 'docgen', 'x-user-name': 'Document Generator' };
+}
+
+async function fetchTableData(
+  datasheetId: string,
+  viewId?: string | null,
+  auth?: AuthContext,
+): Promise<{ fields: MwsField[]; records: MwsRecord[] } | null> {
+  const headers = buildAuthHeaders(auth);
+  try {
+    const fieldsUrl = `${API_BASE}/api/v1/mws/datasheets/${datasheetId}/fields${viewId ? `?viewId=${viewId}` : ''}`;
+    const fieldsRes = await fetch(fieldsUrl, { headers });
+    if (!fieldsRes.ok) return null;
+    const { items: fields } = await fieldsRes.json() as { items: MwsField[] };
+
+    const recordsUrl = `${API_BASE}/api/v1/mws/datasheets/${datasheetId}/records?pageSize=100&fieldKey=id&cellFormat=json${viewId ? `&viewId=${viewId}` : ''}`;
+    const recordsRes = await fetch(recordsUrl, { headers });
+    if (!recordsRes.ok) return null;
+    const { items: records } = await recordsRes.json() as { items: MwsRecord[] };
+
+    return { fields, records };
+  } catch {
+    return null;
+  }
+}
+
+function renderTableHtml(title: string, fields: MwsField[], records: MwsRecord[]): string {
+  const headers = fields.map((f) => `<th>${esc(f.name)}</th>`).join('');
+  const rows = records.map((r) => {
+    const cells = fields.map((f) => {
+      const val = r.fields[f.id];
+      const text = val == null ? '' : typeof val === 'object' ? JSON.stringify(val) : String(val);
+      return `<td>${esc(text)}</td>`;
+    }).join('');
+    return `<tr>${cells}</tr>`;
   }).join('');
+
+  return `
+    <div style="margin:12pt 0">
+      ${title ? `<p style="font-weight:600;margin-bottom:6px">${esc(title)}</p>` : ''}
+      <table>
+        <thead><tr>${headers}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
 }
 
 // ─── Block compiler ───────────────────────────────────────────────────────────
 
-function compileBlock(block: BlockNode): string {
+async function compileBlock(block: BlockNode, auth?: AuthContext): Promise<string> {
   switch (block.type) {
     case 'heading': {
       const level = Math.min(Math.max(block.level ?? 1, 1), 6);
@@ -105,15 +139,18 @@ function compileBlock(block: BlockNode): string {
 
     case 'iframe': {
       const src = block.src ?? '';
-      // Convert YouTube watch URLs to embed
-      const embedSrc = src
-        .replace(/youtube\.com\/watch\?v=([^&]+)/, 'youtube.com/embed/$1')
-        .replace(/youtu\.be\/([^?]+)/, 'youtube.com/embed/$1');
       return `<div class="iframe-placeholder">🔗 Встроенный контент: <a href="${escAttr(src)}">${esc(src)}</a></div>`;
     }
 
-    case 'table':
+    case 'table': {
+      if (block.datasheetId) {
+        const data = await fetchTableData(block.datasheetId, block.viewId, auth);
+        if (data && data.fields.length > 0) {
+          return renderTableHtml(block.content ?? '', data.fields, data.records);
+        }
+      }
       return `<div class="table-placeholder">📊 ${esc(block.content ?? 'Таблица MWS')}</div>`;
+    }
 
     case 'code_block': {
       const lang = block.language ? `<div class="lang-label">${esc(block.language)}</div>` : '';
@@ -121,36 +158,36 @@ function compileBlock(block: BlockNode): string {
     }
 
     case 'bullet_list': {
-      const items = (block.children ?? []).map((c) => `<li>${compileChildContent(c)}</li>`).join('');
-      return `<ul>${items}</ul>`;
+      const items = await Promise.all((block.children ?? []).map(async (c) => `<li>${await compileChildContent(c, auth)}</li>`));
+      return `<ul>${items.join('')}</ul>`;
     }
 
     case 'ordered_list': {
-      const items = (block.children ?? []).map((c) => `<li>${compileChildContent(c)}</li>`).join('');
-      return `<ol>${items}</ol>`;
+      const items = await Promise.all((block.children ?? []).map(async (c) => `<li>${await compileChildContent(c, auth)}</li>`));
+      return `<ol>${items.join('')}</ol>`;
     }
 
     case 'task_list': {
-      const items = (block.children ?? []).map((c) => {
+      const items = await Promise.all((block.children ?? []).map(async (c) => {
         if (c.type === 'task_item') {
           const icon = c.checked ? '☑' : '☐';
-          const text = (c.children ?? []).map(compileChildContent).join(' ');
+          const text = (c.children ?? []).map((ch) => ch.content ?? '').join(' ');
           return `<li class="task-item"><span>${icon}</span><span>${esc(text)}</span></li>`;
         }
-        return `<li>${compileChildContent(c)}</li>`;
-      }).join('');
-      return `<ul style="list-style:none;padding-left:0">${items}</ul>`;
+        return `<li>${await compileChildContent(c, auth)}</li>`;
+      }));
+      return `<ul style="list-style:none;padding-left:0">${items.join('')}</ul>`;
     }
 
     case 'task_item': {
       const icon = block.checked ? '☑' : '☐';
-      const text = (block.children ?? []).map(compileChildContent).join(' ');
+      const text = (block.children ?? []).map((ch) => ch.content ?? '').join(' ');
       return `<div class="task-item"><span>${icon}</span><span>${esc(text)}</span></div>`;
     }
 
     case 'blockquote': {
-      const inner = (block.children ?? []).map(compileBlock).join('');
-      return `<blockquote>${inner}</blockquote>`;
+      const inner = await Promise.all((block.children ?? []).map((c) => compileBlock(c, auth)));
+      return `<blockquote>${inner.join('')}</blockquote>`;
     }
 
     case 'horizontal_rule':
@@ -161,9 +198,12 @@ function compileBlock(block: BlockNode): string {
   }
 }
 
-function compileChildContent(block: BlockNode): string {
+async function compileChildContent(block: BlockNode, auth?: AuthContext): Promise<string> {
   if (block.content) return esc(block.content);
-  if (block.children) return block.children.map(compileBlock).join('');
+  if (block.children) {
+    const parts = await Promise.all(block.children.map((c) => compileBlock(c, auth)));
+    return parts.join('');
+  }
   return '';
 }
 
@@ -173,9 +213,11 @@ export async function generatePdf(
   title: string,
   blocks: BlockNode[],
   opts: PdfOptions = {},
+  auth?: AuthContext,
 ): Promise<Buffer> {
   const options = { ...DEFAULT_PDF_OPTIONS, ...opts };
-  const body = blocks.map(compileBlock).join('\n');
+  const parts = await Promise.all(blocks.map((b) => compileBlock(b, auth)));
+  const body = parts.join('\n');
   const template = loadTemplate();
   const html = template({ title, body });
 

@@ -79,8 +79,10 @@ function flattenNode(node: ProseMirrorNode, blocks: BlockNode[]): void {
     case 'mwsTableEmbed': {
       blocks.push({
         type: 'table',
-        content: `📊 ${node.attrs?.title as string ?? 'MWS Table'}`,
-        // Full table data could be resolved via API — placeholder for now
+        content: (node.attrs?.title as string) ?? 'MWS Table',
+        datasheetId: (node.attrs?.datasheetId as string) ?? null,
+        viewId: (node.attrs?.viewId as string) ?? null,
+        spaceId: (node.attrs?.spaceId as string) ?? null,
       });
       break;
     }

@@ -24,6 +24,10 @@ export interface BlockNode {
   href?: string;
   language?: string;
   marks?: Array<{ type: string; attrs?: Record<string, unknown> }>;
+  // MWS table embed attrs
+  datasheetId?: string | null;
+  viewId?: string | null;
+  spaceId?: string | null;
 }
 
 export interface GenerateRequest {
@@ -39,6 +43,12 @@ export interface GenerateRequest {
    * - JSON string of either of the above
    */
   document: ProseMirrorDocument | ProseMirrorNode[] | string;
+  /** Auth credentials to proxy to backend API */
+  auth?: {
+    accessToken?: string;
+    userId?: string;
+    displayName?: string;
+  };
 }
 
 export interface PdfOptions {

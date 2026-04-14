@@ -20,7 +20,7 @@ app.get('/health', (_req: Request, res: Response) => {
 // Generate document
 app.post('/generate', async (req: Request, res: Response) => {
   try {
-    const { format, title, document } = req.body as GenerateRequest;
+    const { format, title, document, auth } = req.body as GenerateRequest;
 
     if (!format || !['pdf', 'docx', 'md'].includes(format)) {
       return res.status(400).json({ error: 'Format must be "pdf", "docx", or "md"' });
@@ -34,7 +34,6 @@ app.post('/generate', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Document is required' });
     }
 
-    // Parse document
     const blocks = parseDocument(document);
 
     if (blocks.length === 0) {
@@ -47,7 +46,7 @@ app.post('/generate', async (req: Request, res: Response) => {
 
     switch (format) {
       case 'pdf':
-        buffer = await generatePdf(title, blocks);
+        buffer = await generatePdf(title, blocks, {}, auth);
         contentType = 'application/pdf';
         filename = `${sanitizeFilename(title)}.pdf`;
         break;
@@ -70,6 +69,7 @@ app.post('/generate', async (req: Request, res: Response) => {
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
     res.setHeader('Content-Length', buffer.length);
+    console.log(`[generate] ${format.toUpperCase()} "${title}" → ${filename} (${buffer.length} bytes)`);
     res.send(buffer);
   } catch (err: unknown) {
     console.error('Generation error:', err);

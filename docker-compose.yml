@@ -63,6 +63,7 @@ services:
       context: ./document-generator
     environment:
       PORT: 3200
+      API_BASE_URL: http://api:8080
     ports:
       - "3200:3200"
 
