@@ -4,11 +4,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, WikiNodeType } from '@prisma/client';
+import { yDocToProsemirrorJSON } from 'y-prosemirror';
 import * as Y from 'yjs';
 import { UserContext } from 'src/auth/user-context';
 import { decodeBase64ToBuffer } from 'src/common/utils';
 import { PrismaService } from 'src/infra/prisma/prisma.service';
 import { ContextIndexingService } from 'src/context-engine/context-indexing.service';
+import { DocumentIndexingService } from 'src/links/document-indexing.service';
 import { MwsService } from 'src/mws/mws.service';
 import { PageAccessService } from 'src/page-access/page-access.service';
 import { RealtimeService } from 'src/realtime/realtime.service';
@@ -28,6 +30,7 @@ export class PagesService {
     private readonly realtimeService: RealtimeService,
     private readonly mwsService: MwsService,
     private readonly contextIndexingService: ContextIndexingService,
+    private readonly documentIndexingService: DocumentIndexingService,
   ) {}
 
   async listPages(spaceId: string, query?: string, limit = 20) {
@@ -248,6 +251,48 @@ export class PagesService {
     });
 
     await this.contextIndexingService.deletePage(pageId);
+  }
+
+  async getPageContextForAi(pageId: string, user?: UserContext, maxLength = 6000) {
+    await this.pageAccessService.assertCanView(pageId, user);
+
+    const page = await this.prisma.wikiNode.findUnique({
+      where: { id: pageId },
+      include: {
+        page: {
+          include: {
+            document: true,
+          },
+        },
+      },
+    });
+
+    if (!page || page.type !== WikiNodeType.page) {
+      throw new NotFoundException('Page not found');
+    }
+
+    let content = page.page?.plainTextPreview ?? '';
+
+    if (page.page?.document?.ydocSnapshot) {
+      const ydoc = new Y.Doc();
+      Y.applyUpdate(ydoc, new Uint8Array(page.page.document.ydocSnapshot));
+      const pmDoc = yDocToProsemirrorJSON(ydoc, 'default') as Record<string, unknown>;
+      const extracted = this.documentIndexingService.extractPlainTextFromProsemirrorJson(pmDoc);
+      if (extracted.trim()) {
+        content = extracted;
+      }
+    }
+
+    const normalizedContent = content.trim();
+
+    return {
+      pageId: page.id,
+      spaceId: page.spaceId,
+      title: page.title,
+      excerpt: page.page?.plainTextPreview ?? null,
+      content: normalizedContent.slice(0, maxLength),
+      truncated: normalizedContent.length > maxLength,
+    };
   }
 
   private async nextPosition(spaceId: string, parentId: string | null, db: Prisma.TransactionClient | PrismaService = this.prisma): Promise<number> {

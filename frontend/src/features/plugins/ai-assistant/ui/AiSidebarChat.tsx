@@ -1,5 +1,5 @@
 import type { Editor } from '@tiptap/core';
-import { Files, Search, SendHorizontal, Trash2, X } from 'lucide-react';
+import { ChevronDown, Files, FolderSearch, Search, SendHorizontal, Sparkles, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -47,10 +47,20 @@ type AiSidebarChatProps = {
   editor: Editor | null;
   enabled: boolean;
   onClose: () => void;
+  workspaceTree?: WorkspaceTreeNode[];
   availablePages?: AvailableContextPage[];
   availableFolders?: AvailableContextFolder[];
   availableSpaces?: MwsSpace[];
 };
+
+const AI_LOADING_PHRASES = [
+  'Думаем над ответом',
+  'Собираем контекст',
+  'Векторизуем данные',
+  'Сверяем документы',
+  'Проверяем выбранную область',
+  'Ищем релевантные фрагменты',
+];
 
 function normalizeMarkdownSnippet(text: string, maxLength = 6000) {
   const trimmed = text.trim();
@@ -98,6 +108,237 @@ function flattenFoldersFromTree(nodes: WorkspaceTreeNode[]): AvailableContextFol
   ]);
 }
 
+function summarizeWorkspaceStructure(
+  nodes: WorkspaceTreeNode[],
+  scope: ContextScope,
+  spaceId: string,
+  limit = 60,
+) {
+  const summaryNodes: Array<{
+    id: string;
+    title: string;
+    kind: string;
+    parentId: string | null;
+    depth: number;
+  }> = [];
+
+  const walk = (items: WorkspaceTreeNode[], depth: number) => {
+    for (const node of items) {
+      if (summaryNodes.length >= limit) {
+        return;
+      }
+
+      summaryNodes.push({
+        id: node.id,
+        title: node.title,
+        kind: node.kind,
+        parentId: node.parentId,
+        depth,
+      });
+
+      if (node.children?.length) {
+        walk(node.children, depth + 1);
+      }
+    }
+  };
+
+  walk(nodes, 0);
+
+  return {
+    scope,
+    spaceId,
+    truncated: summaryNodes.length >= limit,
+    nodes: summaryNodes,
+  };
+}
+
+function filterStructureTreeForIds(
+  nodes: WorkspaceTreeNode[],
+  options: { folderIds?: Set<string>; pageIds?: Set<string> },
+): WorkspaceTreeNode[] {
+  return nodes
+    .map((node) => {
+      const children = filterStructureTreeForIds(node.children ?? [], options);
+      const isSelectedFolder = options.folderIds?.has(node.id) ?? false;
+      const isSelectedPage = node.linkedPageId ? options.pageIds?.has(node.linkedPageId) ?? false : false;
+
+      if (!isSelectedFolder && !isSelectedPage && children.length === 0) {
+        return null;
+      }
+
+      return {
+        ...node,
+        children,
+      };
+    })
+    .filter((node): node is WorkspaceTreeNode => Boolean(node));
+}
+
+function renderInlineMarkdown(text: string, keyPrefix: string) {
+  const tokens = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\)|\*[^*]+\*)/g).filter(Boolean);
+
+  return tokens.map((token, index) => {
+    const key = `${keyPrefix}-${index}`;
+
+    if (token.startsWith('**') && token.endsWith('**')) {
+      return <strong key={key}>{token.slice(2, -2)}</strong>;
+    }
+
+    if (token.startsWith('`') && token.endsWith('`')) {
+      return (
+        <code key={key} className="rounded bg-[#f3f5f8] px-1.5 py-0.5 font-mono text-[0.95em] text-[#a22a4e]">
+          {token.slice(1, -1)}
+        </code>
+      );
+    }
+
+    if (token.startsWith('*') && token.endsWith('*')) {
+      return <em key={key}>{token.slice(1, -1)}</em>;
+    }
+
+    const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (linkMatch) {
+      return (
+        <a
+          key={key}
+          href={linkMatch[2]}
+          target="_blank"
+          rel="noreferrer"
+          className="text-[#3366cc] underline underline-offset-2"
+        >
+          {linkMatch[1]}
+        </a>
+      );
+    }
+
+    return <span key={key}>{token}</span>;
+  });
+}
+
+function MarkdownMessage({ text }: { text: string }) {
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const blocks: React.ReactNode[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+
+    if (line.startsWith('```')) {
+      const codeLines: string[] = [];
+      index += 1;
+      while (index < lines.length && !lines[index].startsWith('```')) {
+        codeLines.push(lines[index]);
+        index += 1;
+      }
+      index += 1;
+      blocks.push(
+        <pre
+          key={`code-${blocks.length}`}
+          className="overflow-x-auto rounded-xl bg-[#161b22] px-3 py-2 text-[12px] leading-5 text-[#e6edf3]"
+        >
+          <code>{codeLines.join('\n')}</code>
+        </pre>,
+      );
+      continue;
+    }
+
+    const headingMatch = line.match(/^(#{1,3})\s+(.+)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const Tag = level === 1 ? 'h1' : level === 2 ? 'h2' : 'h3';
+      const className =
+        level === 1
+          ? 'text-base font-semibold'
+          : level === 2
+            ? 'text-[15px] font-semibold'
+            : 'text-sm font-semibold';
+      blocks.push(
+        <Tag key={`heading-${blocks.length}`} className={className}>
+          {renderInlineMarkdown(headingMatch[2], `heading-${blocks.length}`)}
+        </Tag>,
+      );
+      index += 1;
+      continue;
+    }
+
+    if (/^[-*]\s+/.test(line)) {
+      const items: string[] = [];
+      while (index < lines.length && /^[-*]\s+/.test(lines[index])) {
+        items.push(lines[index].replace(/^[-*]\s+/, ''));
+        index += 1;
+      }
+      blocks.push(
+        <ul key={`ul-${blocks.length}`} className="list-disc space-y-1 pl-5">
+          {items.map((item, itemIndex) => (
+            <li key={`ul-item-${itemIndex}`}>{renderInlineMarkdown(item, `ul-${blocks.length}-${itemIndex}`)}</li>
+          ))}
+        </ul>,
+      );
+      continue;
+    }
+
+    if (/^\d+\.\s+/.test(line)) {
+      const items: string[] = [];
+      while (index < lines.length && /^\d+\.\s+/.test(lines[index])) {
+        items.push(lines[index].replace(/^\d+\.\s+/, ''));
+        index += 1;
+      }
+      blocks.push(
+        <ol key={`ol-${blocks.length}`} className="list-decimal space-y-1 pl-5">
+          {items.map((item, itemIndex) => (
+            <li key={`ol-item-${itemIndex}`}>{renderInlineMarkdown(item, `ol-${blocks.length}-${itemIndex}`)}</li>
+          ))}
+        </ol>,
+      );
+      continue;
+    }
+
+    const paragraphLines: string[] = [];
+    while (
+      index < lines.length &&
+      lines[index].trim() &&
+      !lines[index].startsWith('```') &&
+      !/^(#{1,3})\s+/.test(lines[index]) &&
+      !/^[-*]\s+/.test(lines[index]) &&
+      !/^\d+\.\s+/.test(lines[index])
+    ) {
+      paragraphLines.push(lines[index]);
+      index += 1;
+    }
+
+    blocks.push(
+      <p key={`p-${blocks.length}`} className="whitespace-pre-wrap leading-6">
+        {renderInlineMarkdown(paragraphLines.join('\n'), `p-${blocks.length}`)}
+      </p>,
+    );
+  }
+
+  return <div className="space-y-3">{blocks}</div>;
+}
+
+function LoadingBubble({ phrase }: { phrase: string }) {
+  return (
+    <div className="flex w-full justify-start">
+      <article className="max-w-[85%] rounded-2xl border border-[#e8ebf2] bg-white px-4 py-3 text-sm text-[#2f3136] shadow-sm">
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-editor-text-tertiary">ИИ</p>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-[#c3cad7]" />
+            <span className="h-2 w-2 animate-pulse rounded-full bg-[#c3cad7] [animation-delay:160ms]" />
+            <span className="h-2 w-2 animate-pulse rounded-full bg-[#c3cad7] [animation-delay:320ms]" />
+          </div>
+          <span className="text-[13px] text-[#8a93a3]">{phrase}</span>
+        </div>
+      </article>
+    </div>
+  );
+}
+
 function ChatBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === 'user';
 
@@ -114,7 +355,7 @@ function ChatBubble({ message }: { message: ChatMessage }) {
         <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-editor-text-tertiary">
           {isUser ? 'Вы' : 'ИИ'}
         </p>
-        <p className="whitespace-pre-wrap leading-5">{message.text}</p>
+        {isUser ? <p className="whitespace-pre-wrap leading-5">{message.text}</p> : <MarkdownMessage text={message.text} />}
       </article>
     </div>
   );
@@ -158,6 +399,7 @@ export function AiSidebarChat({
   editor,
   enabled,
   onClose,
+  workspaceTree = [],
   availablePages = [],
   availableFolders = [],
   availableSpaces = [],
@@ -169,12 +411,13 @@ export function AiSidebarChat({
   const [selectedDocuments, setSelectedDocuments] = useState<SelectedContextDocument[]>([]);
   const [selectedFolders, setSelectedFolders] = useState<SelectedContextFolder[]>([]);
   const [contextSpaceId, setContextSpaceId] = useState(spaceId);
-  const [contextScope, setContextScope] = useState<ContextScope>('currentFile');
+  const [contextScope, setContextScope] = useState<ContextScope>('space');
   const [contextTree, setContextTree] = useState<WorkspaceTreeNode[] | null>(null);
   const [isContextTreeLoading, setIsContextTreeLoading] = useState(false);
   const [dragDropHint, setDragDropHint] = useState('');
-  const [selectedDocumentOptionId, setSelectedDocumentOptionId] = useState('');
-  const [selectedFolderOptionId, setSelectedFolderOptionId] = useState('');
+  const [isContextPickerOpen, setIsContextPickerOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState('');
+  const [loadingPhraseIndex, setLoadingPhraseIndex] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const contextRowRef = useRef<HTMLDivElement>(null);
   const { handleAiChatResponse } = useAiTableContext();
@@ -235,7 +478,78 @@ export function AiSidebarChat({
     return Array.from(unique.values());
   }, [activeTreeFolders, selectedFolders]);
 
+  const filteredContextPages = useMemo(() => {
+    const normalizedQuery = pickerQuery.trim().toLowerCase();
+
+    if (!normalizedQuery) {
+      return contextPages;
+    }
+
+    return contextPages.filter((page) => page.title.toLowerCase().includes(normalizedQuery));
+  }, [contextPages, pickerQuery]);
+
+  const filteredContextFolders = useMemo(() => {
+    const normalizedQuery = pickerQuery.trim().toLowerCase();
+
+    if (!normalizedQuery) {
+      return contextFolders;
+    }
+
+    return contextFolders.filter((folder) => folder.title.toLowerCase().includes(normalizedQuery));
+  }, [contextFolders, pickerQuery]);
+
   const currentMarkdown = useMemo(() => getEditorMarkdown(editor), [editor]);
+  const contextSpaces = useMemo(() => {
+    const unique = new Map<string, MwsSpace>();
+
+    [{ id: spaceId, name: 'Текущее пространство' }, ...availableSpaces].forEach((space) => {
+      if (!space?.id) {
+        return;
+      }
+
+      unique.set(space.id, {
+        id: space.id,
+        name: space.id === spaceId ? space.name || 'Текущее пространство' : space.name,
+        isAdmin: space.isAdmin,
+      });
+    });
+
+    return Array.from(unique.values());
+  }, [availableSpaces, spaceId]);
+
+  const currentContextSpace = useMemo(
+    () => contextSpaces.find((space) => space.id === contextSpaceId) ?? contextSpaces[0] ?? { id: contextSpaceId, name: contextSpaceId },
+    [contextSpaceId, contextSpaces],
+  );
+  const baseStructureTree = useMemo(
+    () => (contextSpaceId === spaceId ? workspaceTree : contextTree ?? []),
+    [contextSpaceId, contextTree, spaceId, workspaceTree],
+  );
+  const activeStructureTree = useMemo(() => {
+    if (contextScope === 'folders' && selectedFolders.length > 0) {
+      return filterStructureTreeForIds(baseStructureTree, {
+        folderIds: new Set(selectedFolders.map((folder) => folder.folderId)),
+      });
+    }
+
+    if (contextScope === 'documents' && selectedDocuments.length > 0) {
+      return filterStructureTreeForIds(baseStructureTree, {
+        pageIds: new Set(selectedDocuments.map((document) => document.pageId)),
+      });
+    }
+
+    if (contextScope === 'currentFile' && pageId) {
+      return filterStructureTreeForIds(baseStructureTree, {
+        pageIds: new Set([pageId]),
+      });
+    }
+
+    return baseStructureTree;
+  }, [baseStructureTree, contextScope, pageId, selectedDocuments, selectedFolders]);
+  const workspaceStructureSummary = useMemo(
+    () => summarizeWorkspaceStructure(activeStructureTree, contextScope, contextSpaceId),
+    [activeStructureTree, contextScope, contextSpaceId],
+  );
 
   const selectedContextPayload = useMemo(
     () =>
@@ -274,14 +588,6 @@ export function AiSidebarChat({
     return selectedFolders.map((folder) => folder.folderId);
   }, [contextScope, selectedFolders]);
 
-  const activeContextDocuments = useMemo(() => {
-    if (contextScope !== 'documents') {
-      return [];
-    }
-
-    return activeSelectedDocuments;
-  }, [activeSelectedDocuments, contextScope]);
-
   const markdownContext = useMemo(() => {
     if (contextScope !== 'currentFile') {
       return '';
@@ -298,18 +604,24 @@ export function AiSidebarChat({
     (contextScope === 'currentFile' && Boolean(pageId)) ||
     (contextScope === 'documents' && hasSelectedDocumentsScope) ||
     (contextScope === 'folders' && hasSelectedFoldersScope);
-  const scopeDescription =
-    contextScope === 'currentFile'
-      ? 'Поиск и ответ только по текущему файлу'
-      : contextScope === 'documents'
-        ? 'Ответ по выбранным документам'
-        : contextScope === 'folders'
-          ? 'Поиск только внутри выбранных папок'
-          : 'Поиск по всему текущему пространству';
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [errorMessage, isSending, messages, selectedDocuments.length]);
+
+  useEffect(() => {
+    if (!isSending) {
+      setLoadingPhraseIndex(0);
+      return;
+    }
+
+    setLoadingPhraseIndex(Math.floor(Math.random() * AI_LOADING_PHRASES.length));
+    const interval = window.setInterval(() => {
+      setLoadingPhraseIndex((current) => (current + 1) % AI_LOADING_PHRASES.length);
+    }, 1600);
+
+    return () => window.clearInterval(interval);
+  }, [isSending]);
 
   useEffect(() => {
     const row = contextRowRef.current;
@@ -325,11 +637,11 @@ export function AiSidebarChat({
     setContextSpaceId(spaceId);
     setSelectedDocuments([]);
     setSelectedFolders([]);
-    setContextScope('currentFile');
+    setContextScope('space');
     setContextTree(null);
-    setSelectedDocumentOptionId('');
-    setSelectedFolderOptionId('');
-  }, [pageId]);
+    setIsContextPickerOpen(false);
+    setPickerQuery('');
+  }, [spaceId]);
 
   useEffect(() => {
     if (contextScope === 'currentFile') {
@@ -338,7 +650,12 @@ export function AiSidebarChat({
   }, [contextScope, spaceId]);
 
   useEffect(() => {
-    if ((contextScope !== 'documents' && contextScope !== 'folders') || contextSpaceId === spaceId) {
+    setIsContextPickerOpen(false);
+    setPickerQuery('');
+  }, [contextScope]);
+
+  useEffect(() => {
+    if ((contextScope !== 'documents' && contextScope !== 'folders' && contextScope !== 'space') || contextSpaceId === spaceId) {
       setContextTree(null);
       return;
     }
@@ -406,16 +723,6 @@ export function AiSidebarChat({
     }
   };
 
-  const handleAddDocumentById = async (pageIdToAdd: string) => {
-    const page = contextPages.find((item) => item.id === pageIdToAdd);
-    if (!page) {
-      return;
-    }
-
-    setSelectedDocumentOptionId('');
-    await handleAddDocument(page);
-  };
-
   const handleRemoveDocument = (pageIdToRemove: string) => {
     setSelectedDocuments((current) => current.filter((document) => document.pageId !== pageIdToRemove));
   };
@@ -432,13 +739,25 @@ export function AiSidebarChat({
     setSelectedFolders((current) => current.filter((folder) => folder.folderId !== folderIdToRemove));
   };
 
-  const handleAddFolderById = (folderIdToAdd: string) => {
-    const folder = contextFolders.find((item) => item.id === folderIdToAdd);
-    if (!folder) {
+  const handleToggleDocumentSelection = async (page: AvailableContextPage) => {
+    const alreadySelected = selectedDocuments.some((document) => document.pageId === page.id);
+
+    if (alreadySelected) {
+      handleRemoveDocument(page.id);
       return;
     }
 
-    setSelectedFolderOptionId('');
+    await handleAddDocument(page);
+  };
+
+  const handleToggleFolderSelection = (folder: AvailableContextFolder) => {
+    const alreadySelected = selectedFolders.some((current) => current.folderId === folder.id);
+
+    if (alreadySelected) {
+      handleRemoveFolder(folder.id);
+      return;
+    }
+
     handleAddFolder(folder);
   };
 
@@ -484,14 +803,12 @@ export function AiSidebarChat({
       const response = await wikiliveApi.aiChat({
         question: trimmed,
         spaceId: contextScope === 'currentFile' ? spaceId : contextSpaceId,
+        contextScope,
         pageId: contextScope === 'currentFile' ? pageId ?? undefined : undefined,
         pageTitle: contextScope === 'currentFile' ? pageTitle : undefined,
         pageSnapshot:
           contextScope === 'currentFile'
-            ? {
-                markdown: markdownContext,
-                contextDocuments: [],
-              }
+            ? markdownContext
             : undefined,
         selectedPageIds: activeSelectedPageIds,
         selectedFolderIds: activeSelectedFolderIds,
@@ -499,6 +816,7 @@ export function AiSidebarChat({
           contextScope === 'documents'
             ? selectedContextPayload
             : [],
+        workspaceStructure: workspaceStructureSummary,
         useVectorSearch: true,
       });
 
@@ -511,6 +829,19 @@ export function AiSidebarChat({
       setIsSending(false);
     }
   };
+
+  const contextSummary =
+    contextScope === 'currentFile'
+      ? pageTitle ?? 'Текущий файл'
+      : contextScope === 'documents'
+        ? selectedDocuments.length > 0
+          ? `Документы: ${selectedDocuments.length}`
+          : 'Документы'
+        : contextScope === 'folders'
+          ? selectedFolders.length > 0
+            ? `Папки: ${selectedFolders.length}`
+            : 'Папки'
+          : `Пространство: ${currentContextSpace.name}`;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white text-editor-text-primary">
@@ -545,6 +876,8 @@ export function AiSidebarChat({
                 <ChatBubble key={message.id} message={message} />
               ))}
 
+              {isSending ? <LoadingBubble phrase={AI_LOADING_PHRASES[loadingPhraseIndex] ?? AI_LOADING_PHRASES[0]} /> : null}
+
               <div ref={bottomRef} />
             </div>
           </div>
@@ -558,99 +891,150 @@ export function AiSidebarChat({
               void handleSend();
             }}
           >
-            <div className="mb-2 mt-1 rounded-xl border border-editor-border-subtle bg-[#fafbfd] p-2">
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-editor-text-tertiary">
-                Область контекста
-              </p>
-              <div className="space-y-2">
-                <label className="block text-xs text-editor-text-tertiary">
-                  <span className="mb-1 block font-semibold">Тип области</span>
-                  <select
-                    value={contextScope}
-                    onChange={(event) => setContextScope(event.target.value as ContextScope)}
-                    className="w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm text-editor-text-primary outline-none"
-                  >
-                    <option value="currentFile" disabled={!pageId}>Текущий файл</option>
-                    <option value="documents">Конкретные документы</option>
-                    <option value="folders">Конкретные папки</option>
-                    <option value="space">Пространство</option>
-                  </select>
+            <div className="mb-2 mt-1 rounded-2xl border border-editor-border-subtle bg-[#fafbfd] p-2.5">
+              <div className="flex items-center gap-2">
+                <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-[#d70032] shadow-sm">
+                  <Sparkles size={15} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-editor-text-tertiary">Контекст</div>
+                  <div className="truncate text-sm font-medium text-[#2a3242]">{contextSummary}</div>
+                </div>
+              </div>
+
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <label className="min-w-0 sm:max-w-[180px] sm:flex-[0_0_180px]">
+                  <span className="sr-only">Тип контекста</span>
+                  <div className="relative">
+                    <select
+                      value={contextScope}
+                      onChange={(event) => setContextScope(event.target.value as ContextScope)}
+                      className="w-full appearance-none rounded-xl border border-[#e1e6ef] bg-white px-3 py-2 pr-9 text-sm text-[#2a3242] outline-none transition-colors focus:border-[#d70032]"
+                    >
+                      <option value="space">Пространство</option>
+                      <option value="documents">Документы</option>
+                      <option value="folders">Папки</option>
+                      {pageId ? <option value="currentFile">Файл</option> : null}
+                    </select>
+                    <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#7b8391]" />
+                  </div>
                 </label>
 
                 {contextScope !== 'currentFile' ? (
-                  <label className="block text-xs text-editor-text-tertiary">
-                    <span className="mb-1 block font-semibold">Пространство</span>
-                    <select
-                      value={contextSpaceId}
-                      onChange={(event) => {
+                  <label className="min-w-0 flex-1">
+                    <span className="sr-only">Пространство контекста</span>
+                    <div className="relative">
+                      <select
+                        value={contextSpaceId}
+                        onChange={(event) => {
                         setContextSpaceId(event.target.value);
                         setSelectedDocuments([]);
                         setSelectedFolders([]);
-                        setSelectedDocumentOptionId('');
-                        setSelectedFolderOptionId('');
+                        setIsContextPickerOpen(false);
+                        setPickerQuery('');
                       }}
-                      className="w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm text-editor-text-primary outline-none"
-                    >
-                      {availableSpaces.map((space) => (
-                        <option key={space.id} value={space.id}>
-                          {space.name}
-                        </option>
-                      ))}
-                    </select>
+                        className="w-full appearance-none rounded-xl border border-[#e1e6ef] bg-white px-3 py-2 pr-9 text-sm text-[#2a3242] outline-none transition-colors focus:border-[#d70032]"
+                      >
+                        {contextSpaces.map((space) => (
+                          <option key={space.id} value={space.id}>
+                            {space.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#7b8391]" />
+                    </div>
                   </label>
                 ) : null}
 
                 {contextScope === 'documents' ? (
-                  <label className="block text-xs text-editor-text-tertiary">
-                    <span className="mb-1 block font-semibold">Документ</span>
-                    <select
-                      value={selectedDocumentOptionId}
-                      onChange={(event) => {
-                        const nextId = event.target.value;
-                        setSelectedDocumentOptionId(nextId);
-                        if (nextId) {
-                          void handleAddDocumentById(nextId);
-                        }
-                      }}
+                  <label className="min-w-0 flex-1">
+                    <span className="sr-only">Выбрать документы</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsContextPickerOpen((current) => !current)}
                       disabled={isContextTreeLoading}
-                      className="w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm text-editor-text-primary outline-none disabled:opacity-60"
+                      className="flex h-[42px] w-full items-center justify-between rounded-xl border border-[#e1e6ef] bg-white px-3 text-sm text-[#2a3242] outline-none transition-colors hover:border-[#d70032] disabled:opacity-60"
                     >
-                      <option value="">Выберите документ…</option>
-                      {contextPages.map((page) => (
-                        <option key={page.id} value={page.id}>
-                          {page.title}
-                        </option>
-                      ))}
-                    </select>
+                      <span>{selectedDocuments.length > 0 ? `Выбрано документов: ${selectedDocuments.length}` : 'Выбрать документы…'}</span>
+                      <Search size={15} className="text-[#7b8391]" />
+                    </button>
                   </label>
                 ) : null}
 
                 {contextScope === 'folders' ? (
-                  <label className="block text-xs text-editor-text-tertiary">
-                    <span className="mb-1 block font-semibold">Папка</span>
-                    <select
-                      value={selectedFolderOptionId}
-                      onChange={(event) => {
-                        const nextId = event.target.value;
-                        setSelectedFolderOptionId(nextId);
-                        if (nextId) {
-                          handleAddFolderById(nextId);
-                        }
-                      }}
+                  <label className="min-w-0 flex-1">
+                    <span className="sr-only">Выбрать папки</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsContextPickerOpen((current) => !current)}
                       disabled={isContextTreeLoading}
-                      className="w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm text-editor-text-primary outline-none disabled:opacity-60"
+                      className="flex h-[42px] w-full items-center justify-between rounded-xl border border-[#e1e6ef] bg-white px-3 text-sm text-[#2a3242] outline-none transition-colors hover:border-[#d70032] disabled:opacity-60"
                     >
-                      <option value="">Выберите папку…</option>
-                      {contextFolders.map((folder) => (
-                        <option key={folder.id} value={folder.id}>
-                          {folder.title}
-                        </option>
-                      ))}
-                    </select>
+                      <span>{selectedFolders.length > 0 ? `Выбрано папок: ${selectedFolders.length}` : 'Выбрать папки…'}</span>
+                      <FolderSearch size={15} className="text-[#7b8391]" />
+                    </button>
                   </label>
                 ) : null}
               </div>
-              <p className="mt-2 text-xs text-editor-text-tertiary">{scopeDescription}</p>
+
+              {isContextPickerOpen && (contextScope === 'documents' || contextScope === 'folders') ? (
+                <div className="mt-2 rounded-2xl border border-[#e1e6ef] bg-white p-2 shadow-sm">
+                  <input
+                    value={pickerQuery}
+                    onChange={(event) => setPickerQuery(event.target.value)}
+                    placeholder={contextScope === 'documents' ? 'Найти документ…' : 'Найти папку…'}
+                    className="h-9 w-full rounded-xl border border-[#e1e6ef] bg-[#fafbfd] px-3 text-sm text-[#2a3242] outline-none focus:border-[#d70032]"
+                  />
+                  <div className="mt-2 max-h-52 space-y-1 overflow-y-auto">
+                    {contextScope === 'documents'
+                      ? filteredContextPages.map((page) => {
+                          const isSelected = selectedDocuments.some((document) => document.pageId === page.id);
+                          const isLoading = selectedDocuments.some((document) => document.pageId === page.id && document.isLoading);
+
+                          return (
+                            <label
+                              key={page.id}
+                              className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 text-sm text-[#2a3242] hover:bg-[#fafbfd]"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => void handleToggleDocumentSelection(page)}
+                                disabled={isLoading}
+                                className="h-4 w-4 rounded border-[#cfd7e3] text-[#d70032] focus:ring-[#d70032]"
+                              />
+                              <span className="min-w-0 flex-1 truncate">{page.title}</span>
+                              {isLoading ? <span className="text-[11px] text-[#8a93a3]">загружаем…</span> : null}
+                            </label>
+                          );
+                        })
+                      : filteredContextFolders.map((folder) => {
+                          const isSelected = selectedFolders.some((current) => current.folderId === folder.id);
+
+                          return (
+                            <label
+                              key={folder.id}
+                              className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 text-sm text-[#2a3242] hover:bg-[#fafbfd]"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => handleToggleFolderSelection(folder)}
+                                className="h-4 w-4 rounded border-[#cfd7e3] text-[#d70032] focus:ring-[#d70032]"
+                              />
+                              <span className="min-w-0 flex-1 truncate">{folder.title}</span>
+                            </label>
+                          );
+                        })}
+                    {contextScope === 'documents' && filteredContextPages.length === 0 ? (
+                      <div className="rounded-xl px-2 py-3 text-sm text-[#8a93a3]">Подходящих документов не найдено</div>
+                    ) : null}
+                    {contextScope === 'folders' && filteredContextFolders.length === 0 ? (
+                      <div className="rounded-xl px-2 py-3 text-sm text-[#8a93a3]">Подходящих папок не найдено</div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div
@@ -680,6 +1064,7 @@ export function AiSidebarChat({
                 className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
               >
                 {contextScope === 'currentFile' && pageId ? <ContextChip title={pageTitle ?? 'Текущая страница'} /> : null}
+                {contextScope === 'space' ? <ContextChip title={`Пространство: ${currentContextSpace.name}`} /> : null}
                 {contextScope === 'documents' &&
                   selectedDocuments.map((document) => (
                   <ContextChip
@@ -701,8 +1086,7 @@ export function AiSidebarChat({
                 ))}
                 {((contextScope === 'currentFile' && !pageId) ||
                   (contextScope === 'documents' && selectedDocuments.length === 0) ||
-                  (contextScope === 'folders' && selectedFolders.length === 0) ||
-                  contextScope === 'space') ? (
+                  (contextScope === 'folders' && selectedFolders.length === 0)) ? (
                   <span className="text-[11px] text-editor-text-tertiary">Контекст не выбран</span>
                 ) : null}
               </div>

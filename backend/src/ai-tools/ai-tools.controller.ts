@@ -65,6 +65,7 @@ export class AiToolsController {
       {
         question: dto.question,
         spaceId: dto.spaceId,
+        contextScope: dto.contextScope as 'currentFile' | 'documents' | 'folders' | 'space' | undefined,
         pageId: dto.pageId,
         datasheetId: dto.datasheetId,
         viewId: dto.viewId,
@@ -73,6 +74,7 @@ export class AiToolsController {
         selectedPageIds: dto.selectedPageIds,
         selectedFolderIds: dto.selectedFolderIds,
         contextDocuments: dto.contextDocuments,
+        workspaceStructure: dto.workspaceStructure as any,
         useVectorSearch: dto.useVectorSearch,
       },
       user,

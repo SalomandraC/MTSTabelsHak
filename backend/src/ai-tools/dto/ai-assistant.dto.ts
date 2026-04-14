@@ -1,4 +1,6 @@
-import { IsArray, IsBoolean, IsObject, IsOptional, IsString, IsIn } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsObject, IsOptional, IsString, ValidateIf } from 'class-validator';
+
+type SnapshotPayload = Record<string, unknown> | string;
 
 export class CompletionRequestDto {
   @IsString()
@@ -9,8 +11,11 @@ export class CompletionRequestDto {
   pageTitle?: string;
 
   @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && typeof value !== 'string')
   @IsObject()
-  pageSnapshot?: Record<string, unknown>;
+  @ValidateIf((_, value) => typeof value === 'string')
+  @IsString()
+  pageSnapshot?: SnapshotPayload;
 
   @IsOptional()
   @IsBoolean()
@@ -26,8 +31,11 @@ export class GenerateRequestDto {
   pageTitle?: string;
 
   @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && typeof value !== 'string')
   @IsObject()
-  pageSnapshot?: Record<string, unknown>;
+  @ValidateIf((_, value) => typeof value === 'string')
+  @IsString()
+  pageSnapshot?: SnapshotPayload;
 }
 
 export class TransformRequestDto {
@@ -46,8 +54,11 @@ export class TransformRequestDto {
   pageTitle?: string;
 
   @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && typeof value !== 'string')
   @IsObject()
-  pageSnapshot?: Record<string, unknown>;
+  @ValidateIf((_, value) => typeof value === 'string')
+  @IsString()
+  pageSnapshot?: SnapshotPayload;
 }
 
 export class ChatRequestDto {
@@ -57,6 +68,10 @@ export class ChatRequestDto {
   @IsOptional()
   @IsString()
   spaceId?: string;
+
+  @IsOptional()
+  @IsString()
+  contextScope?: string;
 
   @IsOptional()
   @IsString()
@@ -75,8 +90,11 @@ export class ChatRequestDto {
   pageTitle?: string;
 
   @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && typeof value !== 'string')
   @IsObject()
-  pageSnapshot?: Record<string, unknown>;
+  @ValidateIf((_, value) => typeof value === 'string')
+  @IsString()
+  pageSnapshot?: SnapshotPayload;
 
   @IsOptional()
   @IsArray()
@@ -95,6 +113,10 @@ export class ChatRequestDto {
     title: string;
     markdown: string;
   }>;
+
+  @IsOptional()
+  @IsObject()
+  workspaceStructure?: Record<string, unknown>;
 
   @IsOptional()
   @IsBoolean()

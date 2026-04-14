@@ -507,13 +507,13 @@ export type AiTransformStyleId = 'standard' | 'business' | 'military' | 'medieva
 export type AiAutocompletePayload = {
   currentText: string;
   pageTitle?: string;
-  pageSnapshot?: Record<string, unknown>;
+  pageSnapshot?: Record<string, unknown> | string;
 };
 
 export type AiGeneratePayload = {
   prompt: string;
   pageTitle?: string;
-  pageSnapshot?: Record<string, unknown>;
+  pageSnapshot?: Record<string, unknown> | string;
 };
 
 export type AiTransformPayload = {
@@ -521,17 +521,18 @@ export type AiTransformPayload = {
   transformation: AiTransformType;
   styleId?: AiTransformStyleId;
   pageTitle?: string;
-  pageSnapshot?: Record<string, unknown>;
+  pageSnapshot?: Record<string, unknown> | string;
 };
 
 export type AiChatPayload = {
   question: string;
   spaceId?: string;
+  contextScope?: 'currentFile' | 'documents' | 'folders' | 'space';
   pageId?: string;
   datasheetId?: string;
   viewId?: string;
   pageTitle?: string;
-  pageSnapshot?: Record<string, unknown>;
+  pageSnapshot?: Record<string, unknown> | string;
   selectedPageIds?: string[];
   selectedFolderIds?: string[];
   contextDocuments?: Array<{
@@ -539,6 +540,18 @@ export type AiChatPayload = {
     title: string;
     markdown: string;
   }>;
+  workspaceStructure?: {
+    scope: 'currentFile' | 'documents' | 'folders' | 'space';
+    spaceId: string;
+    truncated?: boolean;
+    nodes: Array<{
+      id: string;
+      title: string;
+      kind: string;
+      parentId: string | null;
+      depth: number;
+    }>;
+  };
   useVectorSearch?: boolean;
 };
 

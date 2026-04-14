@@ -165,6 +165,49 @@ const smartImportSchema: JsonSchema = {
   additionalProperties: false,
 };
 
+const searchWorkspaceDocumentsSchema: JsonSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  required: ['spaceId', 'query'],
+  properties: {
+    spaceId: { type: 'string', minLength: 1 },
+    query: { type: 'string', minLength: 1 },
+    pageIds: {
+      type: 'array',
+      items: { type: 'string', minLength: 1 },
+    },
+    folderIds: {
+      type: 'array',
+      items: { type: 'string', minLength: 1 },
+    },
+    topK: { type: 'integer', minimum: 1, maximum: 20, default: 5 },
+  },
+  additionalProperties: false,
+};
+
+const getDocumentContextSchema: JsonSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  required: ['pageId'],
+  properties: {
+    pageId: { type: 'string', minLength: 1 },
+    maxLength: { type: 'integer', minimum: 500, maximum: 12000, default: 6000 },
+  },
+  additionalProperties: false,
+};
+
+const listWorkspaceNodesSchema: JsonSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  required: ['spaceId'],
+  properties: {
+    spaceId: { type: 'string', minLength: 1 },
+    parentNodeId: { type: ['string', 'null'] },
+    limit: { type: 'integer', minimum: 1, maximum: 100, default: 30 },
+  },
+  additionalProperties: false,
+};
+
 export const AI_TOOL_DEFINITIONS: FunctionToolDefinition[] = [
   {
     type: 'function',
@@ -230,6 +273,30 @@ export const AI_TOOL_DEFINITIONS: FunctionToolDefinition[] = [
       parameters: smartImportSchema,
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'search_workspace_documents',
+      description: 'Search documents in a WikiLive space or folder scope and return relevant candidates',
+      parameters: searchWorkspaceDocumentsSchema,
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_document_context',
+      description: 'Open a WikiLive document by pageId and return its readable text content for analysis',
+      parameters: getDocumentContextSchema,
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_workspace_nodes',
+      description: 'List folders and documents inside a space or inside a конкретная папка by parentNodeId',
+      parameters: listWorkspaceNodesSchema,
+    },
+  },
 ];
 
 export const AI_TOOL_SCHEMA_BY_NAME: Record<string, JsonSchema> = {
@@ -241,4 +308,7 @@ export const AI_TOOL_SCHEMA_BY_NAME: Record<string, JsonSchema> = {
   create_wiki_page: createWikiPageSchema,
   add_table_column: addTableColumnSchema,
   smart_import: smartImportSchema,
+  search_workspace_documents: searchWorkspaceDocumentsSchema,
+  get_document_context: getDocumentContextSchema,
+  list_workspace_nodes: listWorkspaceNodesSchema,
 };

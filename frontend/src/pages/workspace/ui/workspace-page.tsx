@@ -2831,8 +2831,10 @@ export function WorkspacePage() {
                 pageTitle={activePage?.title}
                 editor={activeEditor}
                 enabled={isAiSidebarEnabled}
+                workspaceTree={tree}
                 availablePages={flattenWorkspacePages(tree)}
                 availableFolders={flattenWorkspaceFolders(tree)}
+                availableSpaces={spaces}
                 onClose={() => setRightPanelMode('toolbar')}
               />
             </div>
