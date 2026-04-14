@@ -1,7 +1,7 @@
 import type { NodeViewProps } from '@tiptap/react';
 import { NodeViewWrapper } from '@tiptap/react';
 import { ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { MwsTableActionBar } from './mws-table-action-bar';
 import { AttachmentUploadModal } from './attachment-upload-modal';
@@ -603,6 +603,11 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     setActiveFieldMenu(null);
   };
 
+  const sortableFields = useMemo(
+    () => controller.fields.filter(f => f.type !== 'Attachment'),
+    [controller.fields],
+  );
+
   return (
     <NodeViewWrapper
       className={[
@@ -910,7 +915,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       />
       <SortFieldsModal
         isOpen={isSortFieldsModalOpen}
-        fields={controller.fields.filter(f => f.type !== 'Attachment')}
+        fields={sortableFields}
         sortRules={controller.sortRules}
         onChangeSortRules={controller.applySort}
         onClose={() => setIsSortFieldsModalOpen(false)}
