@@ -20,7 +20,7 @@ app.get('/health', (_req: Request, res: Response) => {
 // Generate document
 app.post('/generate', async (req: Request, res: Response) => {
   try {
-    const { format, title, document } = req.body as GenerateRequest;
+    const { format, title, document, auth, appBaseUrl, spaceId } = req.body as GenerateRequest;
 
     if (!format || !['pdf', 'docx', 'md'].includes(format)) {
       return res.status(400).json({ error: 'Format must be "pdf", "docx", or "md"' });
@@ -34,12 +34,16 @@ app.post('/generate', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Document is required' });
     }
 
-    // Parse document
-    const blocks = parseDocument(document);
+    const linkContext = { appBaseUrl: appBaseUrl ?? '', spaceId: spaceId ?? '' };
+    const blocks = parseDocument(document, linkContext);
 
     if (blocks.length === 0) {
       return res.status(400).json({ error: 'Document has no content blocks' });
     }
+
+    const pageLinkBlocks = blocks.filter(b => b.inlineNodes?.some(n => n.type === 'page_link'));
+    const pageLinkStandalone = blocks.filter(b => b.type === 'page_link');
+    console.log(`[generate] format=${format} title="${title}" blocks=${blocks.length} pageLinkParagraphs=${pageLinkBlocks.length} pageLinkStandalone=${pageLinkStandalone.length}`);
 
     let buffer: Buffer;
     let contentType: string;
@@ -47,13 +51,13 @@ app.post('/generate', async (req: Request, res: Response) => {
 
     switch (format) {
       case 'pdf':
-        buffer = await generatePdf(title, blocks);
+        buffer = await generatePdf(title, blocks, {}, auth, linkContext);
         contentType = 'application/pdf';
         filename = `${sanitizeFilename(title)}.pdf`;
         break;
 
       case 'docx':
-        buffer = await generateDocx(title, blocks);
+        buffer = await generateDocx(title, blocks, auth, linkContext);
         contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
         filename = `${sanitizeFilename(title)}.docx`;
         break;
@@ -70,6 +74,7 @@ app.post('/generate', async (req: Request, res: Response) => {
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
     res.setHeader('Content-Length', buffer.length);
+    console.log(`[generate] ${format.toUpperCase()} "${title}" → ${filename} (${buffer.length} bytes)`);
     res.send(buffer);
   } catch (err: unknown) {
     console.error('Generation error:', err);
@@ -78,10 +83,9 @@ app.post('/generate', async (req: Request, res: Response) => {
   }
 });
 
-function parseDocument(document: GenerateRequest['document']) {
+function parseDocument(document: GenerateRequest['document'], link?: { appBaseUrl: string; spaceId: string }) {
   let pmDoc: ProseMirrorDocument | ProseMirrorNode[];
 
-  // Handle base64-encoded Yjs updates
   if (typeof document === 'string') {
     try {
       pmDoc = JSON.parse(document) as ProseMirrorDocument | ProseMirrorNode[];
@@ -96,7 +100,7 @@ function parseDocument(document: GenerateRequest['document']) {
     pmDoc = [document as ProseMirrorNode];
   }
 
-  return flattenDocument(pmDoc);
+  return flattenDocument(pmDoc, link);
 }
 
 function sanitizeFilename(name: string): string {

@@ -27,7 +27,19 @@ function renderBlock(block: BlockNode, lines: string[], indent: number): void {
     }
     case 'paragraph':
     case 'text': {
-      lines.push(`${pad}${block.content ?? ''}`);
+      const text = renderInlineNodes(block);
+      lines.push(`${pad}${text}`);
+      lines.push('');
+      break;
+    }
+    case 'page_link': {
+      // standalone page link block
+      const label = block.pageTitle ?? block.content ?? 'Страница';
+      if (block.pageId && block.href) {
+        lines.push(`${pad}[${label}](${block.href})`);
+      } else {
+        lines.push(`${pad}${label}`);
+      }
       lines.push('');
       break;
     }
@@ -42,7 +54,7 @@ function renderBlock(block: BlockNode, lines: string[], indent: number): void {
       break;
     }
     case 'table': {
-      lines.push(`${pad}> 📊 ${block.content ?? 'MWS Table — просмотрите в оригинале'}`);
+      lines.push(`${pad}> 📊 ${block.content ?? 'MWS Table'}`);
       lines.push('');
       break;
     }
@@ -95,7 +107,33 @@ function renderBlock(block: BlockNode, lines: string[], indent: number): void {
   }
 }
 
+// Render inlineNodes to Markdown if available, otherwise fall back to content
+function renderInlineNodes(block: BlockNode): string {
+  if (!block.inlineNodes || block.inlineNodes.length === 0) {
+    return block.content ?? '';
+  }
+
+  return block.inlineNodes.map((n) => {
+    if (n.type === 'page_link') {
+      const label = n.pageTitle ?? n.text ?? 'Страница';
+      if (n.href) return `[${label}](${n.href})`;
+      if (n.pageId) return `[${label}](#page-${n.pageId})`;
+      return label;
+    }
+    if (n.type === 'link' && n.href) {
+      return `[${n.text ?? n.href}](${n.href})`;
+    }
+    let text = n.text ?? '';
+    if (n.bold) text = `**${text}**`;
+    if (n.italic) text = `*${text}*`;
+    if (n.strike) text = `~~${text}~~`;
+    if (n.code) text = `\`${text}\``;
+    return text;
+  }).join('');
+}
+
 function renderInline(block: BlockNode): string {
+  if (block.inlineNodes) return renderInlineNodes(block);
   if (block.content) return block.content;
   if (block.children) return block.children.map(renderInline).join(' ');
   return '';

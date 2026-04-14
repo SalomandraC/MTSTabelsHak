@@ -1,4 +1,7 @@
+import { getAccessToken, getCurrentUser } from '../api/wikilive';
+
 const DOCGEN_URL = import.meta.env.VITE_DOCGEN_URL ?? 'http://localhost:3200';
+const APP_BASE_URL = import.meta.env.VITE_APP_BASE_URL ?? window.location.origin;
 
 export type ExportFormat = 'pdf' | 'docx' | 'md';
 
@@ -6,11 +9,26 @@ export async function exportDocument(
   title: string,
   prosemirrorDoc: unknown,
   format: ExportFormat,
+  spaceId?: string,
 ): Promise<void> {
+  const token = getAccessToken();
+  const user = getCurrentUser();
+
   const response = await fetch(`${DOCGEN_URL}/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ format, title, document: prosemirrorDoc }),
+    body: JSON.stringify({
+      format,
+      title,
+      document: prosemirrorDoc,
+      appBaseUrl: APP_BASE_URL,
+      spaceId,
+      auth: {
+        accessToken: token ?? undefined,
+        userId: user?.userId,
+        displayName: user?.displayName,
+      },
+    }),
   });
 
   if (!response.ok) {
