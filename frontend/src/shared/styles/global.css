@@ -468,12 +468,11 @@
   .tiptap .live-reference-chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
     max-width: min(34rem, 100%);
-    border: 1px solid #cddcff;
+    border: 1px solid #f0b1be;
     border-radius: 0.55rem;
-    background: #f5f8ff;
-    color: #244584;
+    background: linear-gradient(180deg, #fff4f7 0%, #ffffff 100%);
+    color: #b00025;
     font-size: 0.88em;
     font-weight: 650;
     line-height: 1.35;
@@ -483,12 +482,14 @@
   }
 
   .tiptap .live-reference-chip.is-loading {
-    opacity: 0.7;
+    border-color: #ef8fa5;
+    box-shadow: 0 0 0 1px rgba(215, 0, 50, 0.08) inset;
+    opacity: 0.84;
   }
 
   .tiptap .live-reference-chip.is-error {
-    border-color: #f0a1b2;
-    background: #fff2f6;
+    border-color: #d70032;
+    background: #fff1f4;
     color: #a60027;
   }
 
@@ -510,11 +511,11 @@
     max-width: 11rem;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-weight: 700;
+    font-weight: 800;
   }
 
   .tiptap .live-reference-chip.ProseMirror-selectednode {
-    outline: 2px solid #537edc;
+    outline: 2px solid #d70032;
     outline-offset: 2px;
   }
 
