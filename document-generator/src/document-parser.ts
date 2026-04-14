@@ -84,7 +84,6 @@ function flattenNode(node: ProseMirrorNode, blocks: BlockNode[], link?: ParserLi
     }
 
     case 'pageLink': {
-      // pageLink as block-level (rare, but handle it)
       blocks.push({
         type: 'page_link',
         pageId: (node.attrs?.pageId as string) ?? null,
@@ -170,7 +169,6 @@ function flattenNode(node: ProseMirrorNode, blocks: BlockNode[], link?: ParserLi
 
     default: {
       const text = extractText(node);
-      // Log nodes that might contain pageLinks
       const hasPageLink = JSON.stringify(node).includes('"pageLink"');
       if (hasPageLink) {
         console.log(`[parser] node type="${node.type}" contains pageLink, content types: ${node.content?.map(n => n.type).join(',') ?? 'none'}`);
@@ -184,7 +182,6 @@ function flattenNode(node: ProseMirrorNode, blocks: BlockNode[], link?: ParserLi
 }
 
 function flattenListItem(node: ProseMirrorNode, blocks: BlockNode[], link?: ParserLinkContext): void {
-  // listItem wraps a paragraph — extract it preserving inlineNodes
   if (node.type === 'listItem') {
     const para = node.content?.find(c => c.type === 'paragraph');
     if (para) {
@@ -196,7 +193,6 @@ function flattenListItem(node: ProseMirrorNode, blocks: BlockNode[], link?: Pars
       return;
     }
   }
-  // Fallback for other structures
   flattenNode(node, blocks, link);
 }
 

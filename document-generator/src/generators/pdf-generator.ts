@@ -35,6 +35,7 @@ function loadTemplate(): HandlebarsTemplateDelegate {
   }
 }
 
+
 // ─── HTML escaping ────────────────────────────────────────────────────────────
 
 function esc(s: string): string {
@@ -45,7 +46,6 @@ function escAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// ─── MWS table data fetcher ───────────────────────────────────────────────────
 
 const API_BASE = process.env.API_BASE_URL ?? 'http://api:8080';
 
@@ -80,6 +80,8 @@ function buildAuthHeaders(auth?: AuthContext): Record<string, string> {
   }
   return { 'x-user-id': 'docgen', 'x-user-name': 'Document Generator' };
 }
+
+// ─── MWS table data fetcher ───────────────────────────────────────────────────
 
 async function fetchTableData(
   datasheetId: string,
@@ -219,7 +221,6 @@ async function compileBlock(block: BlockNode, auth?: AuthContext, link?: LinkCon
 }
 
 async function compileChildContent(block: BlockNode, auth?: AuthContext, link?: LinkContext): Promise<string> {
-  // Use inlineNodes if available — preserves bold, italic, links etc.
   if (block.inlineNodes && block.inlineNodes.length > 0) {
     return block.inlineNodes.map((n) => {
       if (n.type === 'page_link' && n.href) {

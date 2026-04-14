@@ -107,7 +107,6 @@ function renderBlock(block: BlockNode, lines: string[], indent: number): void {
   }
 }
 
-// Render inlineNodes to Markdown if available, otherwise fall back to content
 function renderInlineNodes(block: BlockNode): string {
   if (!block.inlineNodes || block.inlineNodes.length === 0) {
     return block.content ?? '';

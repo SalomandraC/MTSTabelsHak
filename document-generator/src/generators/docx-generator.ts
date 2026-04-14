@@ -15,7 +15,6 @@ import {
 } from 'docx';
 import type { BlockNode } from '../types.js';
 
-// ─── MWS table fetcher (same pattern as pdf-generator) ───────────────────────
 
 const API_BASE = process.env.API_BASE_URL ?? 'http://api:8080';
 
@@ -43,6 +42,8 @@ function buildAuthHeaders(auth?: AuthContext): Record<string, string> {
   if (auth?.userId) return { 'x-user-id': auth.userId, 'x-user-name': auth.displayName ?? auth.userId };
   return { 'x-user-id': 'docgen', 'x-user-name': 'Document Generator' };
 }
+
+// ─── MWS table fetcher ────────────────────────────────────────────────────────
 
 async function fetchTableData(
   datasheetId: string,
@@ -164,7 +165,6 @@ function getImageDimensions(buf: Buffer, type: string): { width: number; height:
       }
     }
   } catch {
-    // ignore
   }
   return { width: 400, height: 400 };
 }
@@ -212,7 +212,7 @@ async function fetchImageBuffer(src: string): Promise<{ data: Buffer; type: 'png
   }
 }
 
-// ─── Inline runs ─────────────────────────────────────────────────────────────
+// ─── Inline runs ──────────────────────────────────────────────────────────────
 
 function buildInlineRuns(
   inlineNodes: BlockNode['inlineNodes'],
@@ -267,7 +267,7 @@ function makeRuns(content: string, marks?: Array<{ type: string; attrs?: Record<
   return [new TextRun(opts)];
 }
 
-// ─── Block → docx elements (async for images) ────────────────────────────────
+// ─── Block → docx elements ────────────────────────────────────────────────────
 
 async function blockToDocxElements(block: BlockNode, auth?: AuthContext, link?: LinkContext): Promise<Paragraph[]> {
   switch (block.type) {
