@@ -7,7 +7,7 @@ describe('PageEditorHeader', () => {
   it('allows inline title editing when header is editable', () => {
     render(<PageEditorHeader title="Документ" description="Описание" onSave={vi.fn()} />);
 
-    fireEvent.doubleClick(screen.getByText('Документ'));
+    fireEvent.click(screen.getByText('Документ'));
 
     expect(screen.getByDisplayValue('Документ')).toBeInTheDocument();
   });
@@ -15,8 +15,8 @@ describe('PageEditorHeader', () => {
   it('does not enter edit mode when header is read-only', () => {
     render(<PageEditorHeader title="Документ" description="Описание" editable={false} onSave={vi.fn()} />);
 
-    fireEvent.doubleClick(screen.getByText('Документ'));
-    fireEvent.doubleClick(screen.getByText('Описание'));
+    fireEvent.click(screen.getByText('Документ'));
+    fireEvent.click(screen.getByText('Описание'));
 
     expect(screen.queryByDisplayValue('Документ')).not.toBeInTheDocument();
     expect(screen.queryByDisplayValue('Описание')).not.toBeInTheDocument();
@@ -36,7 +36,7 @@ describe('PageEditorHeader', () => {
       />,
     );
 
-    fireEvent.click(screen.getByLabelText('Выбрать представление документа'));
+    fireEvent.click(screen.getByRole('button', { name: 'Вид' }));
     fireEvent.click(screen.getAllByRole('menuitemradio')[1]!);
 
     expect(onViewModeChange).toHaveBeenCalledWith('paged');

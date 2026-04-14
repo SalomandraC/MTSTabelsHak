@@ -623,7 +623,7 @@ function LivePageEditor({
           description={controller.description}
           editable={effectiveCanEdit}
           viewMode={effectiveViewMode}
-          showViewModeControls={!isCompactViewport}
+          showViewModeControls
           hideCooperationBadge={hideCooperationBadge}
           onSave={controller.handleSaveMeta}
           onViewModeChange={handleChangeViewMode}
