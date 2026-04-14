@@ -910,7 +910,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       />
       <SortFieldsModal
         isOpen={isSortFieldsModalOpen}
-        fields={controller.fields}
+        fields={controller.fields.filter(f => f.type !== 'Attachment')}
         sortRules={controller.sortRules}
         onChangeSortRules={controller.applySort}
         onClose={() => setIsSortFieldsModalOpen(false)}
