@@ -34,6 +34,8 @@ type PageEditorProps = {
   spaceId: string;
   page: WikiPage | null;
   isLoading?: boolean;
+  sidebarInsetClassName?: string;
+  hideCooperationBadge?: boolean;
   onRenamePage: (title: string) => Promise<void>;
   onToggleHeadingNumbering: (enabled: boolean) => Promise<void>;
   onCheckpoint: () => Promise<void>;
@@ -245,12 +247,14 @@ function PagedLayoutControls({
   onChangeLeftIndent,
   onChangeRightIndent,
   onReset,
+  sidebarInsetClassName = '',
 }: {
   leftIndent: number;
   rightIndent: number;
   onChangeLeftIndent: (value: number) => void;
   onChangeRightIndent: (value: number) => void;
   onReset: () => void;
+  sidebarInsetClassName?: string;
 }) {
   const handleNumericInput =
     (applyValue: (value: number) => void) => (event: ChangeEvent<HTMLInputElement>) => {
@@ -261,8 +265,12 @@ function PagedLayoutControls({
     };
 
   return (
-    <div className="border-t border-editor-border-subtle bg-[rgba(245,247,250,1)] px-2 py-2 sm:px-4">
-      <div className="flex items-center gap-0 overflow-x-auto whitespace-nowrap pb-0.5" role="toolbar" aria-label="Панель макета страницы">
+    <div className={`bg-[linear-gradient(to_bottom,rgba(245,247,250,0.82),rgba(245,247,250,1))] px-2 pt-2 sm:px-4 sm:pt-3 ${sidebarInsetClassName}`.trim()}>
+      <div
+        className="flex flex-wrap items-center gap-x-0 gap-y-1 overflow-x-visible border-b border-editor-border-subtle pb-2"
+        role="toolbar"
+        aria-label="Панель макета страницы"
+      >
         <span className="inline-flex h-8 items-center px-2 text-xs font-semibold uppercase tracking-[0.12em] text-editor-text-tertiary">
           A4
         </span>
@@ -321,6 +329,8 @@ export function PageEditor({
   spaceId,
   page,
   isLoading = false,
+  sidebarInsetClassName = '',
+  hideCooperationBadge = false,
   onRenamePage,
   onToggleHeadingNumbering,
   onCheckpoint,
@@ -354,6 +364,8 @@ export function PageEditor({
     <LivePageEditor
       spaceId={spaceId}
       page={page}
+      sidebarInsetClassName={sidebarInsetClassName}
+      hideCooperationBadge={hideCooperationBadge}
       onRenamePage={onRenamePage}
       onToggleHeadingNumbering={onToggleHeadingNumbering}
       onCheckpoint={onCheckpoint}
@@ -374,6 +386,8 @@ export function PageEditor({
 function LivePageEditor({
   spaceId,
   page,
+  sidebarInsetClassName = '',
+  hideCooperationBadge = false,
   onRenamePage,
   onToggleHeadingNumbering,
   onCheckpoint,
@@ -610,6 +624,7 @@ function LivePageEditor({
           editable={effectiveCanEdit}
           viewMode={effectiveViewMode}
           showViewModeControls={!isCompactViewport}
+          hideCooperationBadge={hideCooperationBadge}
           onSave={controller.handleSaveMeta}
           onViewModeChange={handleChangeViewMode}
           connectionStatus={controller.connectionStatus}
@@ -620,6 +635,7 @@ function LivePageEditor({
         <PageEditorToolbar
           editor={controller.editor}
           canEdit={effectiveCanEdit}
+          sidebarInsetClassName={sidebarInsetClassName}
           headingNumberingEnabled={page?.headingNumberingEnabled ?? false}
           onToggleHeadingNumbering={controller.handleToggleHeadingNumbering}
           onOpenLinkModal={controller.openLinkModal}
@@ -636,6 +652,7 @@ function LivePageEditor({
             onChangeLeftIndent={handleChangeLeftIndent}
             onChangeRightIndent={handleChangeRightIndent}
             onReset={handleResetIndents}
+            sidebarInsetClassName={sidebarInsetClassName}
           />
         ) : null}
 

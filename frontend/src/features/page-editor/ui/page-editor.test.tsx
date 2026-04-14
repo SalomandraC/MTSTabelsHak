@@ -126,6 +126,8 @@ describe('PageEditor', () => {
       tablePicker: {},
       liveReferencePicker: {},
       templateVariableModal: {},
+      bookmarkModal: { isOpen: false, onConfirm: vi.fn(), onClose: vi.fn() },
+      liveFormulaModal: {},
       getCurrentDocumentStateValue: vi.fn(),
     });
   });

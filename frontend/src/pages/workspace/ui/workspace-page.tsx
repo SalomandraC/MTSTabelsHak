@@ -55,6 +55,7 @@ import { WorkspacePageActionsMenu } from './workspace-page-actions-menu';
 import { isWorkspaceFolder, shouldShowWorkspacePageActions } from './workspace-node-permissions';
 import { getWorkspaceNodeIcon } from './workspace-node-icon';
 import { readWorkspaceRoute, resolveAccessibleSpaceId, writeWorkspaceRoute } from '../../../shared/lib/workspace-route';
+import { exportDocument, type ExportFormat } from '../../../shared/lib/export-document';
 import {
   LEFT_SIDEBAR_MAX_WIDTH,
   LEFT_SIDEBAR_MIN_WIDTH,
@@ -273,6 +274,7 @@ function WorkspaceTreeItem({
   onDeleteFolder,
   onRenameFolder,
   onCreatePage,
+  onExportPage,
   onMoveNode,
   dragSourceId,
   dragOverNodeId,
@@ -298,6 +300,7 @@ function WorkspaceTreeItem({
   onDeleteFolder: (folderId: string, title: string) => void | Promise<void>;
   onRenameFolder: (folderId: string, title: string) => void | Promise<void>;
   onCreatePage: (title: string, parentNodeId?: string | null) => Promise<void>;
+  onExportPage: (pageId: string, title: string, format: ExportFormat) => void;
   onMoveNode: (sourceId: string, targetId: string) => void | Promise<void>;
   dragSourceId: string | null;
   dragOverNodeId: string | null;
@@ -668,6 +671,7 @@ function WorkspaceTreeItem({
                 setCreateError('');
               }}
               onDeletePage={() => onDeletePage(node.linkedPageId!, node.title)}
+              onExport={node.linkedPageId ? (format) => onExportPage(node.linkedPageId!, node.title, format) : undefined}
               onRenameFolder={node.kind === 'wikiFolder' ? () => void onRenameFolder(node.id, node.title) : undefined}
               onDeleteFolder={node.kind === 'wikiFolder' ? () => void onDeleteFolder(node.id, node.title) : undefined}
             />
@@ -694,6 +698,7 @@ function WorkspaceTreeItem({
               onDeleteFolder={onDeleteFolder}
               onRenameFolder={onRenameFolder}
               onCreatePage={onCreatePage}
+              onExportPage={onExportPage}
               onMoveNode={onMoveNode}
               dragSourceId={dragSourceId}
               dragOverNodeId={dragOverNodeId}
@@ -2048,6 +2053,30 @@ export function WorkspacePage() {
     }
   };
 
+  const handleExportPage = (pageId: string, title: string, format: ExportFormat) => {
+    const doExport = async () => {
+      let doc: unknown;
+
+      if (pageId === activePageId && activeEditor) {
+        doc = activeEditor.getJSON();
+      } else {
+        const history = await wikiliveApi.listPageHistory(pageId, 1);
+        const checkpointId = history.items[0]?.id;
+        if (!checkpointId) {
+          throw new Error('Нет сохранённых версий страницы');
+        }
+        const checkpoint = await wikiliveApi.getPageHistoryCheckpoint(pageId, checkpointId);
+        doc = checkpoint.document;
+      }
+
+      await exportDocument(title, doc, format);
+    };
+
+    void doExport().catch((err) => {
+      setErrorMessage(err instanceof Error ? err.message : 'Не удалось экспортировать страницу');
+    });
+  };
+
   const handleRenameFolder = async (folderId: string, title: string) => {
     const nextTitle = window.prompt('Новое название папки', title)?.trim();
 
@@ -2306,8 +2335,8 @@ export function WorkspacePage() {
                     onClick={() => setIsSpaceMenuOpen((value) => !value)}
                     className="flex h-7 w-full items-center justify-between gap-2 rounded-md border border-[#ffd9e1] bg-white px-2 text-xs font-semibold text-[#d70032] outline-none transition-colors hover:bg-[#fff1f3] focus-visible:ring-2 focus-visible:ring-[#d70032]/25"
                     style={{
-                      minWidth: `${Math.min(longestSpaceNameChars + 6, 30)}ch`,
-                      maxWidth: '300px',
+                      minWidth: `${Math.min(longestSpaceNameChars + 4, 20)}ch`,
+                      maxWidth: '220px',
                     }}
                     aria-haspopup="menu"
                     aria-expanded={isSpaceMenuOpen}
@@ -2344,8 +2373,16 @@ export function WorkspacePage() {
             </div>
             <button
               type="button"
-              onClick={() => setIsSearchOpen((value) => !value)}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[#696969] transition-colors hover:bg-[#f2f3f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
+              onClick={() =>
+                setIsSearchOpen((value) => {
+                  if (value) {
+                    setSearchQuery('');
+                  }
+
+                  return !value;
+                })
+              }
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-[#696969] transition-colors hover:bg-[#f2f3f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
               title="Быстрый поиск"
               data-testid="fast-search-icon"
             >
@@ -2355,13 +2392,27 @@ export function WorkspacePage() {
 
           {isSearchOpen ? (
             <div className="px-4 pb-3">
-              <input
-                autoFocus
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Найти MWS таблицу, папку или wiki-страницу"
-                className="h-9 w-full rounded-md border border-[#dfe2e7] bg-[#fafafa] px-3 text-sm outline-none focus:border-[#d70032]"
-              />
+              <div className="relative">
+                <input
+                  autoFocus
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Найти MWS таблицу, папку или wiki-страницу"
+                  className="h-9 w-full rounded-md border border-[#dfe2e7] bg-[#fafafa] px-3 pr-9 text-sm outline-none focus:border-[#d70032]"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setIsSearchOpen(false);
+                  }}
+                  className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-[#7a7f88] transition-colors hover:bg-[#eceff3] hover:text-[#1f2937]"
+                  aria-label="Скрыть поиск и сбросить фильтр"
+                  title="Скрыть поиск"
+                >
+                  <X size={14} strokeWidth={2.2} />
+                </button>
+              </div>
             </div>
           ) : null}
 
@@ -2424,6 +2475,7 @@ export function WorkspacePage() {
                       onCreatePage={async (title, parentNodeId) => {
                         await handleCreatePage(title, parentNodeId);
                       }}
+                      onExportPage={handleExportPage}
                       onMoveNode={moveTreeNode}
                       dragSourceId={dragSourceId}
                       dragOverNodeId={dragOverNodeId}
@@ -2459,6 +2511,7 @@ export function WorkspacePage() {
                         onCreatePage={async (title, parentNodeId) => {
                           await handleCreatePage(title, parentNodeId);
                         }}
+                        onExportPage={handleExportPage}
                         onMoveNode={moveTreeNode}
                         dragSourceId={dragSourceId}
                         dragOverNodeId={dragOverNodeId}
@@ -2609,7 +2662,7 @@ export function WorkspacePage() {
           <button
             type="button"
             onClick={leftSidebar.collapse}
-            className="absolute -right-4 top-24 z-30 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
+            className="absolute -right-4 top-[136px] z-30 flex h-8 w-8 items-center justify-center rounded-full border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm transition-colors hover:bg-editor-bg-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5586ff]/40"
             aria-label="Скрыть левое меню"
             title="Скрыть левое меню"
           >
@@ -2706,6 +2759,13 @@ export function WorkspacePage() {
             spaceId={selectedSpaceId}
             page={isPageLoading ? null : activePage}
             isLoading={isPageLoading}
+            hideCooperationBadge={!leftSidebar.isCollapsed || !rightSidebar.isCollapsed}
+            sidebarInsetClassName={[
+              leftSidebar.isCollapsed ? 'pl-12 sm:pl-14' : '',
+              rightSidebar.isCollapsed && !isScreenNarrow ? 'pr-12 sm:pr-14' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
             onRenamePage={handleRenamePage}
             onToggleHeadingNumbering={handleToggleHeadingNumbering}
             onCheckpoint={handleCheckpoint}

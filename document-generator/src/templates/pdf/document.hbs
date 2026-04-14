@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 20mm 15mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 12pt;
+    line-height: 1.6;
+    color: #1f1f1f;
+    margin: 0; padding: 0;
+  }
+  h1 { font-size: 22pt; font-weight: 700; margin: 0 0 12pt; border-bottom: 2px solid #d70032; padding-bottom: 6pt; }
+  h2 { font-size: 17pt; font-weight: 600; margin: 18pt 0 8pt; }
+  h3 { font-size: 14pt; font-weight: 600; margin: 14pt 0 6pt; }
+  p { margin: 0 0 8pt; }
+  strong { font-weight: 700; }
+  em { font-style: italic; }
+  s { text-decoration: line-through; }
+  u { text-decoration: underline; }
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+    font-size: 10pt;
+    background: #f2f3f5;
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+  pre {
+    background: #f2f3f5;
+    padding: 12px 16px;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 10pt;
+    margin: 12pt 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  pre code { background: none; padding: 0; }
+  img { max-width: 100%; height: auto; margin: 8pt 0; border-radius: 6px; display: block; }
+  table { width: 100%; border-collapse: collapse; margin: 12pt 0; font-size: 11pt; }
+  th, td { border: 1px solid #d2d8e3; padding: 6px 10px; text-align: left; }
+  th { background: #f2f3f5; font-weight: 600; }
+  blockquote {
+    border-left: 3px solid #d70032;
+    margin: 12pt 0;
+    padding: 8pt 16pt;
+    background: #f8f9fa;
+    color: #5a6676;
+  }
+  ul, ol { margin: 8pt 0; padding-left: 24pt; }
+  li { margin: 4pt 0; }
+  hr { border: none; border-top: 1px solid #d2d8e3; margin: 16pt 0; }
+  .task-item { display: flex; align-items: flex-start; gap: 6pt; margin: 4pt 0; list-style: none; }
+  a { color: #d70032; text-decoration: underline; }
+  mark { background-color: #fef08a; border-radius: 2px; padding: 0 2px; }
+  .table-placeholder {
+    background: #f8f9fa;
+    border: 2px dashed #d2d8e3;
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+    color: #6b7898;
+    margin: 12pt 0;
+  }
+  .iframe-placeholder {
+    background: #f0f4ff;
+    border: 1px solid #c7d2fe;
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: #4338ca;
+    margin: 12pt 0;
+    font-size: 10pt;
+  }
+  .lang-label {
+    font-size: 9pt;
+    color: #6b7898;
+    margin-bottom: 4px;
+    font-family: monospace;
+  }
+</style>
+</head>
+<body>
+{{#if title}}<h1>{{title}}</h1>{{/if}}
+{{{body}}}
+</body>
+</html>

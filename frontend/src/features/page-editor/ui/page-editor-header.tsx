@@ -10,6 +10,7 @@ type PageEditorHeaderProps = {
   editable?: boolean;
   viewMode?: PageEditorViewMode;
   showViewModeControls?: boolean;
+  hideCooperationBadge?: boolean;
   connectionStatus?: string;
   saveStatus?: string;
   recoveryMessage?: string | null;
@@ -62,6 +63,7 @@ export function PageEditorHeader({
   editable = true,
   viewMode = 'standard',
   showViewModeControls = false,
+  hideCooperationBadge = false,
   connectionStatus,
   saveStatus,
   recoveryMessage,
@@ -159,14 +161,15 @@ export function PageEditorHeader({
     <header
       ref={headerRef}
       data-page-editor-header
-      className="relative z-[30] flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 border-b border-editor-border-subtle bg-editor-bg-page px-3 py-3 sm:px-4 sm:py-4"
+      className="relative z-[30] border-b border-editor-border-subtle bg-editor-bg-page px-3 py-3 sm:px-4 sm:py-4"
       style={fontFamilyStyle}
     >
-      <div className="relative flex shrink-0 flex-row items-start gap-10">
+      <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-3">
+        <div className="relative flex min-w-0 items-start gap-10 justify-self-start">
 
         {showViewModeControls ? (
           <div ref={viewMenuRef} className="relative">
-            <div className="mb-2 text-[8px]  font-semibold uppercase text-center tracking-[0.16em] text-editor-text-tertiary">Вид страницы</div>
+            <div className="mb-2 text-[8px] font-semibold uppercase text-center tracking-[0.16em] text-editor-text-tertiary">Вид отображения</div>
             <button
               type="button"
               onClick={() => setIsViewMenuOpen((current) => !current)}
@@ -210,44 +213,55 @@ export function PageEditorHeader({
             ) : null}
           </div>
         ) : null}
-        <span className="inline-flex h-7 w-7 items-center justify-center text-[0.65rem] font-semibold text-editor-brand mt-0.5">
-          <img
-            src={DOC}
-            alt="Иконка страницы"
-            className="h-6 w-6"
-          />
-        </span>
-      </div>
+        </div>
 
-      <div className="relative z-50 min-w-0 flex-1">
+      <div className="relative z-50 min-w-0 w-full max-w-3xl justify-self-center text-center">
         <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
             {editingField === 'title' ? (
-              <input
-                type="text"
-                value={localTitle}
-                onChange={(e) => setLocalTitle(e.target.value)}
-                onBlur={handleSave}
-                onKeyDown={handleKeyDown}
-                className="w-full font-wide text-sm leading-5 text-editor-text-primary bg-editor-bg-input border border-editor-border-control rounded-md px-2 py-1 focus:outline-none focus:border-editor-brand"
-                placeholder="Название страницы"
-                autoFocus
-                style={fontFamilyStyle}
-              />
+              <div className="flex items-center justify-center gap-2">
+                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-[0.65rem] font-semibold text-editor-brand">
+                  <img
+                    src={DOC}
+                    alt="Иконка страницы"
+                    className="h-6 w-6"
+                  />
+                </span>
+                <input
+                  type="text"
+                  value={localTitle}
+                  onChange={(e) => setLocalTitle(e.target.value)}
+                  onBlur={handleSave}
+                  onKeyDown={handleKeyDown}
+                  className="w-full font-wide text-sm leading-5 text-editor-text-primary bg-editor-bg-input border border-editor-border-control rounded-md px-2 py-1 focus:outline-none focus:border-editor-brand"
+                  placeholder="Название страницы"
+                  autoFocus
+                  style={fontFamilyStyle}
+                />
+              </div>
             ) : (
-              <h1
-                className="truncate font-wide text-sm leading-5 text-editor-text-primary cursor-text hover:bg-editor-bg-control/50 rounded px-1 -mx-1 transition-colors"
-                style={boldStyle}
-                onDoubleClick={() => {
-                  if (!editable) {
-                    return;
-                  }
-                  setLocalTitle(title);
-                  setEditingField('title');
-                }}
-              >
-                {title}
-              </h1>
+              <div className="flex items-center justify-center gap-2">
+                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-[0.65rem] font-semibold text-editor-brand">
+                  <img
+                    src={DOC}
+                    alt="Иконка страницы"
+                    className="h-6 w-6"
+                  />
+                </span>
+                <h1
+                  className="truncate font-wide text-sm leading-5 text-editor-text-primary cursor-text hover:bg-editor-bg-control/50 rounded px-1 transition-colors"
+                  style={boldStyle}
+                  onDoubleClick={() => {
+                    if (!editable) {
+                      return;
+                    }
+                    setLocalTitle(title);
+                    setEditingField('title');
+                  }}
+                >
+                  {title}
+                </h1>
+              </div>
             )}
             {editingField === 'description' ? (
               <input
@@ -263,7 +277,7 @@ export function PageEditorHeader({
               />
             ) : (
               <p
-                className="truncate text-sm leading-5 cursor-text hover:bg-editor-bg-control/50 rounded px-1 -mx-1 transition-colors"
+                className="mx-auto w-full max-w-[14rem] truncate text-sm leading-5 cursor-text hover:bg-editor-bg-control/50 rounded px-1 transition-colors"
                 style={{ ...fontFamilyStyle, color: 'rgba(150, 159, 168, 1)' }}
                 onDoubleClick={() => {
                   if (!editable) {
@@ -281,19 +295,31 @@ export function PageEditorHeader({
       </div>
 
       {isStatusVisible ? (
-        <div className="relative z-10 min-w-0 flex shrink-0 w-full sm:w-auto flex-col items-end gap-2 text-right">
-          <div className="flex flex-wrap items-center gap-2 text-[11px] text-editor-text-tertiary justify-end w-full sm:w-auto">
-            <PresenceStrip users={activeUsers} />
-            {connectionStatus ? (
-              <span className="rounded-lg bg-[#d70032] px-2 py-1 font-semibold text-white">кооперация: {connectionStatus}</span>
-            ) : null}
-            {saveStatus ? <span>{saveStatus}</span> : null}
-            {recoveryMessage ? (
-              <span className="rounded-full bg-[#fff4df] px-2 py-1 text-[#9a5b00]">{recoveryMessage}</span>
-            ) : null}
+        <div className="relative z-10 min-w-0 w-full max-w-[24rem] justify-self-end text-right">
+          <div className="flex flex-col items-end gap-2 text-[11px] text-editor-text-tertiary">
+            <div className="max-w-full truncate">
+              {recoveryMessage ? (
+                <span className="inline-block max-w-full truncate rounded-full bg-[#fff4df] px-2 py-1 text-[#9a5b00]" title={recoveryMessage}>
+                  {recoveryMessage}
+                </span>
+              ) : saveStatus ? (
+                <span className="inline-block max-w-full truncate" title={saveStatus}>
+                  {saveStatus}
+                </span>
+              ) : null}
+            </div>
+            <div className="flex flex-nowrap items-center justify-end gap-2">
+              <div className="order-1 min-w-0">
+                <PresenceStrip users={activeUsers} />
+              </div>
+              {connectionStatus && !hideCooperationBadge ? (
+                <span className="order-2 shrink-0 rounded-lg bg-[#d70032] px-2 py-1 font-semibold text-white">кооперация: {connectionStatus}</span>
+              ) : null}
+            </div>
           </div>
         </div>
-      ) : null}
+      ) : <div className="justify-self-end" />}
+      </div>
     </header>
   );
 }
