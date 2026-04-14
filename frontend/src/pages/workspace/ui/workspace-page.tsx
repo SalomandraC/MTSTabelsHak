@@ -55,6 +55,7 @@ import { WorkspacePageActionsMenu } from './workspace-page-actions-menu';
 import { isWorkspaceFolder, shouldShowWorkspacePageActions } from './workspace-node-permissions';
 import { getWorkspaceNodeIcon } from './workspace-node-icon';
 import { readWorkspaceRoute, resolveAccessibleSpaceId, writeWorkspaceRoute } from '../../../shared/lib/workspace-route';
+import { exportDocument, type ExportFormat } from '../../../shared/lib/export-document';
 import {
   LEFT_SIDEBAR_MAX_WIDTH,
   LEFT_SIDEBAR_MIN_WIDTH,
@@ -266,6 +267,7 @@ function WorkspaceTreeItem({
   onDeleteFolder,
   onRenameFolder,
   onCreatePage,
+  onExportPage,
   onMoveNode,
   dragSourceId,
   dragOverNodeId,
@@ -291,6 +293,7 @@ function WorkspaceTreeItem({
   onDeleteFolder: (folderId: string, title: string) => void | Promise<void>;
   onRenameFolder: (folderId: string, title: string) => void | Promise<void>;
   onCreatePage: (title: string, parentNodeId?: string | null) => Promise<void>;
+  onExportPage: (pageId: string, title: string, format: ExportFormat) => void;
   onMoveNode: (sourceId: string, targetId: string) => void | Promise<void>;
   dragSourceId: string | null;
   dragOverNodeId: string | null;
@@ -661,6 +664,7 @@ function WorkspaceTreeItem({
                 setCreateError('');
               }}
               onDeletePage={() => onDeletePage(node.linkedPageId!, node.title)}
+              onExport={node.linkedPageId ? (format) => onExportPage(node.linkedPageId!, node.title, format) : undefined}
               onRenameFolder={node.kind === 'wikiFolder' ? () => void onRenameFolder(node.id, node.title) : undefined}
               onDeleteFolder={node.kind === 'wikiFolder' ? () => void onDeleteFolder(node.id, node.title) : undefined}
             />
@@ -687,6 +691,7 @@ function WorkspaceTreeItem({
               onDeleteFolder={onDeleteFolder}
               onRenameFolder={onRenameFolder}
               onCreatePage={onCreatePage}
+              onExportPage={onExportPage}
               onMoveNode={onMoveNode}
               dragSourceId={dragSourceId}
               dragOverNodeId={dragOverNodeId}
@@ -2041,6 +2046,30 @@ export function WorkspacePage() {
     }
   };
 
+  const handleExportPage = (pageId: string, title: string, format: ExportFormat) => {
+    const doExport = async () => {
+      let doc: unknown;
+
+      if (pageId === activePageId && activeEditor) {
+        doc = activeEditor.getJSON();
+      } else {
+        const history = await wikiliveApi.listPageHistory(pageId, 1);
+        const checkpointId = history.items[0]?.id;
+        if (!checkpointId) {
+          throw new Error('Нет сохранённых версий страницы');
+        }
+        const checkpoint = await wikiliveApi.getPageHistoryCheckpoint(pageId, checkpointId);
+        doc = checkpoint.document;
+      }
+
+      await exportDocument(title, doc, format);
+    };
+
+    void doExport().catch((err) => {
+      setErrorMessage(err instanceof Error ? err.message : 'Не удалось экспортировать страницу');
+    });
+  };
+
   const handleRenameFolder = async (folderId: string, title: string) => {
     const nextTitle = window.prompt('Новое название папки', title)?.trim();
 
@@ -2439,6 +2468,7 @@ export function WorkspacePage() {
                       onCreatePage={async (title, parentNodeId) => {
                         await handleCreatePage(title, parentNodeId);
                       }}
+                      onExportPage={handleExportPage}
                       onMoveNode={moveTreeNode}
                       dragSourceId={dragSourceId}
                       dragOverNodeId={dragOverNodeId}
@@ -2474,6 +2504,7 @@ export function WorkspacePage() {
                         onCreatePage={async (title, parentNodeId) => {
                           await handleCreatePage(title, parentNodeId);
                         }}
+                        onExportPage={handleExportPage}
                         onMoveNode={moveTreeNode}
                         dragSourceId={dragSourceId}
                         dragOverNodeId={dragOverNodeId}
