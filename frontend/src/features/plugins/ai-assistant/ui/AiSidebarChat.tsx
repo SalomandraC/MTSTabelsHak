@@ -7,6 +7,7 @@ import {
   type WorkspaceTreeNode,
   wikiliveApi,
 } from '../../../../shared/api/wikilive';
+import { AiOutputView } from '../model/ai-output-renderer';
 import { getEditorMarkdown } from '../model/editor-markdown';
 import { useAiTableContext } from '../model/use-ai-table-context';
 
@@ -209,151 +210,8 @@ function filterStructureTreeForIds(
     .filter((node): node is WorkspaceTreeNode => Boolean(node));
 }
 
-function renderInlineMarkdown(text: string, keyPrefix: string) {
-  const tokens = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\)|\*[^*]+\*)/g).filter(Boolean);
-
-  return tokens.map((token, index) => {
-    const key = `${keyPrefix}-${index}`;
-
-    if (token.startsWith('**') && token.endsWith('**')) {
-      return <strong key={key}>{token.slice(2, -2)}</strong>;
-    }
-
-    if (token.startsWith('`') && token.endsWith('`')) {
-      return (
-        <code key={key} className="rounded bg-[#f3f5f8] px-1.5 py-0.5 font-mono text-[0.95em] text-[#a22a4e]">
-          {token.slice(1, -1)}
-        </code>
-      );
-    }
-
-    if (token.startsWith('*') && token.endsWith('*')) {
-      return <em key={key}>{token.slice(1, -1)}</em>;
-    }
-
-    const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-    if (linkMatch) {
-      return (
-        <a
-          key={key}
-          href={linkMatch[2]}
-          target="_blank"
-          rel="noreferrer"
-          className="text-[#3366cc] underline underline-offset-2"
-        >
-          {linkMatch[1]}
-        </a>
-      );
-    }
-
-    return <span key={key}>{token}</span>;
-  });
-}
-
 function MarkdownMessage({ text }: { text: string }) {
-  const lines = text.replace(/\r\n/g, '\n').split('\n');
-  const blocks: React.ReactNode[] = [];
-  let index = 0;
-
-  while (index < lines.length) {
-    const line = lines[index];
-
-    if (!line.trim()) {
-      index += 1;
-      continue;
-    }
-
-    if (line.startsWith('```')) {
-      const codeLines: string[] = [];
-      index += 1;
-      while (index < lines.length && !lines[index].startsWith('```')) {
-        codeLines.push(lines[index]);
-        index += 1;
-      }
-      index += 1;
-      blocks.push(
-        <pre
-          key={`code-${blocks.length}`}
-          className="overflow-x-auto rounded-xl bg-[#161b22] px-3 py-2 text-[12px] leading-5 text-[#e6edf3]"
-        >
-          <code>{codeLines.join('\n')}</code>
-        </pre>,
-      );
-      continue;
-    }
-
-    const headingMatch = line.match(/^(#{1,3})\s+(.+)$/);
-    if (headingMatch) {
-      const level = headingMatch[1].length;
-      const Tag = level === 1 ? 'h1' : level === 2 ? 'h2' : 'h3';
-      const className =
-        level === 1
-          ? 'text-base font-semibold'
-          : level === 2
-            ? 'text-[15px] font-semibold'
-            : 'text-sm font-semibold';
-      blocks.push(
-        <Tag key={`heading-${blocks.length}`} className={className}>
-          {renderInlineMarkdown(headingMatch[2], `heading-${blocks.length}`)}
-        </Tag>,
-      );
-      index += 1;
-      continue;
-    }
-
-    if (/^[-*]\s+/.test(line)) {
-      const items: string[] = [];
-      while (index < lines.length && /^[-*]\s+/.test(lines[index])) {
-        items.push(lines[index].replace(/^[-*]\s+/, ''));
-        index += 1;
-      }
-      blocks.push(
-        <ul key={`ul-${blocks.length}`} className="list-disc space-y-1 pl-5">
-          {items.map((item, itemIndex) => (
-            <li key={`ul-item-${itemIndex}`}>{renderInlineMarkdown(item, `ul-${blocks.length}-${itemIndex}`)}</li>
-          ))}
-        </ul>,
-      );
-      continue;
-    }
-
-    if (/^\d+\.\s+/.test(line)) {
-      const items: string[] = [];
-      while (index < lines.length && /^\d+\.\s+/.test(lines[index])) {
-        items.push(lines[index].replace(/^\d+\.\s+/, ''));
-        index += 1;
-      }
-      blocks.push(
-        <ol key={`ol-${blocks.length}`} className="list-decimal space-y-1 pl-5">
-          {items.map((item, itemIndex) => (
-            <li key={`ol-item-${itemIndex}`}>{renderInlineMarkdown(item, `ol-${blocks.length}-${itemIndex}`)}</li>
-          ))}
-        </ol>,
-      );
-      continue;
-    }
-
-    const paragraphLines: string[] = [];
-    while (
-      index < lines.length &&
-      lines[index].trim() &&
-      !lines[index].startsWith('```') &&
-      !/^(#{1,3})\s+/.test(lines[index]) &&
-      !/^[-*]\s+/.test(lines[index]) &&
-      !/^\d+\.\s+/.test(lines[index])
-    ) {
-      paragraphLines.push(lines[index]);
-      index += 1;
-    }
-
-    blocks.push(
-      <p key={`p-${blocks.length}`} className="whitespace-pre-wrap leading-6">
-        {renderInlineMarkdown(paragraphLines.join('\n'), `p-${blocks.length}`)}
-      </p>,
-    );
-  }
-
-  return <div className="space-y-3">{blocks}</div>;
+  return <AiOutputView text={text} />;
 }
 
 function LoadingBubble({ phrase }: { phrase: string }) {
