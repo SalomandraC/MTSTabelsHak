@@ -77,6 +77,13 @@ type RemoveBlockMenuState = {
   kind: 'iframe' | 'markdown-table' | 'canvas' | 'live-table' | 'diagram';
 };
 
+type LongPressStartState = {
+  x: number;
+  y: number;
+  target: EventTarget | null;
+  removeTarget: { pos: number; kind: RemoveBlockMenuState['kind'] } | null;
+};
+
 function resolveRemoveBlockTarget(
   editor: Editor,
   pos: number,
@@ -490,7 +497,7 @@ function LivePageEditor({
   const [removeBlockMenu, setRemoveBlockMenu] = useState<RemoveBlockMenuState | null>(null);
   const editorSurfaceRef = useRef<HTMLDivElement | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
-  const longPressStartRef = useRef<{ x: number; y: number; target: EventTarget | null } | null>(null);
+  const longPressStartRef = useRef<LongPressStartState | null>(null);
   const [viewPreferences, setViewPreferences] = useState(() => readPageEditorViewPreferences());
   const effectiveViewMode: PageEditorViewMode = isCompactViewport ? 'standard' : viewPreferences.mode;
 
@@ -593,6 +600,44 @@ function LivePageEditor({
       tableSnapshot: getTableSnapshot(tableContext?.datasheetId),
     });
   }, [controller.editor, isAiInlineChatEnabled, reserveInlineCopilotBottomSpace]);
+
+  const resolveRemovableBlockByTarget = useCallback((target: EventTarget | null) => {
+    if (!controller.editor || !effectiveCanEdit) {
+      return null;
+    }
+
+    const element = target as HTMLElement | null;
+    const iframeNode = element?.closest('[data-type="iframeBlock"]') as HTMLElement | null;
+    const canvasNode = element?.closest('[data-type="canvasBlock"]') as HTMLElement | null;
+    const liveTableNode = element?.closest('[data-type="mws-table-embed"]') as HTMLElement | null;
+    const diagramNode = element?.closest('[data-type="mermaid-diagram"]') as HTMLElement | null;
+    const markdownTableNode = element?.closest('table') as HTMLTableElement | null;
+    const isInsideMwsTable = Boolean(element?.closest('[data-type="mws-table-embed"]'));
+
+    if (!iframeNode && !canvasNode && !liveTableNode && !diagramNode && !(markdownTableNode && !isInsideMwsTable)) {
+      return null;
+    }
+
+    const menuTarget = iframeNode ?? canvasNode ?? liveTableNode ?? diagramNode ?? markdownTableNode;
+    if (!menuTarget) {
+      return null;
+    }
+
+    const preferredKinds: Array<RemoveBlockMenuState['kind']> = [
+      ...(iframeNode ? ['iframe' as const] : []),
+      ...(canvasNode ? ['canvas' as const] : []),
+      ...(liveTableNode ? ['live-table' as const] : []),
+      ...(diagramNode ? ['diagram' as const] : []),
+      ...(markdownTableNode && !isInsideMwsTable ? ['markdown-table' as const] : []),
+    ];
+
+    try {
+      const domPos = controller.editor.view.posAtDOM(menuTarget, 0);
+      return resolveRemoveBlockTarget(controller.editor, domPos, preferredKinds);
+    } catch {
+      return null;
+    }
+  }, [controller.editor, effectiveCanEdit]);
 
   const clearLongPressTimer = useCallback(() => {
     if (longPressTimerRef.current !== null) {
@@ -837,26 +882,39 @@ function LivePageEditor({
           data-page-editor-surface
           data-editor-view-mode={effectiveViewMode}
           onMouseDown={(event) => {
-            if (!isAiInlineChatEnabled || !controller.editor || event.button !== 0) {
+            if (!controller.editor || event.button !== 0) {
               return;
             }
 
             clearLongPressTimer();
+            const removeTarget = resolveRemovableBlockByTarget(event.target);
+            if (!removeTarget) {
+              longPressStartRef.current = null;
+              return;
+            }
+
             longPressStartRef.current = {
               x: event.clientX,
               y: event.clientY,
               target: event.target,
+              removeTarget,
             };
 
             longPressTimerRef.current = window.setTimeout(() => {
               const start = longPressStartRef.current;
-              if (!start) {
+              if (!start || !start.removeTarget) {
                 return;
               }
 
-              openInlineCopilotAtPoint(start.x, start.y, start.target);
+              setCopilotAnchor(null);
+              setRemoveBlockMenu({
+                x: start.x,
+                y: start.y,
+                pos: start.removeTarget.pos,
+                kind: start.removeTarget.kind,
+              });
               clearLongPressTimer();
-            }, 420);
+            }, 450);
           }}
           onMouseMove={(event) => {
             const start = longPressStartRef.current;
@@ -880,52 +938,12 @@ function LivePageEditor({
             longPressStartRef.current = null;
           }}
           onContextMenu={(event) => {
-            if (!controller.editor) {
+            if (!controller.editor || !isAiInlineChatEnabled) {
               return;
             }
-
-            const target = event.target as HTMLElement | null;
-            const iframeNode = target?.closest('[data-type="iframeBlock"]') as HTMLElement | null;
-            const canvasNode = target?.closest('[data-type="canvasBlock"]') as HTMLElement | null;
-            const liveTableNode = target?.closest('[data-type="mws-table-embed"]') as HTMLElement | null;
-            const diagramNode = target?.closest('[data-type="mermaid-diagram"]') as HTMLElement | null;
-            const markdownTableNode = target?.closest('table') as HTMLTableElement | null;
-            const isInsideMwsTable = Boolean(target?.closest('[data-type="mws-table-embed"]'));
-
-            if (effectiveCanEdit && (iframeNode || canvasNode || liveTableNode || diagramNode || (markdownTableNode && !isInsideMwsTable))) {
-              const menuTarget = iframeNode ?? canvasNode ?? liveTableNode ?? diagramNode ?? markdownTableNode;
-              const preferredKinds: Array<RemoveBlockMenuState['kind']> = [
-                ...(iframeNode ? ['iframe' as const] : []),
-                ...(canvasNode ? ['canvas' as const] : []),
-                ...(liveTableNode ? ['live-table' as const] : []),
-                ...(diagramNode ? ['diagram' as const] : []),
-                ...(markdownTableNode && !isInsideMwsTable ? ['markdown-table' as const] : []),
-              ];
-
-              if (menuTarget) {
-                try {
-                  const domPos = controller.editor.view.posAtDOM(menuTarget, 0);
-                  const resolvedTarget = resolveRemoveBlockTarget(controller.editor, domPos, preferredKinds);
-                  if (!resolvedTarget) {
-                    return;
-                  }
-
-                  event.preventDefault();
-                  setCopilotAnchor(null);
-                  setRemoveBlockMenu({
-                    x: event.clientX,
-                    y: event.clientY,
-                    pos: resolvedTarget.pos,
-                    kind: resolvedTarget.kind,
-                  });
-                  return;
-                } catch {
-                  // Ignore mapping errors and fallback to the default context flow.
-                }
-              }
-            }
-
+            event.preventDefault();
             setRemoveBlockMenu(null);
+            openInlineCopilotAtPoint(event.clientX, event.clientY, event.target);
           }}
         >
           {removeBlockMenu ? (
