@@ -118,7 +118,7 @@ export function FloatingToolbar({
   const showIframeButton = plugins.some(p => p.id === 'iframe-embed' && p.enabled) && iframeSettings['floating-toolbar'];
   const showBookmarkButtons = plugins.some(p => p.id === 'bookmarks' && p.enabled) && bookmarkSettings['floating-toolbar'];
   const [visible, setVisible] = useState(false);
-  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const [position, setPosition] = useState({ top: 0, left: 0, maxWidth: 0 });
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [highlightPickerAnchor, setHighlightPickerAnchor] = useState<DOMRect | null>(null);
   const [createBookmarkAnchor, setCreateBookmarkAnchor] = useState<DOMRect | null>(null);
@@ -173,6 +173,7 @@ export function FloatingToolbar({
     const margin = 8;
 
     let absoluteTop = Math.min(start.top, end.top);
+    let absoluteBottom = Math.max(start.bottom, end.bottom);
     let absoluteLeft = (start.left + end.left) / 2;
 
     const domSelection = view.dom?.ownerDocument?.getSelection();
@@ -183,6 +184,7 @@ export function FloatingToolbar({
 
       if (hasNonZeroSelection) {
         absoluteTop = rect.top;
+        absoluteBottom = rect.bottom;
         absoluteLeft = rect.left + rect.width / 2;
       } else {
         const domPoint = view.domAtPos(from);
@@ -194,6 +196,7 @@ export function FloatingToolbar({
         if (nodeElement) {
           const nodeRect = nodeElement.getBoundingClientRect();
           absoluteTop = nodeRect.top;
+          absoluteBottom = nodeRect.bottom;
           absoluteLeft = start.left;
         }
       }
@@ -207,22 +210,46 @@ export function FloatingToolbar({
       return;
     }
 
+    const leftMenuOpenButton = document.querySelector('button[aria-label="Показать левое меню"]') as HTMLElement | null;
+    const leftMenuButtonRect = leftMenuOpenButton?.getBoundingClientRect();
+    const safeLeftEdge = leftMenuButtonRect ? leftMenuButtonRect.right + 10 : 0;
+    const rightMenuOpenButton = document.querySelector('button[aria-label="Показать правое меню"]') as HTMLElement | null;
+    const rightMenuButtonRect = rightMenuOpenButton?.getBoundingClientRect();
+    const safeRightEdge = rightMenuButtonRect ? rightMenuButtonRect.left - 10 : Number.POSITIVE_INFINITY;
+
     const minCenterLeft = surfaceRect
-      ? surfaceRect.left + margin + toolbarWidth / 2
-      : margin + toolbarWidth / 2;
+      ? Math.max(surfaceRect.left + margin + toolbarWidth / 2, safeLeftEdge + toolbarWidth / 2)
+      : Math.max(margin + toolbarWidth / 2, safeLeftEdge + toolbarWidth / 2);
     const maxCenterLeft = surfaceRect
-      ? surfaceRect.right - margin - toolbarWidth / 2
-      : window.innerWidth - margin - toolbarWidth / 2;
+      ? Math.min(surfaceRect.right - margin - toolbarWidth / 2, safeRightEdge - toolbarWidth / 2)
+      : Math.min(window.innerWidth - margin - toolbarWidth / 2, safeRightEdge - toolbarWidth / 2);
     const clampedCenterLeft = Math.max(
       minCenterLeft,
       Math.min(absoluteLeft, Math.max(minCenterLeft, maxCenterLeft)),
     );
 
-    const desiredTop = absoluteTop - 40;
+    const verticalGap = 10;
     const minTop = surfaceRect ? surfaceRect.top + margin : margin;
     const maxTop = surfaceRect
       ? surfaceRect.bottom - margin - toolbarHeight
       : window.innerHeight - margin - toolbarHeight;
+
+    const preferredTopAbove = absoluteTop - toolbarHeight - verticalGap;
+    const preferredTopBelow = absoluteBottom + verticalGap;
+    const canPlaceAbove = preferredTopAbove >= minTop;
+    const canPlaceBelow = preferredTopBelow <= maxTop;
+
+    let desiredTop: number;
+    if (canPlaceAbove) {
+      desiredTop = preferredTopAbove;
+    } else if (canPlaceBelow) {
+      desiredTop = preferredTopBelow;
+    } else {
+      const spaceAbove = Math.max(0, absoluteTop - minTop);
+      const spaceBelow = Math.max(0, maxTop - absoluteBottom);
+      desiredTop = spaceBelow > spaceAbove ? preferredTopBelow : preferredTopAbove;
+    }
+
     const clampedTop = Math.max(minTop, Math.min(desiredTop, Math.max(minTop, maxTop)));
 
     const top = surfaceRect
@@ -232,7 +259,11 @@ export function FloatingToolbar({
       ? clampedCenterLeft - surfaceRect.left + surfaceScrollLeft
       : clampedCenterLeft;
 
-    setPosition({ top, left });
+    const maxWidth = surfaceRect
+      ? Math.max(280, surfaceRect.width - margin * 2)
+      : Math.max(280, window.innerWidth - margin * 2);
+
+    setPosition({ top, left, maxWidth });
     setVisible(true);
   }, [editor]);
 
@@ -362,13 +393,15 @@ export function FloatingToolbar({
     left: position.left,
     transform: 'translateX(-50%)',
     zIndex: 40,
+    maxWidth: position.maxWidth > 0 ? position.maxWidth : undefined,
+    width: 'max-content',
   };
 
   return (
     <div
       ref={toolbarRef}
       style={style}
-      className="relative flex items-center gap-0 rounded-md border border-editor-border-control bg-white p-0.5 shadow-lg"
+      className="relative flex max-w-full flex-wrap items-center gap-0 rounded-md border border-editor-border-control bg-white p-0.5 shadow-lg"
       role="toolbar"
       aria-label="Плавающая панель форматирования"
     >

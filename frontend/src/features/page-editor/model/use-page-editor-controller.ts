@@ -573,23 +573,9 @@ export function usePageEditorController({
 
         if (surfaceRect) {
           const caretBottom = coords.bottom - surfaceRect.top + surfaceScrollTop;
-          const caretTop = coords.top - surfaceRect.top + surfaceScrollTop;
-          const availableBelow = surfaceRect.bottom - coords.bottom - verticalPadding;
-          const availableAbove = coords.top - surfaceRect.top - verticalPadding;
-          const shouldOpenAbove = availableBelow < menuHeight && availableAbove > availableBelow;
-
-          top = shouldOpenAbove ? caretTop - menuHeight - verticalGap : caretBottom + verticalGap;
-          top = Math.max(
-            verticalPadding,
-            Math.min(top, surfaceScrollTop + surfaceRect.height - menuHeight - verticalPadding),
-          );
+          top = caretBottom + verticalGap;
         } else {
-          const availableBelow = window.innerHeight - coords.bottom - verticalPadding;
-          const availableAbove = coords.top - verticalPadding;
-          const shouldOpenAbove = availableBelow < menuHeight && availableAbove > availableBelow;
-
-          top = shouldOpenAbove ? coords.top - menuHeight - verticalGap : coords.bottom + verticalGap;
-          top = Math.max(verticalPadding, Math.min(top, window.innerHeight - menuHeight - verticalPadding));
+          top = coords.bottom + verticalGap;
         }
 
         setSlashState({
