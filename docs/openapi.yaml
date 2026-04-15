@@ -35,12 +35,26 @@ servers:
 tags:
   - name: Health
     description: Технические ручки для health-check и readiness
+  - name: Auth
+    description: Авторизация по API-ключу, refresh-сессии и профиль пользователя
   - name: Pages
     description: Работа с wiki-страницами и их метаданными
   - name: Links
     description: Навигация по связям между страницами и обратным ссылкам
   - name: Collaboration
     description: Bootstrap и контроль серверной синхронизации CRDT-документа
+  - name: History
+    description: История checkpoint-ов и восстановление состояния страницы
+  - name: Comments
+    description: Треды комментариев и сообщения в контексте страницы
+  - name: Search
+    description: Контекстный поиск по документам пространства
+  - name: AI
+    description: AI инструменты, чат и планирование действий
+  - name: Plugins
+    description: Каталог плагинов и пользовательские настройки/активация
+  - name: Templates
+    description: Каталог шаблонов, CRUD и инстанцирование в страницу
   - name: MWS Spaces
     description: Работа с пространствами MWS Tables
   - name: MWS Nodes
@@ -78,6 +92,132 @@ paths:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
 
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Войти по MWS API-ключу
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [apiKey]
+              properties:
+                apiKey:
+                  type: string
+                displayName:
+                  type: string
+                  maxLength: 80
+      responses:
+        '200':
+          description: Успешный вход
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accessToken, expiresInSec, user]
+                properties:
+                  accessToken:
+                    type: string
+                  expiresInSec:
+                    type: integer
+                  user:
+                    type: object
+                    additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Обновить access token по refresh cookie
+      operationId: refreshAuthToken
+      security: []
+      responses:
+        '200':
+          description: Access token обновлен
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accessToken, expiresInSec]
+                properties:
+                  accessToken:
+                    type: string
+                  expiresInSec:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Выйти из сессии
+      operationId: logout
+      security: []
+      responses:
+        '204':
+          description: Сессия завершена, refresh cookie очищен
+
+  /api/v1/me:
+    get:
+      tags: [Auth]
+      summary: Получить текущего пользователя
+      operationId: getMe
+      responses:
+        '200':
+          description: Профиль получен
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user:
+                    type: object
+                    properties:
+                      userId:
+                        type: string
+                      clientId:
+                        type: string
+                        nullable: true
+                      displayName:
+                        type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    patch:
+      tags: [Auth]
+      summary: Обновить displayName текущего пользователя
+      operationId: updateMe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [displayName]
+              properties:
+                displayName:
+                  type: string
+                  maxLength: 80
+      responses:
+        '200':
+          description: Профиль обновлен
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user:
+                    type: object
+                    additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /api/v1/pages:
     get:
       tags: [Pages]
@@ -98,12 +238,6 @@ paths:
           in: query
           required: false
           description: Строка поиска по заголовкам, slug и индексируемому plain-text preview
-          schema:
-            type: string
-        - name: cursor
-          in: query
-          required: false
-          description: Курсор следующей страницы результатов
           schema:
             type: string
         - name: limit
@@ -315,6 +449,7 @@ paths:
         Если параметр `includeDocumentState=true`, backend также возвращает последний серверный
         compact snapshot CRDT-документа.
       operationId: getPage
+      security: []
       parameters:
         - $ref: '#/components/parameters/PageId'
         - name: includeDocumentState
@@ -324,6 +459,13 @@ paths:
           schema:
             type: boolean
             default: true
+        - name: readOnlyLink
+          in: query
+          required: false
+          description: Признак открытия страницы по read-only share ссылке
+          schema:
+            type: boolean
+            default: false
       responses:
         '200':
           description: Страница найдена
@@ -381,6 +523,322 @@ paths:
       responses:
         '204':
           description: Страница удалена или переведена в архив
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/pages/{pageId}/access:
+    get:
+      tags: [Pages]
+      summary: Получить политику доступов страницы
+      operationId: getPageAccess
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+      responses:
+        '200':
+          description: Политика доступов страницы
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Pages]
+      summary: Обновить политику доступов страницы
+      operationId: updatePageAccess
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [viewAccess, commentAccess, editAccess]
+              properties:
+                viewAccess:
+                  type: string
+                  enum: [owner_only, space_members, link_holders]
+                commentAccess:
+                  type: string
+                  enum: [owner_only, space_members, link_holders]
+                editAccess:
+                  type: string
+                  enum: [owner_only, space_members, link_holders]
+      responses:
+        '200':
+          description: Политика доступов обновлена
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/pages/{pageId}/history:
+    get:
+      tags: [History]
+      summary: Получить историю checkpoint-ов страницы
+      operationId: listPageHistory
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: История страницы получена
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/pages/{pageId}/history/{checkpointId}:
+    get:
+      tags: [History]
+      summary: Получить конкретный checkpoint страницы
+      operationId: getPageCheckpoint
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+        - name: checkpointId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Checkpoint получен
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/pages/{pageId}/comments:
+    get:
+      tags: [Comments]
+      summary: Получить треды комментариев страницы
+      operationId: listCommentThreads
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+        - name: includeResolved
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Список тредов комментариев
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/pages/{pageId}/comments/threads:
+    post:
+      tags: [Comments]
+      summary: Создать тред комментариев
+      operationId: createCommentThread
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [anchorId, anchorText, message]
+              properties:
+                anchorId:
+                  type: string
+                anchorText:
+                  type: string
+                message:
+                  type: string
+      responses:
+        '201':
+          description: Тред создан
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/pages/{pageId}/comments/threads/{threadId}:
+    patch:
+      tags: [Comments]
+      summary: Обновить тред комментариев
+      operationId: updateCommentThread
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+        - name: threadId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [open, resolved]
+                resolveReason:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Тред обновлен
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/pages/{pageId}/comments/threads/{threadId}/messages:
+    post:
+      tags: [Comments]
+      summary: Добавить сообщение в тред
+      operationId: addCommentMessage
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+        - name: threadId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message:
+                  type: string
+      responses:
+        '201':
+          description: Сообщение добавлено
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/pages/{pageId}/comments/threads/{threadId}/messages/{messageId}:
+    patch:
+      tags: [Comments]
+      summary: Обновить сообщение в треде
+      operationId: updateCommentMessage
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+        - name: threadId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message:
+                  type: string
+      responses:
+        '200':
+          description: Сообщение обновлено
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Comments]
+      summary: Удалить сообщение из треда
+      operationId: deleteCommentMessage
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+        - name: threadId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Сообщение удалено
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -506,6 +964,624 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/v1/search/documents:
+    post:
+      tags: [Search]
+      summary: Контекстный поиск документов в пространстве
+      operationId: searchDocuments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [spaceId, query]
+              properties:
+                spaceId:
+                  type: string
+                query:
+                  type: string
+                pageIds:
+                  type: array
+                  items:
+                    type: string
+                folderIds:
+                  type: array
+                  items:
+                    type: string
+                topK:
+                  type: integer
+                  minimum: 1
+                  maximum: 20
+      responses:
+        '200':
+          description: Результаты поиска
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/ai/definitions:
+    get:
+      tags: [AI]
+      summary: Получить список доступных AI инструментов
+      operationId: getAiDefinitions
+      security: []
+      responses:
+        '200':
+          description: Описания инструментов
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tools:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+
+  /api/v1/ai/autocomplete:
+    post:
+      tags: [AI]
+      summary: Получить inline AI autocomplete
+      operationId: aiAutocomplete
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentText]
+              properties:
+                currentText:
+                  type: string
+                pageTitle:
+                  type: string
+                  nullable: true
+                pageSnapshot:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Подсказка сгенерирована
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/v1/ai/generate:
+    post:
+      tags: [AI]
+      summary: Сгенерировать блок контента
+      operationId: aiGenerate
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt:
+                  type: string
+                pageTitle:
+                  type: string
+                  nullable: true
+                pageSnapshot:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Контент сгенерирован
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/v1/ai/transform:
+    post:
+      tags: [AI]
+      summary: Трансформировать фрагмент текста
+      operationId: aiTransform
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text, transformation]
+              properties:
+                text:
+                  type: string
+                transformation:
+                  type: string
+                styleId:
+                  type: string
+                  nullable: true
+                pageTitle:
+                  type: string
+                  nullable: true
+                pageSnapshot:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Текст трансформирован
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/v1/ai/chat:
+    post:
+      tags: [AI]
+      summary: Задать вопрос AI чату с контекстом страницы/пространства
+      operationId: aiChat
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question:
+                  type: string
+                spaceId:
+                  type: string
+                  nullable: true
+                contextScope:
+                  type: string
+                  enum: [currentFile, documents, folders, space]
+                  nullable: true
+                intent:
+                  type: string
+                  nullable: true
+                pageId:
+                  type: string
+                  nullable: true
+                datasheetId:
+                  type: string
+                  nullable: true
+                viewId:
+                  type: string
+                  nullable: true
+                pageTitle:
+                  type: string
+                  nullable: true
+                pageSnapshot:
+                  type: string
+                  nullable: true
+                selectedPageIds:
+                  type: array
+                  items:
+                    type: string
+                selectedFolderIds:
+                  type: array
+                  items:
+                    type: string
+                contextDocuments:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: true
+                workspaceStructure:
+                  type: object
+                  additionalProperties: true
+                useVectorSearch:
+                  type: boolean
+                  nullable: true
+      responses:
+        '200':
+          description: Ответ чата получен
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/v1/ai/execute:
+    post:
+      tags: [AI]
+      summary: Выполнить AI tool по имени и аргументам
+      operationId: aiExecuteTool
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [toolName, args]
+              properties:
+                toolName:
+                  type: string
+                args:
+                  type: object
+                  additionalProperties: true
+                pageId:
+                  type: string
+                  nullable: true
+                workspaceId:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Инструмент выполнен
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/v1/ai/plan-mutation:
+    post:
+      tags: [AI]
+      summary: Построить план мутации таблицы
+      operationId: aiPlanMutation
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [operation, prompt]
+              properties:
+                operation:
+                  type: string
+                prompt:
+                  type: string
+                spaceId:
+                  type: string
+                  nullable: true
+                datasheetId:
+                  type: string
+                  nullable: true
+                viewId:
+                  type: string
+                  nullable: true
+                tableSnapshot:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: План мутации построен
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/v1/ai/plan-workflow:
+    post:
+      tags: [AI]
+      summary: Построить workflow-план по таблице
+      operationId: aiPlanWorkflow
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt:
+                  type: string
+                spaceId:
+                  type: string
+                  nullable: true
+                datasheetId:
+                  type: string
+                  nullable: true
+                viewId:
+                  type: string
+                  nullable: true
+                tableSnapshot:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Workflow-план построен
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/v1/ai-tools/smoke-test:
+    get:
+      tags: [AI]
+      summary: Smoke-test интеграции AI toolchain
+      operationId: aiSmokeTest
+      responses:
+        '200':
+          description: Результат smoke-test
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/v1/plugins/catalog:
+    get:
+      tags: [Plugins]
+      summary: Получить каталог плагинов с учетом entitlement пользователя
+      operationId: getPluginsCatalog
+      responses:
+        '200':
+          description: Каталог плагинов
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/plugins/{pluginId}/activate:
+    post:
+      tags: [Plugins]
+      summary: Активировать плагин
+      operationId: activatePlugin
+      parameters:
+        - name: pluginId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Плагин активирован
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/plugins/{pluginId}/deactivate:
+    post:
+      tags: [Plugins]
+      summary: Деактивировать плагин
+      operationId: deactivatePlugin
+      parameters:
+        - name: pluginId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Плагин деактивирован
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/plugins/{pluginId}/settings:
+    patch:
+      tags: [Plugins]
+      summary: Обновить пользовательские настройки плагина
+      operationId: updatePluginSettings
+      parameters:
+        - name: pluginId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [settings]
+              properties:
+                settings:
+                  type: object
+                  additionalProperties:
+                    type: boolean
+      responses:
+        '200':
+          description: Настройки плагина обновлены
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/templates:
+    get:
+      tags: [Templates]
+      summary: Получить список шаблонов
+      operationId: listTemplates
+      parameters:
+        - name: spaceId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [all, mine, space]
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [relevance, newest, popular]
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: categoryId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Список шаблонов
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    post:
+      tags: [Templates]
+      summary: Создать шаблон
+      operationId: createTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '201':
+          description: Шаблон создан
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/templates/categories:
+    get:
+      tags: [Templates]
+      summary: Получить категории шаблонов
+      operationId: listTemplateCategories
+      responses:
+        '200':
+          description: Категории шаблонов
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/v1/templates/{templateId}:
+    patch:
+      tags: [Templates]
+      summary: Обновить шаблон
+      operationId: updateTemplate
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Шаблон обновлен
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Templates]
+      summary: Удалить шаблон
+      operationId: deleteTemplate
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Шаблон удален
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/templates/{templateId}/instantiate:
+    post:
+      tags: [Templates, Pages]
+      summary: Инстанцировать шаблон в wiki-страницу
+      operationId: instantiateTemplate
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '201':
+          description: Страница из шаблона создана
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /api/v1/mws/spaces:
     get:
       tags: [MWS Spaces]
@@ -591,6 +1667,26 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /api/v1/mws/spaces/{spaceId}/sync-tree:
+    post:
+      tags: [MWS Nodes]
+      summary: Синхронизировать MWS дерево пространства в локальный кеш WikiLive
+      operationId: syncMwsTree
+      parameters:
+        - $ref: '#/components/parameters/SpaceId'
+      responses:
+        '200':
+          description: Синхронизация дерева завершена
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '502':
           $ref: '#/components/responses/UpstreamError'
 
@@ -710,6 +1806,79 @@ paths:
         '502':
           $ref: '#/components/responses/UpstreamError'
 
+  /api/v1/mws/datasheets/{datasheetId}/fields/{fieldId}:
+    delete:
+      tags: [MWS Fields]
+      summary: Удалить поле таблицы MWS Tables
+      operationId: deleteMwsField
+      parameters:
+        - $ref: '#/components/parameters/DatasheetId'
+        - name: fieldId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: spaceId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Поле удалено
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /api/v1/mws/datasheets/{datasheetId}/views/{viewId}/fields/{fieldId}/index:
+    patch:
+      tags: [MWS Fields, MWS Views]
+      summary: Изменить позицию поля в представлении
+      operationId: moveMwsField
+      parameters:
+        - $ref: '#/components/parameters/DatasheetId'
+        - name: viewId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: fieldId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [index]
+              properties:
+                index:
+                  type: integer
+                  minimum: 0
+      responses:
+        '200':
+          description: Позиция поля изменена
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
   /api/v1/mws/datasheets/{datasheetId}/views:
     get:
       tags: [MWS Views]
@@ -761,6 +1930,94 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreateMwsViewResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /api/v1/mws/spaces/{spaceId}/datasheets/{datasheetId}/views/{viewId}/sort:
+    post:
+      tags: [MWS Views]
+      summary: Применить сортировку view
+      operationId: setMwsViewSort
+      parameters:
+        - $ref: '#/components/parameters/SpaceId'
+        - $ref: '#/components/parameters/DatasheetId'
+        - name: viewId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rules]
+              properties:
+                rules:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: true
+                keepSort:
+                  type: boolean
+                  default: true
+                applySort:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: Сортировка применена
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /api/v1/mws/spaces/{spaceId}/datasheets/{datasheetId}/views/{viewId}/group:
+    post:
+      tags: [MWS Views]
+      summary: Применить группировку view
+      operationId: setMwsViewGroup
+      parameters:
+        - $ref: '#/components/parameters/SpaceId'
+        - $ref: '#/components/parameters/DatasheetId'
+        - name: viewId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rules]
+              properties:
+                rules:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: true
+      responses:
+        '200':
+          description: Группировка применена
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -879,6 +2136,38 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+
+  /api/v1/mws/datasheets/{datasheetId}/records/{recordId}/fields/{fieldId}:
+    get:
+      tags: [MWS Records]
+      summary: Получить значение конкретной ячейки
+      operationId: getMwsCellValue
+      parameters:
+        - $ref: '#/components/parameters/DatasheetId'
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: fieldId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Значение ячейки получено
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '502':
           $ref: '#/components/responses/UpstreamError'
     patch:
@@ -1056,6 +2345,31 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+    get:
+      tags: [MWS Attachments]
+      summary: Скачать вложение по attachment token
+      operationId: downloadMwsAttachment
+      parameters:
+        - $ref: '#/components/parameters/DatasheetId'
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Бинарный файл вложения
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '502':
           $ref: '#/components/responses/UpstreamError'
 

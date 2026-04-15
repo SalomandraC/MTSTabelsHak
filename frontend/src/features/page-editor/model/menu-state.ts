@@ -13,6 +13,10 @@ const emptyMenuBarState = {
   canStrike: false,
   isCode: false,
   canCode: false,
+  isHighlight: false,
+  canHighlight: false,
+  isBookmark: false,
+  isBookmarkLink: false,
   isLink: false,
   linkLabel: '',
   linkHref: '',
@@ -38,6 +42,8 @@ const emptyMenuBarState = {
   canClearFormatting: false,
   canUndo: false,
   canRedo: false,
+  isCanvasBlock: false,
+  isIframeBlock: false,
 };
 
 export function menuBarStateSelector(ctx: EditorStateSnapshot<Editor | null>) {
@@ -77,6 +83,10 @@ export function menuBarStateSelector(ctx: EditorStateSnapshot<Editor | null>) {
     canStrike: ctx.editor.can().chain().toggleStrike().run() ?? false,
     isCode: ctx.editor.isActive('code') ?? false,
     canCode: ctx.editor.can().chain().toggleCode().run() ?? false,
+    isHighlight: ctx.editor.isActive('highlight') ?? false,
+    canHighlight: ctx.editor.can().chain().toggleHighlight().run() ?? false,
+    isBookmark: ctx.editor.isActive('bookmark') ?? false,
+    isBookmarkLink: ctx.editor.isActive('bookmarkLink') ?? false,
     isLink: ctx.editor.isActive('link') ?? false,
     linkLabel: linkText || linkHref,
     linkHref,
@@ -102,6 +112,8 @@ export function menuBarStateSelector(ctx: EditorStateSnapshot<Editor | null>) {
     canClearFormatting: ctx.editor.can().chain().unsetAllMarks().clearNodes().setParagraph().run() ?? false,
     canUndo: ctx.editor.can().chain().undo().run() ?? false,
     canRedo: ctx.editor.can().chain().redo().run() ?? false,
+    isCanvasBlock: ctx.editor.isActive('canvasBlock') ?? false,
+    isIframeBlock: ctx.editor.isActive('iframeBlock') ?? false,
   };
 }
 

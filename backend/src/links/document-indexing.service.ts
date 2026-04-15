@@ -28,10 +28,8 @@ export interface IndexedDocument {
 
 @Injectable()
 export class DocumentIndexingService {
-  extractFromProsemirrorJson(doc: Record<string, any> | null | undefined): IndexedDocument {
+  extractPlainTextFromProsemirrorJson(doc: Record<string, any> | null | undefined): string {
     const textParts: string[] = [];
-    const linkCounts = new Map<string, number>();
-    const embeds: ExtractedPageEmbed[] = [];
 
     const visit = (node: Record<string, any> | null | undefined) => {
       if (!node || typeof node !== 'object') {
@@ -40,6 +38,24 @@ export class DocumentIndexingService {
 
       if (typeof node.text === 'string' && node.text.trim()) {
         textParts.push(node.text.trim());
+      }
+
+      const content = Array.isArray(node.content) ? node.content : [];
+      content.forEach((child) => visit(child));
+    };
+
+    visit(doc);
+
+    return textParts.join(' ').trim();
+  }
+
+  extractFromProsemirrorJson(doc: Record<string, any> | null | undefined): IndexedDocument {
+    const linkCounts = new Map<string, number>();
+    const embeds: ExtractedPageEmbed[] = [];
+
+    const visit = (node: Record<string, any> | null | undefined) => {
+      if (!node || typeof node !== 'object') {
+        return;
       }
 
       if (node.type === 'pageLink') {
@@ -73,9 +89,10 @@ export class DocumentIndexingService {
     };
 
     visit(doc);
+    const plainText = this.extractPlainTextFromProsemirrorJson(doc);
 
     return {
-      plainTextPreview: textParts.join(' ').slice(0, 1000),
+      plainTextPreview: plainText.slice(0, 1000),
       links: [...linkCounts.entries()].map(([targetPageId, mentionCount]) => ({
         targetPageId,
         mentionCount,

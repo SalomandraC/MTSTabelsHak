@@ -2,18 +2,22 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { WikiNodeType } from '@prisma/client';
 import { yDocToProsemirrorJSON } from 'y-prosemirror';
 import * as Y from 'yjs';
+import { UserContext } from 'src/auth/user-context';
 import { encodeBytesToBase64 } from 'src/common/utils';
 import { PrismaService } from 'src/infra/prisma/prisma.service';
 import { DocumentIndexingService } from 'src/links/document-indexing.service';
+import { PageAccessService } from 'src/page-access/page-access.service';
 
 @Injectable()
 export class HistoryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly indexingService: DocumentIndexingService,
+    private readonly pageAccessService: PageAccessService,
   ) {}
 
-  async listHistory(pageId: string, limit = 50) {
+  async listHistory(pageId: string, user?: UserContext, limit = 50) {
+    await this.pageAccessService.assertCanView(pageId, user);
     await this.ensurePageExists(pageId);
     const take = Math.min(Math.max(Number.isFinite(limit) ? Math.floor(limit) : 50, 1), 100);
     const checkpoints = await this.prisma.pageCheckpoint.findMany({
@@ -36,7 +40,8 @@ export class HistoryService {
     };
   }
 
-  async getCheckpoint(pageId: string, checkpointId: string) {
+  async getCheckpoint(pageId: string, checkpointId: string, user?: UserContext) {
+    await this.pageAccessService.assertCanView(pageId, user);
     await this.ensurePageExists(pageId);
     const checkpoint = await this.prisma.pageCheckpoint.findFirst({
       where: {

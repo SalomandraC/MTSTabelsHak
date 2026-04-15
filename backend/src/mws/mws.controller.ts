@@ -21,6 +21,8 @@ import {
   CreateMwsRecordsDto,
   CreateMwsTablePageDto,
   CreateMwsViewDto,
+  SetViewGroupDto,
+  SetViewSortDto,
   MoveMwsFieldDto,
   ResolveTableEmbedDto,
   UpdateMwsRecordsDto,
@@ -53,6 +55,11 @@ export class MwsController {
   @Get('nodes/:nodeId')
   async getNode(@Param('nodeId') nodeId: string, @CurrentUser() user: UserContext) {
     return this.mwsService.getNode(nodeId, user);
+  }
+
+  @Post('spaces/:spaceId/sync-tree')
+  async syncTree(@Param('spaceId') spaceId: string, @CurrentUser() user: UserContext) {
+    return this.mwsService.syncSpaceNodes(spaceId, user);
   }
 
   @Post('spaces/:spaceId/datasheets')
@@ -119,6 +126,34 @@ export class MwsController {
     return this.mwsService.createView(spaceId, datasheetId, dto, user);
   }
 
+  @Post('spaces/:spaceId/datasheets/:datasheetId/views/:viewId/sort')
+  async setViewSort(
+    @Param('spaceId') spaceId: string,
+    @Param('datasheetId') datasheetId: string,
+    @Param('viewId') viewId: string,
+    @Body() dto: SetViewSortDto,
+    @CurrentUser() user: UserContext,
+  ) {
+    return this.mwsService.setViewSort(
+      spaceId, datasheetId, viewId,
+      dto.rules,
+      dto.keepSort ?? true,
+      dto.applySort ?? true,
+      user,
+    );
+  }
+
+  @Post('spaces/:spaceId/datasheets/:datasheetId/views/:viewId/group')
+  async setViewGroup(
+    @Param('spaceId') spaceId: string,
+    @Param('datasheetId') datasheetId: string,
+    @Param('viewId') viewId: string,
+    @Body() dto: SetViewGroupDto,
+    @CurrentUser() user: UserContext,
+  ) {
+    return this.mwsService.setViewGroup(spaceId, datasheetId, viewId, dto.rules, user);
+  }
+
   @Get('datasheets/:datasheetId/records')
   async listRecords(
     @Param('datasheetId') datasheetId: string,
@@ -126,6 +161,16 @@ export class MwsController {
     @CurrentUser() user: UserContext,
   ) {
     return this.mwsService.listRecords(datasheetId, query, user);
+  }
+
+  @Get('datasheets/:datasheetId/records/:recordId/fields/:fieldId')
+  async getCellValue(
+    @Param('datasheetId') datasheetId: string,
+    @Param('recordId') recordId: string,
+    @Param('fieldId') fieldId: string,
+    @CurrentUser() user: UserContext,
+  ) {
+    return this.mwsService.getCellValue(datasheetId, recordId, fieldId, user);
   }
 
   @Post('datasheets/:datasheetId/records')

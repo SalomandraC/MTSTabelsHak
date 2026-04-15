@@ -15,12 +15,19 @@ import { resolveTableGridHeight } from './table-grid-layout';
 export type TableGridProps = {
   controller: MwsTableEmbedController;
   isExpanded?: boolean;
+  isReadOnly?: boolean;
   selectColorToCss: (color: string) => string;
+  onOpenFieldMenu?: (payload: {
+    fieldIndex: number;
+    clientX: number;
+    clientY: number;
+  }) => void;
 };
 
 export function TableGridCanvas({
   controller,
   isExpanded = false,
+  isReadOnly = false,
   selectColorToCss,
   onCanvasKeyDown,
   selectEditorRef,
@@ -29,7 +36,8 @@ export function TableGridCanvas({
   onAddColumn,
   onAddRow,
   onOpenAttachmentUpload,
-  onDownloadAllAttachments
+  onDownloadAllAttachments,
+  onOpenFieldMenu
 }: TableGridProps & {
   onCanvasKeyDown: (event: React.KeyboardEvent<HTMLCanvasElement>) => void;
   selectEditorRef: React.RefObject<HTMLDivElement>;
@@ -42,6 +50,7 @@ export function TableGridCanvas({
 }) {
   const gridHeight = resolveTableGridHeight(controller.gridHeight, isExpanded);
   const selectedAttachmentCell =
+    !isReadOnly &&
     controller.selection &&
     controller.selectedField?.type === 'Attachment' &&
     controller.selectedRecord
@@ -110,40 +119,119 @@ export function TableGridCanvas({
             const addRowEnd = addRowStart + ADD_ROW_HEIGHT;
 
             if (
+              !isReadOnly &&
               onAddColumn &&
               y >= 0 &&
               y <= HEADER_HEIGHT &&
               x >= addColumnStart &&
               x <= addColumnEnd
             ) {
+              event.preventDefault();
+              event.stopPropagation();
               onAddColumn();
               return;
             }
 
             if (
+              !isReadOnly &&
+              onOpenFieldMenu &&
+              y >= 0 &&
+              y <= HEADER_HEIGHT &&
+              x >= INDEX_WIDTH
+            ) {
+              const fieldIndex = Math.floor(
+                (x + controller.scrollOffset.left - INDEX_WIDTH) / COLUMN_WIDTH
+              );
+
+              if (
+                fieldIndex >= 0 &&
+                fieldIndex < controller.visibleFields.length
+              ) {
+                event.preventDefault();
+                event.stopPropagation();
+                onOpenFieldMenu({
+                  fieldIndex,
+                  clientX: event.clientX,
+                  clientY: event.clientY
+                });
+                return;
+              }
+            }
+
+            if (
+              !isReadOnly &&
               onAddRow &&
               x >= 0 &&
               x <= INDEX_WIDTH &&
               y >= addRowStart &&
               y <= addRowEnd
             ) {
+              event.preventDefault();
+              event.stopPropagation();
               onAddRow();
               return;
             }
 
+            if (isReadOnly) {
+              event.preventDefault();
+              event.stopPropagation();
+              controller.setSelection(null);
+              controller.setEditingCell(null);
+              controller.setEditingSelectCell(null);
+              return;
+            }
+
             const nextSelection = controller.hitTest(event);
+            event.preventDefault();
+            event.stopPropagation();
             controller.setSelection(nextSelection);
             controller.setEditingCell(null);
             controller.setEditingSelectCell(null);
             controller.beginEdit(nextSelection, { fromSingleClick: true });
           }}
-          onDoubleClick={(event) =>
-            controller.beginEdit(controller.hitTest(event))
-          }
-          onKeyDown={onCanvasKeyDown}
+          onContextMenu={(event) => {
+            if (isReadOnly || !onOpenFieldMenu) {
+              return;
+            }
+
+            const rect = event.currentTarget.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            if (y < 0 || y > HEADER_HEIGHT || x < INDEX_WIDTH) {
+              return;
+            }
+
+            const fieldIndex = Math.floor(
+              (x + controller.scrollOffset.left - INDEX_WIDTH) / COLUMN_WIDTH
+            );
+
+            if (
+              fieldIndex < 0 ||
+              fieldIndex >= controller.visibleFields.length
+            ) {
+              return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            onOpenFieldMenu({
+              fieldIndex,
+              clientX: event.clientX,
+              clientY: event.clientY
+            });
+          }}
+          onDoubleClick={(event) => {
+            if (!isReadOnly) {
+              event.preventDefault();
+              event.stopPropagation();
+              controller.beginEdit(controller.hitTest(event));
+            }
+          }}
+          onKeyDown={isReadOnly ? undefined : onCanvasKeyDown}
           tabIndex={0}
         />
-        {controller.editingCell ? (
+        {!isReadOnly && controller.editingCell ? (
           <input
             autoFocus
             value={controller.editingCell.value}
@@ -176,7 +264,7 @@ export function TableGridCanvas({
             }}
           />
         ) : null}
-        {controller.editingSelectCell ? (
+        {!isReadOnly && controller.editingSelectCell ? (
           <div
             data-testid="mws_select_editor"
             ref={selectEditorRef}

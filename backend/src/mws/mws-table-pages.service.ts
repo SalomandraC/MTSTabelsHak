@@ -205,6 +205,13 @@ export class MwsTablePagesService {
     heading.insert(0, [headingText]);
     headingRoot.insert(0, [heading]);
 
+    const spacerRoot = new Y.XmlElement('rootblock');
+    const paragraph = new Y.XmlElement('paragraph');
+    const spacerText = new Y.XmlText();
+    spacerText.insert(0, ' ');
+    paragraph.insert(0, [spacerText]);
+    spacerRoot.insert(0, [paragraph]);
+
     const tableRoot = new Y.XmlElement('rootblock');
     const embed = new Y.XmlElement('mwsTableEmbed');
     this.setYjsAttribute(embed, 'blockId', blockId);
@@ -216,7 +223,15 @@ export class MwsTablePagesService {
     this.setYjsAttribute(embed, 'pageSize', 50);
     this.setYjsAttribute(embed, 'allowInlineEdit', true);
     tableRoot.insert(0, [embed]);
-    fragment.insert(0, [headingRoot, tableRoot]);
+
+    const trailingSpacerRoot = new Y.XmlElement('rootblock');
+    const trailingParagraph = new Y.XmlElement('paragraph');
+    const trailingSpacerText = new Y.XmlText();
+    trailingSpacerText.insert(0, ' ');
+    trailingParagraph.insert(0, [trailingSpacerText]);
+    trailingSpacerRoot.insert(0, [trailingParagraph]);
+
+    fragment.insert(0, [headingRoot, spacerRoot, tableRoot, trailingSpacerRoot]);
 
     return ydoc;
   }

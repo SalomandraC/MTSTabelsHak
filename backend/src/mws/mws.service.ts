@@ -6,11 +6,13 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { WikiNodeType } from '@prisma/client';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import FormData from 'form-data';
 import { firstValueFrom } from 'rxjs';
 import { UserContext } from 'src/auth/user-context';
+import { PrismaService } from 'src/infra/prisma/prisma.service';
 import { RedisService } from 'src/infra/redis/redis.service';
 import {
   CreateMwsDatasheetDto,
@@ -22,6 +24,20 @@ import {
 } from './dto/mws.dto';
 
 type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
+type BackendSortRule = {
+  fieldId: string;
+  desc: boolean;
+};
+type NodeSourceTypeValue = 'local' | 'mws';
+type NodeSyncStateValue = 'local_only' | 'synced' | 'stale';
+type ExtendedWikiNodeTypeValue = WikiNodeType | 'mws_folder' | 'mws_table';
+
+const NODE_SOURCE_LOCAL: NodeSourceTypeValue = 'local';
+const NODE_SOURCE_MWS: NodeSourceTypeValue = 'mws';
+const NODE_SYNC_SYNCED: NodeSyncStateValue = 'synced';
+const NODE_SYNC_STALE: NodeSyncStateValue = 'stale';
+const WIKI_NODE_TYPE_MWS_FOLDER: ExtendedWikiNodeTypeValue = 'mws_folder';
+const WIKI_NODE_TYPE_MWS_TABLE: ExtendedWikiNodeTypeValue = 'mws_table';
 
 export type NormalizedMwsNode = {
   id: string;
@@ -53,6 +69,7 @@ export class MwsService {
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
   ) {
     this.baseUrl = this.configService.get<string>(
@@ -66,7 +83,7 @@ export class MwsService {
   }
 
   async listSpaces(user: UserContext) {
-    return this.withCache('mws:spaces', 60, () =>
+    return this.withCache(this.userScopedCacheKey(user, 'spaces'), 60, () =>
       this.request(user, 'GET', '/spaces').then((data) => {
         const payload = this.unwrapPayload(data);
         return {
@@ -81,7 +98,7 @@ export class MwsService {
   }
 
   async listNodes(spaceId: string, type: string | undefined, includeChildren: boolean, user: UserContext) {
-    const cacheKey = `mws:nodes:${spaceId}:${type ?? 'all'}:${includeChildren ? 'tree' : 'flat'}`;
+    const cacheKey = this.userScopedCacheKey(user, `nodes:${spaceId}:${type ?? 'all'}:${includeChildren ? 'tree' : 'flat'}`);
     return this.withCache(cacheKey, 30, async () => {
       const data = await this.request(
         user,
@@ -114,10 +131,211 @@ export class MwsService {
     return { item: this.normalizeNode(payload.item ?? payload.node ?? payload, null, []) };
   }
 
+  async syncSpaceNodes(spaceId: string, user: UserContext) {
+    const tree = await this.listNodes(spaceId, undefined, true, user);
+    const flatNodes = this.flattenNodes(tree.items);
+    const seenIds = new Set(flatNodes.map((node) => node.id));
+    const syncedAt = new Date();
+
+    const existingShadowNodes = await this.prisma.wikiNode.findMany({
+      where: {
+        spaceId,
+        sourceType: NODE_SOURCE_MWS,
+      },
+      select: {
+        id: true,
+        sourceNodeId: true,
+      },
+    });
+    const existingShadowNodeIdsBySourceId = new Map(
+      existingShadowNodes
+        .filter((node) => typeof node.sourceNodeId === 'string' && node.sourceNodeId.length > 0)
+        .map((node) => [node.sourceNodeId as string, node.id] as const),
+    );
+
+    const localIdsBySourceId = new Map<string, string>();
+
+    for (const node of flatNodes) {
+      const existingShadowId = existingShadowNodeIdsBySourceId.get(node.id);
+      const shadow = existingShadowId
+        ? await this.prisma.wikiNode.update({
+            where: { id: existingShadowId },
+            data: {
+              type: this.toShadowNodeType(node),
+              sourceParentNodeId: node.parentId,
+              title: node.name,
+              icon: node.icon ?? null,
+              isArchived: false,
+              isExternalReadonly: true,
+              syncState: NODE_SYNC_SYNCED,
+              lastSeenInSourceAt: syncedAt,
+              mwsSpaceId: node.spaceId ?? spaceId,
+              mwsDatasheetId: node.datasheetId ?? node.dstId,
+              updatedBy: user.userId,
+            },
+            select: {
+              id: true,
+            },
+          })
+        : await this.prisma.wikiNode.create({
+            data: {
+              spaceId,
+              type: this.toShadowNodeType(node),
+              sourceType: NODE_SOURCE_MWS,
+              sourceNodeId: node.id,
+              sourceParentNodeId: node.parentId,
+              title: node.name,
+              icon: node.icon ?? null,
+              isArchived: false,
+              isExternalReadonly: true,
+              syncState: NODE_SYNC_SYNCED,
+              lastSeenInSourceAt: syncedAt,
+              mwsSpaceId: node.spaceId ?? spaceId,
+              mwsDatasheetId: node.datasheetId ?? node.dstId,
+              createdBy: user.userId,
+              updatedBy: user.userId,
+            },
+            select: {
+              id: true,
+            },
+          });
+
+      localIdsBySourceId.set(node.id, shadow.id);
+    }
+
+    for (const node of flatNodes) {
+      await this.prisma.wikiNode.update({
+        where: {
+          id: localIdsBySourceId.get(node.id),
+        },
+        data: {
+          parentId: node.parentId ? localIdsBySourceId.get(node.parentId) ?? null : null,
+        },
+      });
+    }
+
+    const seenExternalIds = [...localIdsBySourceId.keys()];
+    const localNodesBoundToExternalParents = await this.prisma.wikiNode.findMany({
+      where: {
+        spaceId,
+        sourceType: NODE_SOURCE_LOCAL,
+        mwsParentNodeId: {
+          in: seenExternalIds,
+        },
+      },
+      select: {
+        id: true,
+        mwsParentNodeId: true,
+      },
+    });
+
+    for (const node of localNodesBoundToExternalParents) {
+      await this.prisma.wikiNode.update({
+        where: { id: node.id },
+        data: {
+          parentId: node.mwsParentNodeId ? localIdsBySourceId.get(node.mwsParentNodeId) ?? null : null,
+        },
+      });
+    }
+
+    const staleShadowIds = existingShadowNodes
+      .filter((node) => node.sourceNodeId && !seenIds.has(node.sourceNodeId))
+      .map((node) => node.id);
+
+    if (staleShadowIds.length > 0) {
+      await this.prisma.wikiNode.updateMany({
+        where: {
+          id: {
+            in: staleShadowIds,
+          },
+        },
+        data: {
+          syncState: NODE_SYNC_STALE,
+          updatedBy: user.userId,
+        },
+      });
+    }
+
+    return {
+      items: flatNodes.length,
+      syncedAt,
+      nodes: flatNodes,
+    };
+  }
+
+  async resolveShadowNode(spaceId: string, sourceNodeId: string, user: UserContext) {
+    let node = await this.prisma.wikiNode.findFirst({
+      where: {
+        spaceId,
+        sourceType: NODE_SOURCE_MWS,
+        sourceNodeId,
+        isArchived: false,
+      },
+    });
+
+    if (!node) {
+      await this.syncSpaceNodes(spaceId, user);
+      node = await this.prisma.wikiNode.findFirst({
+        where: {
+          spaceId,
+          sourceType: NODE_SOURCE_MWS,
+          sourceNodeId,
+          isArchived: false,
+        },
+      });
+    }
+
+    if (!node) {
+      throw new NotFoundException('MWS folder was not found in synchronized tree');
+    }
+
+    return node;
+  }
+
+  async resolveShadowFolderNode(spaceId: string, sourceNodeId: string, user: UserContext) {
+    const syncResult = await this.syncSpaceNodes(spaceId, user);
+    const upstreamNode = syncResult.nodes.find((node) => node.id === sourceNodeId);
+
+    if (!upstreamNode) {
+      throw new NotFoundException('MWS folder was not found in synchronized tree');
+    }
+
+    if (!this.isFolderNode(upstreamNode)) {
+      throw new BadRequestException('External parent must be an MWS folder');
+    }
+
+    const shadowNode = await this.prisma.wikiNode.findFirst({
+      where: {
+        spaceId,
+        sourceType: NODE_SOURCE_MWS,
+        sourceNodeId,
+        isArchived: false,
+      },
+    });
+
+    if (!shadowNode) {
+      throw new NotFoundException('MWS folder shadow node was not found');
+    }
+
+    return shadowNode;
+  }
+
+  buildOpenInMwsUrlFromIds(spaceId: string | null, nodeId: string, datasheetId?: string | null) {
+    if (!spaceId || !nodeId) {
+      return null;
+    }
+
+    return this.nodeUrlTemplate
+      .replaceAll('{spaceId}', encodeURIComponent(spaceId))
+      .replaceAll('{nodeId}', encodeURIComponent(nodeId))
+      .replaceAll('{datasheetId}', encodeURIComponent(String(datasheetId ?? '')));
+  }
+
   async createDatasheet(spaceId: string, dto: CreateMwsDatasheetDto, user: UserContext) {
     const data = await this.request(user, 'POST', `/spaces/${spaceId}/datasheets`, dto);
     const payload = this.unwrapPayload(data);
     await this.invalidateNodeCache(spaceId);
+    await this.syncSpaceNodes(spaceId, user);
 
     return {
       datasheet: {
@@ -130,11 +348,37 @@ export class MwsService {
   }
 
   async listFields(datasheetId: string, viewId: string | undefined, user: UserContext) {
-    const cacheKey = `mws:fields:${datasheetId}:${viewId ?? 'default'}`;
+    const cacheKey = this.userScopedCacheKey(user, `fields:${datasheetId}:${viewId ?? 'default'}`);
     return this.withCache(cacheKey, 300, async () => {
-      const data = await this.request(user, 'GET', `/datasheets/${datasheetId}/fields`, undefined, {
-        viewId,
-      });
+      let data: any;
+
+      try {
+        data = await this.request(user, 'GET', `/datasheets/${datasheetId}/fields`, undefined, {
+          viewId,
+        });
+      } catch (error) {
+        const errorStatus =
+          error instanceof ForbiddenException ||
+          error instanceof NotFoundException ||
+          error instanceof BadRequestException
+            ? error.getStatus()
+            : null;
+        const shouldRetryWithoutView =
+          Boolean(viewId) &&
+          (error instanceof ForbiddenException ||
+            error instanceof NotFoundException ||
+            error instanceof BadRequestException ||
+            errorStatus === 403 ||
+            errorStatus === 404 ||
+            errorStatus === 400);
+
+        if (!shouldRetryWithoutView) {
+          throw error;
+        }
+
+        data = await this.request(user, 'GET', `/datasheets/${datasheetId}/fields`);
+      }
+
       const payload = this.unwrapPayload(data);
       return {
         items: this.readArray(payload, ['fields', 'items']),
@@ -179,7 +423,7 @@ export class MwsService {
   }
 
   async listViews(datasheetId: string, user: UserContext) {
-    const cacheKey = `mws:views:${datasheetId}`;
+    const cacheKey = this.userScopedCacheKey(user, `views:${datasheetId}`);
     return this.withCache(cacheKey, 300, async () => {
       const data = await this.request(user, 'GET', `/datasheets/${datasheetId}/views`);
       const payload = this.unwrapPayload(data);
@@ -200,23 +444,148 @@ export class MwsService {
     return { view: this.unwrapPayload(data) };
   }
 
+  async setViewSort(
+    spaceId: string,
+    datasheetId: string,
+    viewId: string,
+    rules: Array<{ fieldId: string; desc?: boolean }>,
+    keepSort: boolean,
+    applySort: boolean,
+    user: UserContext,
+  ) {
+    const data = await this.request(
+      user,
+      'POST',
+      `/spaces/${spaceId}/datasheets/${datasheetId}/views/${viewId}/sort`,
+      {
+        data: { keepSort, rules: rules.map(r => ({ fieldId: r.fieldId, desc: r.desc ?? false })) },
+        applySort,
+      },
+    );
+    await this.invalidateDatasheetCache(datasheetId);
+    return { ok: true, data: this.unwrapPayload(data) };
+  }
+
+  async setViewGroup(
+    spaceId: string,
+    datasheetId: string,
+    viewId: string,
+    rules: Array<{ fieldId: string; desc?: boolean }>,
+    user: UserContext,
+  ) {
+    const data = await this.request(
+      user,
+      'POST',
+      `/spaces/${spaceId}/datasheets/${datasheetId}/views/${viewId}/group`,
+      { data: rules.map(r => ({ fieldId: r.fieldId, desc: r.desc ?? false })) },
+    );
+    await this.invalidateDatasheetCache(datasheetId);
+    return { ok: true, data: this.unwrapPayload(data) };
+  }
+
   async listRecords(
     datasheetId: string,
     query: Record<string, unknown>,
     user: UserContext,
   ) {
-    const cacheKey = `mws:records:${datasheetId}:${Buffer.from(JSON.stringify(query)).toString('base64')}`;
+    const cacheKey = this.userScopedCacheKey(
+      user,
+      `records:${datasheetId}:${Buffer.from(JSON.stringify(query)).toString('base64')}`,
+    );
     return this.withCache(cacheKey, 10, async () => {
-      const data = await this.request(user, 'GET', `/datasheets/${datasheetId}/records`, undefined, this.normalizeRecordsQuery(query));
-      const payload = this.unwrapPayload(data);
-      const nestedRecords = this.readNestedValue(payload, ['records']);
+      const sortRules = this.readBackendSortRules(query.sort);
+      if (sortRules.length === 0) {
+        const data = await this.request(
+          user,
+          'GET',
+          `/datasheets/${datasheetId}/records`,
+          undefined,
+          this.normalizeRecordsQuery(query),
+        );
+        return this.extractRecordList(data, query);
+      }
+
+      const requestedPageNum = this.readPositiveInt(query.pageNum, 1);
+      const requestedPageSize = this.readPositiveInt(query.pageSize, 50);
+      const upstreamBaseQuery = this.normalizeRecordsQuery({
+        ...query,
+        sort: undefined,
+        pageNum: 1,
+        pageSize: 1000,
+      });
+
+      const firstPageData = await this.request(
+        user,
+        'GET',
+        `/datasheets/${datasheetId}/records`,
+        undefined,
+        upstreamBaseQuery,
+      );
+      const firstPage = this.extractRecordList(firstPageData, upstreamBaseQuery);
+      const allItems = [...firstPage.items];
+      const total = firstPage.total;
+      const totalPages = Math.max(1, Math.ceil(total / firstPage.pageSize));
+
+      for (let page = 2; page <= totalPages; page += 1) {
+        const nextPageData = await this.request(
+          user,
+          'GET',
+          `/datasheets/${datasheetId}/records`,
+          undefined,
+          {
+            ...upstreamBaseQuery,
+            pageNum: page,
+          },
+        );
+        const nextPage = this.extractRecordList(nextPageData, upstreamBaseQuery);
+        allItems.push(...nextPage.items);
+      }
+
+      const sortedItems = this.sortMwsRecords(allItems, sortRules);
+      const offset = (requestedPageNum - 1) * requestedPageSize;
       return {
-        items: this.readArray(payload, ['records', 'items']),
-        pageNum: Number(payload.pageNum ?? nestedRecords?.pageNum ?? query.pageNum ?? 1),
-        pageSize: Number(payload.pageSize ?? nestedRecords?.pageSize ?? query.pageSize ?? 50),
-        total: Number(payload.total ?? nestedRecords?.total ?? 0),
+        items: sortedItems.slice(offset, offset + requestedPageSize),
+        pageNum: requestedPageNum,
+        pageSize: requestedPageSize,
+        total: sortedItems.length,
       };
     });
+  }
+
+  async getCellValue(datasheetId: string, recordId: string, fieldId: string, user: UserContext) {
+    const records = await this.listRecords(
+      datasheetId,
+      {
+        recordIds: recordId,
+        fields: fieldId,
+        pageNum: 1,
+        pageSize: 1,
+        fieldKey: 'id',
+        cellFormat: 'json',
+      },
+      user,
+    );
+
+    const record = records.items.find((item: any) => String(item.recordId) === recordId) ?? records.items[0];
+    if (!record) {
+      throw new NotFoundException({
+        code: 'MWS_RECORD_NOT_FOUND',
+        message: `Record ${recordId} was not found in datasheet ${datasheetId}`,
+      });
+    }
+
+    const rawValue = record.fields?.[fieldId];
+
+    return {
+      cell: {
+        datasheetId,
+        recordId,
+        fieldId,
+        value: rawValue ?? null,
+        displayValue: this.stringifyCellValue(rawValue),
+        updatedAt: record.updatedAt ? new Date(Number(record.updatedAt)).toISOString() : null,
+      },
+    };
   }
 
   async createRecords(datasheetId: string, dto: CreateMwsRecordsDto, user: UserContext) {
@@ -224,6 +593,7 @@ export class MwsService {
       ...dto,
       fieldKey: 'id',
     });
+    await this.invalidateDatasheetCache(datasheetId);
     return { items: data.data?.records ?? [] };
   }
 
@@ -232,6 +602,7 @@ export class MwsService {
       ...dto,
       fieldKey: 'id',
     });
+    await this.invalidateDatasheetCache(datasheetId);
     return { items: data.data?.records ?? [] };
   }
 
@@ -251,6 +622,7 @@ export class MwsService {
       this.invalidateNodeCache(spaceId),
       this.invalidateDatasheetCache(datasheetId),
     ]);
+    await this.syncSpaceNodes(spaceId, user);
 
     return {
       deleted: Boolean(this.unwrapPayload(data) ?? true),
@@ -258,7 +630,7 @@ export class MwsService {
   }
 
   async resolveTableEmbed(dto: ResolveTableEmbedDto, user: UserContext) {
-    const cacheKey = `mws:embed:${Buffer.from(JSON.stringify(dto)).toString('base64')}`;
+    const cacheKey = this.userScopedCacheKey(user, `embed:${Buffer.from(JSON.stringify(dto)).toString('base64')}`);
     return this.withCache(cacheKey, 10, async () => {
       const [node, fields, views, preview] = await Promise.all([
         this.getNode(dto.nodeId, user),
@@ -459,6 +831,15 @@ export class MwsService {
     return node.type.toLowerCase().includes('folder');
   }
 
+  private toShadowNodeType(node: NormalizedMwsNode): ExtendedWikiNodeTypeValue {
+    return this.isTableNode(node) ? WIKI_NODE_TYPE_MWS_TABLE : WIKI_NODE_TYPE_MWS_FOLDER;
+  }
+
+  private isTableNode(node: NormalizedMwsNode) {
+    const normalizedType = node.type.toLowerCase();
+    return Boolean(node.datasheetId ?? node.dstId) || normalizedType.includes('datasheet') || normalizedType.includes('table');
+  }
+
   private normalizeNodes(
     nodes: any[],
     parentId: string | null = null,
@@ -631,31 +1012,222 @@ export class MwsService {
 
   private normalizeRecordsQuery(query: Record<string, unknown>) {
     const sort = query.sort;
-    if (typeof sort !== 'string' || !sort.trim()) {
+    if (!sort) {
+      return query;
+    }
+
+    if (Array.isArray(sort) && sort.length === 0) {
+      return {
+        ...query,
+        sort: undefined,
+      };
+    }
+
+    if (typeof sort === 'string') {
+      if (!sort.trim() || sort.trim() === '[]') {
+        return {
+          ...query,
+          sort: undefined,
+        };
+      }
+
       return query;
     }
 
     try {
       return {
         ...query,
-        sort: JSON.parse(sort),
+        sort: JSON.stringify(sort),
       };
     } catch {
-      return query;
+      return {
+        ...query,
+        sort: undefined,
+      };
     }
   }
 
+  private extractRecordList(data: any, query: Record<string, unknown>) {
+    const payload = this.unwrapPayload(data);
+    const nestedRecords = this.readNestedValue(payload, ['records']);
+    return {
+      items: this.readArray(payload, ['records', 'items']),
+      pageNum: Number(payload.pageNum ?? nestedRecords?.pageNum ?? query.pageNum ?? 1),
+      pageSize: Number(payload.pageSize ?? nestedRecords?.pageSize ?? query.pageSize ?? 50),
+      total: Number(payload.total ?? nestedRecords?.total ?? 0),
+    };
+  }
+
+  private readBackendSortRules(rawSort: unknown): BackendSortRule[] {
+    const normalized = this.parseJsonIfNeeded(rawSort);
+    if (!Array.isArray(normalized)) {
+      return [];
+    }
+
+    return normalized
+      .map((rule) => {
+        if (!rule || typeof rule !== 'object') {
+          return null;
+        }
+
+        const fieldId = (rule as { fieldId?: unknown }).fieldId;
+        if (typeof fieldId !== 'string' || !fieldId.trim()) {
+          return null;
+        }
+
+        return {
+          fieldId,
+          desc: Boolean((rule as { desc?: unknown }).desc),
+        };
+      })
+      .filter((rule): rule is BackendSortRule => Boolean(rule));
+  }
+
+  private parseJsonIfNeeded(value: unknown): unknown {
+    if (typeof value !== 'string') {
+      return value;
+    }
+
+    if (!value.trim()) {
+      return undefined;
+    }
+
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+
+  private readPositiveInt(value: unknown, fallback: number) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  }
+
+  private sortMwsRecords(records: any[], sortRules: BackendSortRule[]) {
+    if (sortRules.length === 0) {
+      return records;
+    }
+
+    return [...records].sort((left, right) => {
+      for (const rule of sortRules) {
+        const leftValue = this.normalizeRecordSortValue(left?.fields?.[rule.fieldId]);
+        const rightValue = this.normalizeRecordSortValue(right?.fields?.[rule.fieldId]);
+        const result = this.compareRecordSortValues(leftValue, rightValue);
+        if (result !== 0) {
+          return rule.desc ? -result : result;
+        }
+      }
+
+      return 0;
+    });
+  }
+
+  private normalizeRecordSortValue(value: unknown): string | number | null {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+
+    if (typeof value === 'number') {
+      return value;
+    }
+
+    if (typeof value === 'boolean') {
+      return value ? 1 : 0;
+    }
+
+    const rendered = this.stringifyCellValue(value).trim();
+    if (!rendered) {
+      return null;
+    }
+
+    if (/^-?\d+(\.\d+)?$/.test(rendered)) {
+      const numeric = Number(rendered);
+      if (Number.isFinite(numeric)) {
+        return numeric;
+      }
+    }
+
+    return rendered.toLowerCase();
+  }
+
+  private compareRecordSortValues(left: string | number | null, right: string | number | null) {
+    if (left === right) {
+      return 0;
+    }
+
+    if (left === null) {
+      return 1;
+    }
+
+    if (right === null) {
+      return -1;
+    }
+
+    if (typeof left === 'number' && typeof right === 'number') {
+      return left - right;
+    }
+
+    return String(left).localeCompare(String(right), 'ru', {
+      numeric: true,
+      sensitivity: 'base',
+    });
+  }
+
+  private stringifyCellValue(value: unknown): string {
+    if (value === null || value === undefined) {
+      return '';
+    }
+
+    if (typeof value === 'string') {
+      return value;
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => this.stringifyCellValue(item))
+        .filter(Boolean)
+        .join(', ');
+    }
+
+    if (typeof value === 'object') {
+      const objectValue = value as Record<string, unknown>;
+      for (const key of ['text', 'title', 'name', 'value', 'label']) {
+        const candidate = objectValue[key];
+        if (typeof candidate === 'string' && candidate.trim()) {
+          return candidate;
+        }
+      }
+
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return '';
+      }
+    }
+
+    return '';
+  }
+
   private async invalidateNodeCache(spaceId: string) {
-    await this.redisService.delByPattern(`mws:nodes:${spaceId}:*`);
+    await this.redisService.delByPattern(`mws:user:*:nodes:${spaceId}:*`);
   }
 
   private async invalidateDatasheetCache(datasheetId: string) {
     await Promise.all([
-      this.redisService.delByPattern(`mws:records:${datasheetId}:*`),
-      this.redisService.delByPattern('mws:embed:*'),
-      this.redisService.delByPattern(`mws:fields:${datasheetId}:*`),
-      this.redisService.del(`mws:views:${datasheetId}`),
+      this.redisService.delByPattern(`mws:user:*:records:${datasheetId}:*`),
+      this.redisService.delByPattern('mws:user:*:embed:*'),
+      this.redisService.delByPattern(`mws:user:*:fields:${datasheetId}:*`),
+      this.redisService.delByPattern(`mws:user:*:views:${datasheetId}`),
     ]);
+  }
+
+  private userScopedCacheKey(user: UserContext, key: string) {
+    return `mws:user:${user.userId}:${key}`;
   }
 
 

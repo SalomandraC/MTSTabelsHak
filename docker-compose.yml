@@ -28,6 +28,23 @@ services:
       timeout: 3s
       retries: 20
 
+  context-engine:
+    build:
+      context: ./services/context-engine
+    environment:
+      QDRANT_PERSIST_DIRECTORY: /data/qdrant
+      CONTEXT_ENGINE_EMBEDDING_MODEL: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+      CONTEXT_ENGINE_SEARCH_TOP_K: 5
+    ports:
+      - "8090:8090"
+    volumes:
+      - context-engine-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
   api:
     build:
       context: ./backend
@@ -36,6 +53,8 @@ services:
     environment:
       DATABASE_URL: postgresql://wikilive:wikilive@postgres:5432/wikilive?schema=public
       REDIS_URL: redis://redis:6379
+      CONTEXT_ENGINE_URL: http://context-engine:8090
+      DOCUMENT_GENERATOR_URL: http://docgen:3200
       PORT: 8080
       COLLAB_PORT: 8081
     ports:
@@ -45,6 +64,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      context-engine:
         condition: service_healthy
 
   frontend:
@@ -57,7 +78,17 @@ services:
       - "5173:5173"
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
 
+  docgen:
+    build:
+      context: ./document-generator
+    environment:
+      PORT: 3200
+      API_BASE_URL: http://api:8080
+    ports:
+      - "3200:3200"
+
 volumes:
   postgres-data:
   redis-data:
+  context-engine-data:
   frontend-node-modules:

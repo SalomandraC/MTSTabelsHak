@@ -5,7 +5,6 @@ import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import Document from '@tiptap/extension-document';
 import Dropcursor from '@tiptap/extension-dropcursor';
 import Highlight from '@tiptap/extension-highlight';
-import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
@@ -13,6 +12,11 @@ import TaskItem from '@tiptap/extension-task-item';
 import TaskList from '@tiptap/extension-task-list';
 import Typography from '@tiptap/extension-typography';
 import Underline from '@tiptap/extension-underline';
+import HorizontalRule from '@tiptap/extension-horizontal-rule';
+import { Table } from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableHeader from '@tiptap/extension-table-header';
+import TableCell from '@tiptap/extension-table-cell';
 import StarterKit from '@tiptap/starter-kit';
 import bash from 'highlight.js/lib/languages/bash';
 import csharp from 'highlight.js/lib/languages/csharp';
@@ -38,12 +42,55 @@ import { Markdown } from 'tiptap-markdown';
 
 import { MwsTableEmbed } from '../../wiki-tables';
 import { AIGhostTextExtension } from '../../plugins/ai-assistant';
+import { MermaidNode } from '../../plugins/diagrams';
+import { CanvasBlock } from './canvas-block';
+import { IframeBlock } from './iframe-block';
 import { CodeBlockComponent } from '../ui/code-block-component.tsx';
 import { CommentAnchor } from './comment-anchor';
 import { ImageBlock } from './image-block';
 import { PageLink } from './page-link';
 import { RootBlock } from './root-block';
+import { LiveReference } from './live-reference';
+import { LiveFormula } from './live-formula';
 import { TemplateVariable } from './template-variable';
+import { Bookmark, BookmarkLink } from './bookmark';
+import { CustomHardBreak } from './custom-hard-break';
+import { CustomLink } from './custom-link';
+import { ListExitOnDoubleEnter } from './list-exit-on-double-enter';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
+
+const bookmarkClickKey = new PluginKey('bookmarkClick');
+
+const BookmarkClickHandler = Extension.create({
+  name: 'bookmarkClickHandler',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: bookmarkClickKey,
+        props: {
+          handleClick(view, _pos, event) {
+            const target = event.target as HTMLElement;
+            const linkEl = target.closest('.bookmark-link') as HTMLElement | null;
+            if (!linkEl) return false;
+            const bookmarkId = linkEl.dataset.bookmarkHref;
+            if (!bookmarkId) return false;
+
+            // Ищем якорь прямо в DOM редактора — надёжнее чем nodeDOM(pos)
+            const anchorEl = view.dom.querySelector(
+              `[data-bookmark-id="${CSS.escape(bookmarkId)}"]`,
+            ) as HTMLElement | null;
+
+            if (anchorEl) {
+              anchorEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            return true;
+          },
+        },
+      }),
+    ];
+  },
+});
 
 const lowlight = createLowlight();
 lowlight.register('bash', bash);
@@ -89,6 +136,20 @@ const DashShortcut = Extension.create({
   },
 });
 
+// Кастомное расширение HorizontalRule с отключённым isolating
+// чтобы можно было добавлять контент после него и удалять его
+const CustomHorizontalRule = HorizontalRule.extend({
+  addOptions() {
+    const parentOptions = this.parent?.();
+    return {
+      HTMLAttributes: {},
+      nextNodeType: 'paragraph',
+      ...parentOptions,
+      isolating: false,
+    } as any;
+  },
+});
+
 export const initialContent = `
 <div data-type="rootblock"><h1>Новая страница</h1></div>
 <div data-type="rootblock"><p></p></div>
@@ -111,9 +172,15 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
   return [
     Markdown,
     TextStyle,
-    Highlight,
+    Highlight.configure({
+      multicolor: true,
+    }),
+    Bookmark,
+    BookmarkLink,
+    BookmarkClickHandler,
     Typography,
     DashShortcut,
+    CustomHardBreak,
     Dropcursor.configure({
       color: '#d92c2c',
       width: 2,
@@ -122,18 +189,31 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     RootBlock,
     ImageBlock,
     TemplateVariable,
+    LiveReference,
+    LiveFormula,
     PageLink,
     CommentAnchor.configure({
       onOpenThread: options.onOpenCommentThread,
     }),
     MwsTableEmbed,
+    MermaidNode,
+    CanvasBlock,
+    IframeBlock,
     TaskList,
     TaskItem.configure({ nested: true }),
-    Link.configure({
+    ListExitOnDoubleEnter,
+    CustomLink.configure({
       openOnClick: false,
       autolink: true,
     }),
     Underline,
+    CustomHorizontalRule,
+    Table.configure({
+      resizable: true,
+    }),
+    TableRow,
+    TableHeader,
+    TableCell,
     TextAlign.configure({
       types: ['heading', 'paragraph', 'taskItem'],
     }),
@@ -148,6 +228,16 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
     StarterKit.configure({
       document: false,
       codeBlock: false,
+      dropcursor: false,
+      hardBreak: false,
+      link: false,
+      underline: false,
+      horizontalRule: false,
+      heading: {
+        HTMLAttributes: {
+          class: 'page-editor-heading',
+        },
+      },
     }),
     Placeholder.configure({
       emptyEditorClass: 'is-editor-empty',

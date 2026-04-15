@@ -1,4 +1,5 @@
 export type TextTransformationType = 'professional' | 'shorten' | 'expand' | 'fix_grammar';
+export type TextStyleId = 'standard' | 'business' | 'military' | 'medieval' | 'church' | 'fix' | 'expand';
 
 export interface ProseMirrorNode {
   type: string;
@@ -36,3 +37,5 @@ export interface AiChatAnswer {
   contextMarkdown: string;
   references?: Array<Record<string, unknown>>;
 }
+
+export type AiIntent = 'chat' | 'plan_mutation' | 'write_report' | 'autocomplete';

@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
-import { BrainCircuit, Boxes, Crown, GitBranch, MessageSquareQuote, ShieldCheck, Star, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { BrainCircuit, Boxes, Check, Crown, GitBranch, MessageSquareQuote, ShieldCheck, Star, X } from 'lucide-react';
 import type { PluginCatalogItem, PluginPlan } from '../../../shared/api/wikilive';
 import { ModalActionButton } from '../../../shared/ui';
+import type { AiAssistantFeatureSlot } from '../model/plugins-context';
 
 type PluginsModalProps = {
   isOpen: boolean;
@@ -10,9 +11,19 @@ type PluginsModalProps = {
   isLoading: boolean;
   errorMessage: string;
   pendingPluginId: string | null;
+  aiAssistantFeatures: Record<AiAssistantFeatureSlot, boolean>;
   onClose: () => void;
   onTogglePlugin: (pluginId: string, enabled: boolean) => void;
+  onToggleSettings: (pluginId: string, settings: Record<string, boolean>) => void;
+  onToggleAiAssistantFeature: (slot: AiAssistantFeatureSlot, enabled: boolean) => void;
 };
+
+const AI_ASSISTANT_FEATURE_LABELS: Array<{ slot: AiAssistantFeatureSlot; label: string }> = [
+  { slot: 'ghost_text', label: 'Подсказки при наборе (ghost)' },
+  { slot: 'inline_chat', label: 'Inline chat' },
+  { slot: 'text_transform', label: 'Сократить и улучшить' },
+  { slot: 'document_structure', label: 'Автоструктурирование документа' },
+];
 
 function getStatusLabel(item: PluginCatalogItem) {
   switch (item.status) {
@@ -103,6 +114,53 @@ function getPluginAccent(item: PluginCatalogItem) {
   }
 }
 
+type CanvasSettingsCheckboxesProps = {
+  pluginId: string;
+  settings: Record<string, boolean>;
+  isPending: boolean;
+  onToggle: (key: string) => void;
+};
+
+function CanvasSettingsCheckboxes({ settings, isPending, onToggle }: CanvasSettingsCheckboxesProps) {
+  const options = [
+    { key: 'toolbar', label: 'Основной тулбар' },
+    { key: 'floating-toolbar', label: 'Плавающее меню' },
+    { key: 'slash-menu', label: 'Slash-меню' },
+  ];
+
+  return (
+    <div className="mt-3 rounded-xl border border-editor-border-subtle bg-white/60 px-3 py-2.5">
+      <p className="text-xs font-medium text-editor-text-secondary">Отображение кнопок:</p>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
+        {options.map((opt) => (
+          <label
+            key={opt.key}
+            className="flex cursor-pointer items-center gap-2 text-sm text-editor-text-primary"
+          >
+            <span
+              role="checkbox"
+              tabIndex={0}
+              aria-checked={settings[opt.key]}
+              className={[
+                'flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors',
+                settings[opt.key]
+                  ? 'border-[#d81f44] bg-[#d81f44] text-white'
+                  : 'border-editor-border-control bg-white',
+                isPending ? 'opacity-50' : '',
+              ].join(' ')}
+              onClick={() => onToggle(opt.key)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggle(opt.key); }}
+            >
+              {settings[opt.key] ? <Check size={14} strokeWidth={3} /> : null}
+            </span>
+            {opt.label}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function PluginsModal({
   isOpen,
   items,
@@ -110,8 +168,11 @@ export function PluginsModal({
   isLoading,
   errorMessage,
   pendingPluginId,
+  aiAssistantFeatures,
   onClose,
   onTogglePlugin,
+  onToggleSettings,
+  onToggleAiAssistantFeature,
 }: PluginsModalProps) {
   useEffect(() => {
     if (!isOpen) {
@@ -141,7 +202,7 @@ export function PluginsModal({
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgba(17,24,39,0.38)] p-3 sm:p-6"
+      className="fixed inset-0 z-[101] flex items-center justify-center bg-[rgba(17,24,39,0.38)] p-3 sm:p-6"
       onClick={onClose}
     >
       <div
@@ -151,7 +212,7 @@ export function PluginsModal({
         className="flex h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-[24px] bg-white shadow-[0_28px_80px_rgba(17,24,39,0.26)]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex-shrink-0 border-b border-[#b81235] bg-[#d81f44] px-4 py-5 text-white sm:px-6">
+        <div className="flex-shrink-0 border-b border-[#b00025] bg-[#d70032] px-4 py-5 text-white sm:px-6">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/85">
@@ -175,14 +236,14 @@ export function PluginsModal({
         </div>
 
         {errorMessage ? (
-          <div className="flex-shrink-0 border-b border-[#ffd2d9] bg-[#fff1f3] px-4 py-3 text-sm text-[#b00025] sm:px-6">{errorMessage}</div>
+          <div className="flex-shrink-0 border-b border-[#ffd2d9] bg-[#fff7f8] px-4 py-3 text-sm text-[#b00025] sm:px-6">{errorMessage}</div>
         ) : null}
 
         <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,1fr)_18rem]">
           <div className="min-h-0 overflow-y-auto bg-[#f6f7f9] px-4 py-4 pb-5 sm:px-6">
             {isLoading ? <p className="text-sm text-editor-text-tertiary">Загружаем каталог плагинов...</p> : null}
             {!isLoading && items.length === 0 ? <p className="text-sm text-editor-text-tertiary">Плагины пока не найдены.</p> : null}
-            <div className="space-y-3">
+            <div className="space-y-3 pb-4">
               {items.map((item) => {
                 const isPending = pendingPluginId === item.id;
                 const accent = getPluginAccent(item);
@@ -209,24 +270,102 @@ export function PluginsModal({
                             <p className="mt-2 text-sm leading-6 text-editor-text-primary/85">{item.description}</p>
                           </div>
                         </div>
+
+                        {/* Canvas-draw sub-feature checkboxes */}
+                        {item.id === 'canvas-draw' && item.enabled && item.settings ? (
+                          <CanvasSettingsCheckboxes
+                            pluginId={item.id}
+                            settings={item.settings}
+                            isPending={isPending}
+                            onToggle={(key) => {
+                              const next = { ...item.settings, [key]: !item.settings?.[key] };
+                              onToggleSettings(item.id, next);
+                            }}
+                          />
+                        ) : null}
+
+                        {/* iframe-embed sub-feature checkboxes */}
+                        {item.id === 'iframe-embed' && item.enabled && item.settings ? (
+                          <CanvasSettingsCheckboxes
+                            pluginId={item.id}
+                            settings={item.settings}
+                            isPending={isPending}
+                            onToggle={(key) => {
+                              const next = { ...item.settings, [key]: !item.settings?.[key] };
+                              onToggleSettings(item.id, next);
+                            }}
+                          />
+                        ) : null}
                         <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                          <span className="rounded-full border border-editor-border-subtle bg-white px-2.5 py-1 font-semibold text-editor-text-secondary">
+                          <span
+                            className={[
+                              'rounded-lg px-2.5 py-1 text-[11px] font-semibold',
+                              item.enabled
+                                ? 'border border-transparent bg-[#d70032] text-white'
+                                : 'border border-[#f0d6da] bg-[#fff7f8] text-[#b00025]',
+                            ].join(' ')}
+                          >
                             {getCategoryLabel(item.category)}
                           </span>
                           {item.placement.map((placement) => (
-                            <span key={placement} className="rounded-full border border-editor-border-subtle bg-[#f9fafb] px-2.5 py-1 text-editor-text-tertiary">
+                            <span key={placement} className="rounded-full border border-[#f0d6da] bg-[#fff7f8] px-2.5 py-1 text-[#b00025]">
                               {placement}
                             </span>
                           ))}
                         </div>
                         {item.requiredPlans.length > 0 ? (
-                          <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-editor-border-subtle bg-white px-2.5 py-1 text-[11px] font-semibold text-editor-text-secondary">
+                          <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#ffd4da] bg-[#fff1f3] px-2.5 py-1 text-[11px] font-semibold text-[#d70032]">
                             <Crown size={12} strokeWidth={2.1} />
                             {item.requiredPlans.map((planId) => planId === 'pro' ? 'Командный' : planId === 'enterprise' ? 'Enterprise' : 'Базовый').join(' / ')}
                           </div>
                         ) : null}
                         {item.lockedReason ? (
                           <p className="mt-3 text-xs leading-5 text-editor-text-tertiary">{item.lockedReason}</p>
+                        ) : null}
+
+                        {item.id === 'ai-assistant' ? (
+                          <div className="mt-4 rounded-xl border border-editor-border-subtle bg-white/75 p-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-editor-text-tertiary">
+                              Функции модуля
+                            </p>
+                            <div className="mt-2 grid gap-2">
+                              {AI_ASSISTANT_FEATURE_LABELS.map((feature) => {
+                                const enabled = aiAssistantFeatures[feature.slot];
+                                const disabled = !item.enabled || !item.canToggle || isPending;
+
+                                return (
+                                  <button
+                                    key={feature.slot}
+                                    type="button"
+                                    disabled={disabled}
+                                    onClick={() => onToggleAiAssistantFeature(feature.slot, !enabled)}
+                                    className={[
+                                      'flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition-colors',
+                                      enabled
+                                        ? 'border-[#d6f1e5] bg-[#edf9f2] text-[#1f8056]'
+                                        : 'border-editor-border-subtle bg-white text-editor-text-secondary',
+                                      disabled ? 'cursor-not-allowed opacity-60' : 'hover:bg-editor-bg-control',
+                                    ].join(' ')}
+                                  >
+                                    <span
+                                      className={[
+                                        'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold leading-none',
+                                        enabled
+                                          ? 'border-[#1f8056] bg-[#1f8056] text-white'
+                                          : 'border-editor-border-control bg-white text-transparent',
+                                      ].join(' ')}
+                                    >
+                                      ✓
+                                    </span>
+                                    <span className="min-w-0 whitespace-normal break-words">{feature.label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {!item.enabled ? (
+                              <p className="mt-2 text-[11px] text-editor-text-tertiary">Сначала подключите модуль ИИ, затем включайте нужные функции.</p>
+                            ) : null}
+                          </div>
                         ) : null}
                       </div>
 

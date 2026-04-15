@@ -24,8 +24,9 @@ export class CommentsController {
   async listThreads(
     @Param('pageId') pageId: string,
     @Query('includeResolved') includeResolved = 'true',
+    @CurrentUser() user?: UserContext,
   ) {
-    return this.commentsService.listThreads(pageId, includeResolved !== 'false');
+    return this.commentsService.listThreads(pageId, includeResolved !== 'false', user);
   }
 
   @Post('threads')

@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { useState } from 'react';
 
 import type { MwsNode } from '../../../shared/api/wikilive';
@@ -68,8 +69,8 @@ export function WikiTablePickerModal({ isOpen, initialSpaceId, onSelect, onClose
     return null;
   }
 
-  return (
-    <div className="fixed inset-0 z-[90] bg-black/35" onMouseDown={onClose}>
+  return createPortal(
+    <div className="fixed inset-0 z-[220] bg-black/35" onMouseDown={onClose}>
       <div
         className="fixed left-1/2 top-1/2 flex max-h-[calc(100vh-2rem)] w-[min(56rem,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 flex-col gap-3 overflow-hidden rounded-lg bg-white p-5 shadow-[0_24px_70px_rgba(17,25,40,0.22)]"
         role="dialog"
@@ -250,6 +251,7 @@ export function WikiTablePickerModal({ isOpen, initialSpaceId, onSelect, onClose
           </ModalActionButton>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

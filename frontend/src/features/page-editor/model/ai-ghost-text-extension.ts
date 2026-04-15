@@ -15,6 +15,33 @@ type AIGhostTextStorage = {
 
 const ghostTextPluginKey = new PluginKey<DecorationSet>('aiGhostTextPlugin');
 
+function isTypingSlashCommand(textBeforeCursor: string): boolean {
+  // Slash command pattern: start/whitespace + slash + anything until cursor (including spaces).
+  // This keeps ghost suggestions disabled even when user typed "/ " before selecting a command.
+  return /(?:^|\s)\/[^\n]*$/u.test(textBeforeCursor);
+}
+
+function isSlashMenuOpen(): boolean {
+  return Boolean((window as unknown as { __wikiliveSlashMenuOpen?: boolean }).__wikiliveSlashMenuOpen);
+}
+
+function isWordChar(char: string): boolean {
+  return /[\p{L}\p{N}_]/u.test(char);
+}
+
+function isCursorInsideWord(editor: any): boolean {
+  const selection = editor.state.selection;
+  if (!selection.empty) {
+    return false;
+  }
+
+  const { doc } = editor.state;
+  const before = doc.textBetween(Math.max(0, selection.to - 1), selection.to, '\n', '');
+  const after = doc.textBetween(selection.to, Math.min(doc.content.size, selection.to + 1), '\n', '');
+
+  return isWordChar(before) && isWordChar(after);
+}
+
 function buildDecorations(editor: any, suggestion: string): DecorationSet {
   const state = editor.state;
   const selection = state.selection;
@@ -151,7 +178,41 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
       return;
     }
 
+    if (isSlashMenuOpen()) {
+      if (this.storage.suggestion) {
+        this.storage.suggestion = '';
+        this.storage.requestId += 1;
+        this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
+      }
+
+      return;
+    }
+
+    if (isCursorInsideWord(this.editor)) {
+      if (this.storage.suggestion) {
+        this.storage.suggestion = '';
+        this.storage.requestId += 1;
+        this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
+      }
+
+      window.clearTimeout((this as unknown as { __aiGhostTimer?: number }).__aiGhostTimer);
+      this.storage.requestId += 1;
+      return;
+    }
+
     const currentText = this.editor.state.doc.textBetween(Math.max(0, selection.to - 1200), selection.to, '\n', ' ');
+
+    if (isTypingSlashCommand(currentText)) {
+      if (this.storage.suggestion) {
+        this.storage.suggestion = '';
+        this.editor.view.dispatch(this.editor.state.tr.setMeta(ghostTextPluginKey, 'clear'));
+      }
+
+      // Invalidate pending debounced and in-flight requests while slash menu is active.
+      this.storage.requestId += 1;
+      window.clearTimeout((this as unknown as { __aiGhostTimer?: number }).__aiGhostTimer);
+      return;
+    }
 
     if (currentText.trim().length < this.options.minChars) {
       if (this.storage.suggestion) {

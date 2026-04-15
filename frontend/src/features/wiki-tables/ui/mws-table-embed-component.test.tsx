@@ -204,6 +204,7 @@ const RESOLVE_EMPTY_ATTACHMENT_TABLE_EMBED_MOCK: ResolveTableEmbedResponse = {
 describe('MwsTableEmbedComponent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     vi.mocked(wikiliveApi.resolveTableEmbed).mockResolvedValue(
       RESOLVE_TABLE_EMBED_MOCK
     );
@@ -265,6 +266,50 @@ describe('MwsTableEmbedComponent', () => {
       'href',
       'https://tables.mws.ru/fusion/v1/mock'
     );
+  });
+
+  it('collapses and expands the live table block without losing its summary', async () => {
+    render(
+      <MwsTableEmbedComponent
+        node={
+          {
+            attrs: {
+              blockId: 'block-1',
+              title: 'Таблица 2',
+              spaceId: 'space-1',
+              nodeId: 'node-2',
+              datasheetId: 'dst-2',
+              viewId: 'view-1',
+              selectedFieldIds: ['fld-title'],
+              pageSize: 20,
+              allowInlineEdit: true,
+              displayMode: 'table'
+            }
+          } as never
+        }
+        selected={false}
+        editor={null as never}
+        getPos={null as never}
+        updateAttributes={vi.fn()}
+        deleteNode={vi.fn()}
+        decorations={[]}
+        extension={null as never}
+        HTMLAttributes={{}}
+        innerDecorations={null as never}
+        view={null as never}
+      />
+    );
+
+    expect(await screen.findByTestId('mws_canvas_grid')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Свернуть' }));
+
+    expect(screen.getByTestId('mws_canvas_grid')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Сортировка' })).not.toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }));
+
+    expect(await screen.findByTestId('mws_canvas_grid')).toBeInTheDocument();
   });
 
   it('starts inline editing on the first typed key after a cell is selected', async () => {
@@ -845,6 +890,66 @@ describe('MwsTableEmbedComponent', () => {
 
     expect(
       await screen.findByRole('dialog', { name: /Добавить столбец/i })
+    ).toBeInTheDocument();
+  });
+
+  it('opens a field action menu from the header and routes filtering to client controls', async () => {
+    render(
+      <MwsTableEmbedComponent
+        node={
+          {
+            attrs: {
+              blockId: 'block-1',
+              title: 'Таблица 2',
+              spaceId: 'space-1',
+              nodeId: 'node-2',
+              datasheetId: 'dst-2',
+              viewId: 'view-1',
+              selectedFieldIds: ['fld-title'],
+              pageSize: 20,
+              allowInlineEdit: true,
+              displayMode: 'table'
+            }
+          } as never
+        }
+        selected={false}
+        editor={null as never}
+        getPos={null as never}
+        updateAttributes={vi.fn()}
+        deleteNode={vi.fn()}
+        decorations={[]}
+        extension={null as never}
+        HTMLAttributes={{}}
+        innerDecorations={null as never}
+        view={null as never}
+      />
+    );
+
+    const canvas = await screen.findByTestId('mws_canvas_grid');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      width: 720,
+      height: 320,
+      top: 0,
+      left: 0,
+      right: 720,
+      bottom: 320,
+      toJSON: () => ({})
+    });
+
+    fireEvent.pointerDown(canvas, { clientX: 80, clientY: 20 });
+
+    expect(
+      await screen.findByRole('menu', { name: /Действия для поля Название/i })
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /Добавить "Название" как фильтр/i })
+    );
+
+    expect(
+      await screen.findByRole('dialog', { name: /Фильтры по данным/i })
     ).toBeInTheDocument();
   });
 

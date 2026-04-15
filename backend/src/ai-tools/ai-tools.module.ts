@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { CollabModule } from 'src/collab/collab.module';
+import { ContextEngineModule } from 'src/context-engine/context-engine.module';
 import { MwsModule } from 'src/mws/mws.module';
+import { PageAccessModule } from 'src/page-access/page-access.module';
+import { PagesModule } from 'src/pages/pages.module';
 import { AiToolsController } from './ai-tools.controller';
 import { AiToolRegistryService } from './ai-tool-registry.service';
 import { WikiDocumentInjectionService } from './wiki-document-injection.service';
@@ -11,7 +14,7 @@ import { AiChatService } from './ai-chat.service';
 import { AiSmokeTestController } from './ai-smoke-test.controller';
 
 @Module({
-  imports: [HttpModule, MwsModule, CollabModule],
+  imports: [HttpModule, MwsModule, CollabModule, PagesModule, ContextEngineModule, PageAccessModule],
   controllers: [AiToolsController, AiSmokeTestController],
   providers: [
     AiProviderClientService,

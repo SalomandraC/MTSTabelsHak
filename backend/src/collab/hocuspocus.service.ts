@@ -39,6 +39,8 @@ export class HocuspocusService implements OnModuleInit, OnModuleDestroy {
           clientId: payload.clientId,
           userId: payload.sub,
           displayName: (payload as any).displayName ?? `User ${payload.sub.slice(0, 6)}`,
+          role: payload.role,
+          readOnly: payload.readOnly,
         };
       },
       onLoadDocument: async (data: any) => {
@@ -58,6 +60,10 @@ export class HocuspocusService implements OnModuleInit, OnModuleDestroy {
         }
       },
       onChange: async (data: any) => {
+        if (data.context?.readOnly) {
+          return;
+        }
+
         const update = data.update as Uint8Array | undefined;
         if (!update) {
           return;

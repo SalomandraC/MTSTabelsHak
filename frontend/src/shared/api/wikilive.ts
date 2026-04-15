@@ -17,9 +17,21 @@ export type AuthSessionRefresh = RefreshResponse;
 export type MeResponse = {
   user: {
     userId: string;
+    clientId: string | null;
     displayName: string;
   };
 };
+
+export type LoginResponse =
+  | { status: 'authorized' }
+  | {
+      status: 'display_name_required';
+      profile: {
+        userId: string;
+        clientId: string | null;
+        suggestedDisplayName: string | null;
+      };
+    };
 
 export type PluginPlan = {
   id: 'free' | 'pro' | 'enterprise';
@@ -40,6 +52,7 @@ export type PluginCatalogItem = {
   canToggle: boolean;
   status: 'core' | 'enabled' | 'available' | 'locked' | 'comingSoon';
   lockedReason: string | null;
+  settings?: Record<string, boolean>;
 };
 
 export type PluginCatalogResponse = {
@@ -62,6 +75,7 @@ function getDemoUserFromUrl(): MeResponse['user'] | null {
 
   return {
     userId,
+    clientId: null,
     displayName: displayName ?? `User ${userId.slice(0, 8)}`,
   };
 }
@@ -74,6 +88,10 @@ export type PageSummary = {
   createdAt: string;
   updatedAt: string;
   backlinksCount: number;
+  role?: DocumentRole | null;
+  canView?: boolean;
+  canEdit?: boolean;
+  isLocked?: boolean;
 };
 
 export type TemplateField = {
@@ -193,6 +211,34 @@ export type PageEmbed = {
   displayMode: string | null;
 };
 
+export type DocumentRole = 'owner' | 'editor' | 'commentator' | 'guest';
+
+export type DocumentCapabilities = {
+  canView: boolean;
+  canEdit: boolean;
+  canComment: boolean;
+  canManageAccess: boolean;
+  canDelete: boolean;
+  canUseAi: boolean;
+  canUseAdvancedPlugins: boolean;
+};
+
+export type DocumentAccessPolicy = {
+  ownerUserId: string;
+  viewAccess: 'owner_only' | 'space_members' | 'link_holders';
+  commentAccess: 'owner_only' | 'space_members' | 'link_holders';
+  editAccess: 'owner_only' | 'space_members' | 'link_holders';
+};
+
+export type DocumentAccessSummary = {
+  role: DocumentRole | null;
+  principal: 'authenticated' | 'anonymous';
+  isSpaceMember: boolean;
+  isOwner: boolean;
+  capabilities: DocumentCapabilities;
+  policy: DocumentAccessPolicy;
+};
+
 export type WikiPage = {
   id: string;
   title: string;
@@ -201,9 +247,15 @@ export type WikiPage = {
   createdAt: string;
   updatedAt: string;
   plainTextPreview: string | null;
+  headingNumberingEnabled: boolean;
   outgoingLinksCount: number;
   backlinksCount: number;
+  access?: DocumentAccessSummary;
   embeds: PageEmbed[];
+  document?: {
+    type: string;
+    content?: unknown[];
+  };
   documentState?: PageDocumentState;
 };
 
@@ -223,6 +275,7 @@ export type CreateFolderPayload = {
   spaceId: string;
   title: string;
   parentNodeId?: string | null;
+  externalParentNodeId?: string | null;
   icon?: string | null;
 };
 
@@ -247,6 +300,7 @@ export type PresenceUser = {
 };
 
 export type CommentThreadStatus = 'open' | 'resolved';
+export type CommentResolveReason = 'manual' | 'anchor_removed_by_restore';
 
 export type PageCommentMessage = {
   id: string;
@@ -267,6 +321,7 @@ export type PageCommentThread = {
   createdByName: string;
   resolvedBy: string | null;
   resolvedAt: string | null;
+  resolvedReason: CommentResolveReason | null;
   createdAt: string;
   updatedAt: string;
   messages: PageCommentMessage[];
@@ -281,10 +336,30 @@ export type CollabSession = {
     heartbeatIntervalSec: number;
   };
   documentState: PageDocumentState;
+  access?: {
+    role: DocumentRole | null;
+    capabilities: DocumentCapabilities;
+  };
   awareness?: {
     activeUsers?: PresenceUser[];
   };
 };
+
+export type WorkspaceRealtimeEvent =
+  | {
+      type: 'connected';
+      spaceId: string;
+    }
+  | {
+      type: 'page_access_updated';
+      spaceId: string;
+      pageId: string;
+    }
+  | {
+      type: 'page_updated';
+      spaceId: string;
+      pageId: string;
+    };
 
 export type MwsSpace = {
   id: string;
@@ -316,7 +391,7 @@ export type MwsNode = {
 
 export type WorkspaceTreeNode = {
   id: string;
-  kind: 'mwsFolder' | 'mwsTable' | 'mwsNode' | 'wikiPage';
+  kind: 'mwsFolder' | 'mwsTable' | 'mwsNode' | 'wikiFolder' | 'wikiPage';
   title: string;
   spaceId: string;
   parentId: string | null;
@@ -374,6 +449,17 @@ export type MwsRecordList = {
   total: number;
 };
 
+export type MwsCellValue = {
+  cell: {
+    datasheetId: string;
+    recordId: string;
+    fieldId: string;
+    value: unknown;
+    displayValue: string;
+    updatedAt?: string | null;
+  };
+};
+
 export type CreateMwsRecordsPayload = {
   fieldKey: 'id' | 'name';
   records: Array<{ fields: Record<string, unknown> }>;
@@ -420,33 +506,76 @@ export type ResolveTableEmbedResponse = {
 };
 
 export type AiTransformType = 'professional' | 'shorten' | 'expand' | 'fix_grammar';
+export type AiTransformStyleId = 'standard' | 'business' | 'military' | 'medieval' | 'church' | 'fix' | 'expand';
 
 export type AiAutocompletePayload = {
   currentText: string;
   pageTitle?: string;
-  pageSnapshot?: Record<string, unknown>;
+  pageSnapshot?: Record<string, unknown> | string;
 };
 
 export type AiGeneratePayload = {
   prompt: string;
   pageTitle?: string;
-  pageSnapshot?: Record<string, unknown>;
+  pageSnapshot?: Record<string, unknown> | string;
 };
 
 export type AiTransformPayload = {
   text: string;
   transformation: AiTransformType;
+  styleId?: AiTransformStyleId;
   pageTitle?: string;
-  pageSnapshot?: Record<string, unknown>;
+  pageSnapshot?: Record<string, unknown> | string;
 };
 
 export type AiChatPayload = {
   question: string;
+  spaceId?: string;
+  contextScope?: 'currentFile' | 'documents' | 'folders' | 'space';
+  intent?: 'chat' | 'plan_mutation' | 'write_report' | 'autocomplete';
   pageId?: string;
   datasheetId?: string;
   viewId?: string;
   pageTitle?: string;
-  pageSnapshot?: Record<string, unknown>;
+  pageSnapshot?: Record<string, unknown> | string;
+  selectedPageIds?: string[];
+  selectedFolderIds?: string[];
+  contextDocuments?: Array<{
+    pageId: string;
+    title: string;
+    markdown: string;
+  }>;
+  workspaceStructure?: {
+    scope: 'currentFile' | 'documents' | 'folders' | 'space';
+    spaceId: string;
+    truncated?: boolean;
+    nodes: Array<{
+      id: string;
+      title: string;
+      kind: string;
+      parentId: string | null;
+      depth: number;
+    }>;
+  };
+  useVectorSearch?: boolean;
+};
+
+export type SearchDocumentsPayload = {
+  spaceId: string;
+  query: string;
+  pageIds?: string[];
+  folderIds?: string[];
+  topK?: number;
+};
+
+export type SearchDocumentsResponse = {
+  items: Array<{
+    pageId: string;
+    title: string;
+    snippet: string;
+    score: number;
+    chunkIndex: number;
+  }>;
 };
 
 export type AiGenerateResponse = {
@@ -458,9 +587,94 @@ export type AiGenerateResponse = {
 
 export type AiChatResponse = {
   answer: string;
+  needsRefresh?: boolean;
   usedTools?: Array<{ toolName: string; args: Record<string, unknown> }>;
   contextMarkdown?: string;
   references?: Array<Record<string, unknown>>;
+};
+
+export type AiExecuteToolPayload = {
+  toolName: string;
+  args: Record<string, unknown>;
+  pageId?: string;
+  workspaceId?: string;
+};
+
+export type AiExecuteToolResponse = {
+  ok: boolean;
+  toolName: string;
+  data?: Record<string, unknown>;
+  canonicalRecords?: Array<{
+    recordId: string;
+    fields: Record<string, unknown>;
+    createdAt?: string | null;
+    updatedAt?: string | null;
+  }>;
+  error?: {
+    code: string;
+    message: string;
+    status?: number;
+    details?: unknown;
+  };
+};
+
+export type AiPlanMutationPayload = {
+  operation: 'create_records' | 'add_table_column';
+  prompt: string;
+  spaceId: string;
+  datasheetId: string;
+  viewId?: string;
+  tableSnapshot?: {
+    datasheetId?: string;
+    viewId?: string | null;
+    fields?: Array<Record<string, unknown>>;
+    records?: Array<Record<string, unknown>>;
+    total?: number;
+    updatedAt?: number;
+  };
+};
+
+export type AiPlanMutationResponse = {
+  toolName: 'create_records' | 'add_table_column';
+  args: Record<string, unknown>;
+  summary: string;
+};
+
+export type AiPlanWorkflowPayload = {
+  prompt: string;
+  spaceId: string;
+  datasheetId: string;
+  viewId?: string;
+  tableSnapshot?: {
+    datasheetId?: string;
+    viewId?: string | null;
+    fields?: Array<Record<string, unknown>>;
+    records?: Array<Record<string, unknown>>;
+    total?: number;
+    updatedAt?: number;
+  };
+};
+
+export type AiPlanWorkflowResponse = {
+  summary: string;
+  commands: Array<
+    | {
+        type: 'ADD_COLUMN';
+        column: {
+          name: string;
+          type: string;
+          property?: Record<string, unknown>;
+        };
+      }
+    | {
+        type: 'ADD_ROW';
+        rows: Array<{ fields: Record<string, unknown> }>;
+      }
+    | {
+        type: 'UPDATE_RECORDS';
+        records: Array<{ recordId: string; fields: Record<string, unknown> }>;
+      }
+  >;
 };
 
 function toQueryString(query: RequestOptions['query']) {
@@ -520,23 +734,29 @@ async function refreshAccessToken(): Promise<RefreshResponse | null> {
   }
 
   refreshInFlight = (async () => {
-    const response = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
 
-    if (!response.ok) {
+      if (!response.ok) {
+        setAccessToken(null);
+        setActiveUser(null);
+        return null;
+      }
+
+      const payload = (await response.json()) as RefreshResponse;
+      setAccessToken(payload.accessToken);
+      return payload;
+    } catch {
       setAccessToken(null);
       setActiveUser(null);
       return null;
     }
-
-    const payload = (await response.json()) as RefreshResponse;
-    setAccessToken(payload.accessToken);
-    return payload;
   })().finally(() => {
     refreshInFlight = null;
   });
@@ -619,11 +839,11 @@ async function requestWithAuth<T>(path: string, options: RequestOptions = {}): P
 }
 
 export const wikiliveApi = {
-  async login(apiKey: string) {
-    await request<void>('/api/v1/auth/login', {
+  async login(apiKey: string, displayName?: string) {
+    return request<LoginResponse>('/api/v1/auth/login', {
       method: 'POST',
       authMode: 'none',
-      body: JSON.stringify({ apiKey }),
+      body: JSON.stringify({ apiKey, displayName }),
     });
   },
   async refreshSession() {
@@ -639,6 +859,14 @@ export const wikiliveApi = {
   },
   async getMe() {
     const response = await request<MeResponse>('/api/v1/me');
+    setActiveUser(response.user);
+    return response;
+  },
+  async updateMeDisplayName(displayName: string) {
+    const response = await request<MeResponse>('/api/v1/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ displayName }),
+    });
     setActiveUser(response.user);
     return response;
   },
@@ -679,6 +907,12 @@ export const wikiliveApi = {
       method: 'POST',
     });
   },
+  updatePluginSettings(pluginId: string, settings: Record<string, boolean>) {
+    return request<PluginCatalogResponse>(`/api/v1/plugins/${pluginId}/settings`, {
+      method: 'PATCH',
+      body: JSON.stringify({ settings }),
+    });
+  },
   listPages(spaceId: string, query = '') {
     return request<{ items: PageSummary[] }>('/api/v1/pages', {
       query: { spaceId, query, limit: 30 },
@@ -690,7 +924,7 @@ export const wikiliveApi = {
   getWorkspaceTree(spaceId: string) {
     return request<{ items: WorkspaceTreeNode[] }>(`/api/v1/spaces/${spaceId}/workspace/tree`);
   },
-  createPage(spaceId: string, title: string, parentNodeId?: string | null) {
+  createPage(spaceId: string, title: string, parentNodeId?: string | null, externalParentNodeId?: string | null) {
     return request<{ page: PageSummary }>('/api/v1/pages', {
       method: 'POST',
       body: JSON.stringify({
@@ -698,6 +932,7 @@ export const wikiliveApi = {
         title,
         icon: 'doc',
         parentNodeId: parentNodeId ?? null,
+        externalParentNodeId: externalParentNodeId ?? null,
       }),
     });
   },
@@ -767,6 +1002,7 @@ export const wikiliveApi = {
         title: payload.title,
         icon: payload.icon ?? 'folder',
         parentNodeId: payload.parentNodeId ?? null,
+        externalParentNodeId: payload.externalParentNodeId ?? null,
       }),
     });
   },
@@ -781,22 +1017,37 @@ export const wikiliveApi = {
       method: 'DELETE',
     });
   },
-  moveNode(nodeId: string, payload: { targetParentId?: string | null; position?: number }) {
+  moveNode(nodeId: string, payload: { targetParentId?: string | null; targetExternalParentNodeId?: string | null }) {
     return request<{ node: WikiTreeNode }>(`/api/v1/nodes/${nodeId}/move`, {
       method: 'POST',
       body: JSON.stringify({
         targetParentId: payload.targetParentId ?? null,
-        position: payload.position,
+        targetExternalParentNodeId: payload.targetExternalParentNodeId ?? null,
       }),
     });
   },
-  getPage(pageId: string) {
+  getPage(pageId: string, options?: { readOnlyLink?: boolean }) {
     return request<{ page: WikiPage }>(`/api/v1/pages/${pageId}`, {
-      query: { includeDocumentState: true },
+      query: {
+        includeDocumentState: true,
+        readOnlyLink: options?.readOnlyLink ?? false,
+      },
     });
   },
-  updatePage(pageId: string, payload: { title?: string; icon?: string | null }) {
+  getPageAccess(pageId: string) {
+    return request<{ access: DocumentAccessSummary }>(`/api/v1/pages/${pageId}/access`);
+  },
+  updatePage(
+    pageId: string,
+    payload: { title?: string; icon?: string | null; headingNumberingEnabled?: boolean },
+  ) {
     return request<{ page: WikiPage }>(`/api/v1/pages/${pageId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+  updatePageAccess(pageId: string, payload: DocumentAccessPolicy) {
+    return request<{ access: DocumentAccessSummary }>(`/api/v1/pages/${pageId}/access`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     });
@@ -849,7 +1100,6 @@ export const wikiliveApi = {
   openCollabSession(pageId: string, payload: {
     clientId: string;
     deviceId: string;
-    userDisplayName: string;
     localDraftAvailable: boolean;
     lastCheckpointId?: string | null;
     knownServerVersion?: number | null;
@@ -861,13 +1111,40 @@ export const wikiliveApi = {
           clientId: payload.clientId,
           deviceId: payload.deviceId,
           editorVersion: 'wikilive-tiptap-mvp',
-          userDisplayName: payload.userDisplayName,
         },
         localDraftAvailable: payload.localDraftAvailable,
         lastCheckpointId: payload.lastCheckpointId,
         knownServerVersion: payload.knownServerVersion,
       }),
     });
+  },
+  openWorkspaceRealtime(
+    spaceId: string,
+    handlers: {
+      onMessage: (event: WorkspaceRealtimeEvent) => void;
+      onError?: () => void;
+    },
+  ) {
+    const wsBaseUrl = API_BASE_URL.replace(/^http/i, 'ws');
+    const socket = new WebSocket(`${wsBaseUrl}/api/v1/realtime${toQueryString({ spaceId })}`);
+
+    socket.addEventListener('message', (event) => {
+      try {
+        handlers.onMessage(JSON.parse(event.data) as WorkspaceRealtimeEvent);
+      } catch {
+        handlers.onError?.();
+      }
+    });
+
+    socket.addEventListener('error', () => {
+      handlers.onError?.();
+    });
+
+    return {
+      close() {
+        socket.close();
+      },
+    };
   },
   createCheckpoint(
     pageId: string,
@@ -934,6 +1211,28 @@ export const wikiliveApi = {
       body: JSON.stringify({ index }),
     });
   },
+  setMwsViewSort(
+    spaceId: string,
+    datasheetId: string,
+    viewId: string,
+    rules: Array<{ fieldId: string; desc: boolean }>,
+  ) {
+    return request<{ ok: boolean }>(`/api/v1/mws/spaces/${spaceId}/datasheets/${datasheetId}/views/${viewId}/sort`, {
+      method: 'POST',
+      body: JSON.stringify({ spaceId, rules, keepSort: true, applySort: true }),
+    });
+  },
+  setMwsViewGroup(
+    spaceId: string,
+    datasheetId: string,
+    viewId: string,
+    rules: Array<{ fieldId: string; desc: boolean }>,
+  ) {
+    return request<{ ok: boolean }>(`/api/v1/mws/spaces/${spaceId}/datasheets/${datasheetId}/views/${viewId}/group`, {
+      method: 'POST',
+      body: JSON.stringify({ spaceId, rules }),
+    });
+  },
   listMwsViews(datasheetId: string) {
     return request<{ items: MwsView[] }>(`/api/v1/mws/datasheets/${datasheetId}/views`);
   },
@@ -960,6 +1259,9 @@ export const wikiliveApi = {
         sort: query.sort ? JSON.stringify(query.sort) : undefined,
       },
     });
+  },
+  getMwsCellValue(datasheetId: string, recordId: string, fieldId: string) {
+    return request<MwsCellValue>(`/api/v1/mws/datasheets/${datasheetId}/records/${recordId}/fields/${fieldId}`);
   },
   createMwsRecords(datasheetId: string, payload: CreateMwsRecordsPayload) {
     return request<{ items: MwsRecord[] }>(`/api/v1/mws/datasheets/${datasheetId}/records`, {
@@ -1099,26 +1401,57 @@ export const wikiliveApi = {
       }),
     });
   },
-  aiAutocomplete(payload: AiAutocompletePayload) {
+  aiAutocomplete(payload: AiAutocompletePayload, options: RequestOptions = {}) {
     return requestWithAuth<{ text: string }>('/api/v1/ai/autocomplete', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
-  aiGenerate(payload: AiGeneratePayload) {
+  aiGenerate(payload: AiGeneratePayload, options: RequestOptions = {}) {
     return requestWithAuth<AiGenerateResponse>('/api/v1/ai/generate', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
-  aiTransform(payload: AiTransformPayload) {
+  aiTransform(payload: AiTransformPayload, options: RequestOptions = {}) {
     return requestWithAuth<{ text: string }>('/api/v1/ai/transform', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
-  aiChat(payload: AiChatPayload) {
+  aiChat(payload: AiChatPayload, options: RequestOptions = {}) {
     return requestWithAuth<AiChatResponse>('/api/v1/ai/chat', {
+      ...options,
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  searchDocuments(payload: SearchDocumentsPayload) {
+    return requestWithAuth<SearchDocumentsResponse>('/api/v1/search/documents', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiExecuteTool(payload: AiExecuteToolPayload, options: RequestOptions = {}) {
+    return requestWithAuth<AiExecuteToolResponse>('/api/v1/ai/execute', {
+      ...options,
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiPlanMutation(payload: AiPlanMutationPayload, options: RequestOptions = {}) {
+    return requestWithAuth<AiPlanMutationResponse>('/api/v1/ai/plan-mutation', {
+      ...options,
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  aiPlanWorkflow(payload: AiPlanWorkflowPayload, options: RequestOptions = {}) {
+    return requestWithAuth<AiPlanWorkflowResponse>('/api/v1/ai/plan-workflow', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
     });

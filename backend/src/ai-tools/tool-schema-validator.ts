@@ -15,9 +15,10 @@ export function validateToolArguments(schema: JsonSchema, value: unknown): void 
 
 function validateSchema(schema: JsonSchema, value: unknown, path: string): string[] {
   const errors: string[] = [];
+  const expectedTypes = normalizeExpectedTypes(schema.type);
 
   if (value === null) {
-    if (schema.nullable) {
+    if (schema.nullable || expectedTypes.includes('null')) {
       return errors;
     }
     errors.push(`${path}: value is null`);
@@ -29,16 +30,14 @@ function validateSchema(schema: JsonSchema, value: unknown, path: string): strin
     return errors;
   }
 
-  const expectedType = schema.type as string | undefined;
-  if (expectedType) {
-    const typeError = matchesType(expectedType, value);
-    if (typeError) {
-      errors.push(`${path}: ${typeError}`);
-      return errors;
-    }
+  const actualType = detectType(value);
+
+  if (expectedTypes.length > 0 && !isTypeAllowed(expectedTypes, actualType)) {
+    errors.push(`${path}: expected ${formatExpectedTypes(expectedTypes)}`);
+    return errors;
   }
 
-  if (expectedType === 'string') {
+  if (actualType === 'string') {
     if (typeof schema.minLength === 'number' && (value as string).length < schema.minLength) {
       errors.push(`${path}: string is shorter than ${schema.minLength}`);
     }
@@ -48,7 +47,7 @@ function validateSchema(schema: JsonSchema, value: unknown, path: string): strin
     return errors;
   }
 
-  if (expectedType === 'integer' || expectedType === 'number') {
+  if (actualType === 'integer' || actualType === 'number') {
     if (typeof schema.minimum === 'number' && (value as number) < schema.minimum) {
       errors.push(`${path}: number is smaller than ${schema.minimum}`);
     }
@@ -58,7 +57,7 @@ function validateSchema(schema: JsonSchema, value: unknown, path: string): strin
     return errors;
   }
 
-  if (expectedType === 'array') {
+  if (actualType === 'array') {
     const arrayValue = value as unknown[];
     if (typeof schema.minItems === 'number' && arrayValue.length < schema.minItems) {
       errors.push(`${path}: array has fewer than ${schema.minItems} items`);
@@ -74,7 +73,7 @@ function validateSchema(schema: JsonSchema, value: unknown, path: string): strin
     return errors;
   }
 
-  if (expectedType === 'object') {
+  if (actualType === 'object') {
     const objectValue = value as Record<string, unknown>;
     const properties = schema.properties ?? {};
     const required: string[] = schema.required ?? [];
@@ -126,4 +125,58 @@ function matchesType(expectedType: string, value: unknown): string | null {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeExpectedTypes(type: unknown): string[] {
+  if (Array.isArray(type)) {
+    return type.filter((item): item is string => typeof item === 'string');
+  }
+
+  if (typeof type === 'string') {
+    return [type];
+  }
+
+  return [];
+}
+
+function detectType(value: unknown): 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object' {
+  if (Array.isArray(value)) {
+    return 'array';
+  }
+
+  if (typeof value === 'string') {
+    return 'string';
+  }
+
+  if (typeof value === 'boolean') {
+    return 'boolean';
+  }
+
+  if (typeof value === 'number') {
+    return Number.isInteger(value) ? 'integer' : 'number';
+  }
+
+  return 'object';
+}
+
+function isTypeAllowed(expectedTypes: string[], actualType: string): boolean {
+  return expectedTypes.some((expectedType) => {
+    if (expectedType === actualType) {
+      return true;
+    }
+
+    if (expectedType === 'number' && actualType === 'integer') {
+      return true;
+    }
+
+    return false;
+  });
+}
+
+function formatExpectedTypes(expectedTypes: string[]): string {
+  if (expectedTypes.length === 1) {
+    return expectedTypes[0];
+  }
+
+  return `one of ${expectedTypes.join(', ')}`;
 }

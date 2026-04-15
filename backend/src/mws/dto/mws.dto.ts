@@ -56,6 +56,30 @@ export class CreateMwsViewDto {
   properties!: Record<string, unknown>;
 }
 
+export class SetViewSortDto {
+  @IsString()
+  spaceId!: string;
+
+  @IsArray()
+  rules!: Array<{ fieldId: string; desc?: boolean }>;
+
+  @IsOptional()
+  @IsBoolean()
+  keepSort?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  applySort?: boolean;
+}
+
+export class SetViewGroupDto {
+  @IsString()
+  spaceId!: string;
+
+  @IsArray()
+  rules!: Array<{ fieldId: string; desc?: boolean }>;
+}
+
 export class CreateMwsRecordsDto {
   @IsString()
   fieldKey!: 'id' | 'name';

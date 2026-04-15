@@ -62,6 +62,22 @@ describe('PluginsService', () => {
     expect(response.items.find((item) => item.id === 'document-graph')?.status).toBe('enabled');
   });
 
+  it('includes live variables as a core always-on module', async () => {
+    const response = await service.getCatalogForUser({
+      userId: 'pro-user',
+      displayName: 'Pro User',
+    });
+
+    const liveVariables = response.items.find((item) => item.id === 'live-variables');
+
+    expect(liveVariables).toEqual(expect.objectContaining({
+      kind: 'core',
+      enabled: true,
+      canToggle: false,
+      status: 'core',
+    }));
+  });
+
   it('locks optional plugin for free plan', async () => {
     const response = await service.getCatalogForUser({
       userId: 'free-user',

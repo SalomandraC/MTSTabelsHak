@@ -30,6 +30,7 @@ type DocumentLinkGraphProps = {
   activePageId: string | null;
   edges: DocumentGraphEdge[];
   onSelectPage: (pageId: string) => void;
+  onRefreshGraph?: () => Promise<void>;
 };
 
 type ColaLayoutOptions = cytoscape.LayoutOptions & {
@@ -46,6 +47,8 @@ function normalizeNodeSize(fileSizeBytes?: number) {
 }
 
 function buildElements(pages: DocumentGraphPage[], edges: DocumentGraphEdge[]) {
+  const pageIdSet = new Set(pages.map((page) => page.id));
+
   const nodes = pages.map((page) => ({
     data: {
       id: page.id,
@@ -55,15 +58,17 @@ function buildElements(pages: DocumentGraphPage[], edges: DocumentGraphEdge[]) {
     classes: 'document-node',
   }));
 
-  const edgeElements = edges.map((edge, index) => ({
-    data: {
-      id: `edge-${edge.sourcePageId}-${edge.targetPageId}-${index}`,
-      source: edge.sourcePageId,
-      target: edge.targetPageId,
-      mentionCount: edge.mentionCount,
-    },
-    classes: 'document-edge',
-  }));
+  const edgeElements = edges
+    .filter((edge) => pageIdSet.has(edge.sourcePageId) && pageIdSet.has(edge.targetPageId))
+    .map((edge, index) => ({
+      data: {
+        id: `edge-${edge.sourcePageId}-${edge.targetPageId}-${index}`,
+        source: edge.sourcePageId,
+        target: edge.targetPageId,
+        mentionCount: edge.mentionCount,
+      },
+      classes: 'document-edge',
+    }));
 
   return [...nodes, ...edgeElements];
 }
@@ -171,10 +176,11 @@ function updateGraphElements(cy: cytoscape.Core, elements: cytoscape.ElementDefi
   });
 }
 
-export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: DocumentLinkGraphProps) {
+export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, onRefreshGraph }: DocumentLinkGraphProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cytoscapeRef = useRef<cytoscape.Core | null>(null);
   const onSelectPageRef = useRef(onSelectPage);
+  const onRefreshGraphRef = useRef(onRefreshGraph);
   const dragStateRef = useRef<{ startX: number; startY: number; anchorX: number; anchorY: number } | null>(null);
   const initialLayoutDoneRef = useRef(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -184,6 +190,10 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
   useEffect(() => {
     onSelectPageRef.current = onSelectPage;
   }, [onSelectPage]);
+
+  useEffect(() => {
+    onRefreshGraphRef.current = onRefreshGraph;
+  }, [onRefreshGraph]);
 
   const pagesKey = pages.map((page) => `${page.id}:${page.title}:${page.fileSizeBytes ?? ''}`).join('|');
   const edgesKey = edges.map((edge) => `${edge.sourcePageId}:${edge.targetPageId}:${edge.mentionCount}`).join('|');
@@ -213,6 +223,8 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
     if (!containerRef.current || cytoscapeRef.current || pages.length === 0) {
       return;
     }
+
+    let didCleanup = false;
 
     const cy = cytoscape({
       container: containerRef.current,
@@ -248,7 +260,9 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
           selector: 'edge',
           style: {
             'curve-style': 'bezier',
-            'target-arrow-shape': 'none',
+            'target-arrow-shape': 'triangle',
+            'target-arrow-color': 'rgba(17,24,39,0.24)',
+            'arrow-scale': 0.6,
             'line-color': 'rgba(17,24,39,0.24)',
             width: 1,
             opacity: 0.9,
@@ -289,6 +303,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
           selector: '.highlighted-edge',
           style: {
             'line-color': '#ff0037',
+            'target-arrow-color': '#ff0037',
             width: 2,
             opacity: 0.95,
           },
@@ -330,9 +345,17 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
 
     const scheduleLayout = () => {
       window.requestAnimationFrame(() => {
+        if (didCleanup || cy.destroyed()) {
+          return;
+        }
+
         cy.resize();
         const layout = cy.layout(layoutOptions);
         layout.on('layoutstop', () => {
+          if (didCleanup || cy.destroyed()) {
+            return;
+          }
+
           if (cy.elements().nonempty() && !initialLayoutDoneRef.current) {
             cy.fit(cy.elements(), 25);
             initialLayoutDoneRef.current = true;
@@ -350,8 +373,11 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
     updateSelection(cy, activePageId, edges);
 
     return () => {
+      didCleanup = true;
       resizeObserver.disconnect();
-      cy.destroy();
+      if (!cy.destroyed()) {
+        cy.destroy();
+      }
       cytoscapeRef.current = null;
     };
   }, [pages.length]);
@@ -412,25 +438,62 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
     updateGraphElements(cy, elements);
     window.requestAnimationFrame(() => {
       cy.resize();
-      const layout = cy.layout(layoutOptions);
+      const layout = cy.layout({
+        ...(layoutOptions as any),
+        fit: true,
+      } as ColaLayoutOptions);
+      layout.on('layoutstop', () => {
+        updateSelection(cy, activePageId, edges);
+        if (cy.elements().nonempty()) {
+          cy.fit(cy.elements(), 25);
+        }
+      });
       layout.run();
     });
-  }, [elements, pages.length]);
+  }, [elements, edgesKey, pages.length]);
 
-  const handleRefreshGraph = () => {
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      const cy = cytoscapeRef.current;
+      if (!cy || pages.length === 0) {
+        return;
+      }
+
+      if (onRefreshGraphRef.current) {
+        void onRefreshGraphRef.current();
+      } else {
+        void handleRefreshGraph();
+      }
+    }, 3000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [pages.length, pagesKey, edgesKey]);
+
+  const handleRefreshGraph = async () => {
     const cy = cytoscapeRef.current;
     if (!cy) {
       return;
     }
 
+    if (onRefreshGraphRef.current) {
+      try {
+        await onRefreshGraphRef.current();
+      } catch {
+        // Ignore refresh errors here; the parent will handle messaging.
+      }
+    }
+
     updateGraphElements(cy, elements);
-    cy.layout({
+    cy.resize();
+    const layout = cy.layout({
       name: defaultLayoutName,
       animate: true,
       refresh: 1,
       maxSimulationTime: 4000,
       ungrabifyWhileSimulating: false,
-      fit: false,
+      fit: true,
       padding: 30,
       nodeDimensionsIncludeLabels: false,
       randomize: false,
@@ -441,7 +504,16 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
       centerGraph: true,
       edgeLengthVal: 80,
       componentSpacing: 30,
-    } as ColaLayoutOptions).run();
+    } as ColaLayoutOptions);
+
+    layout.on('layoutstop', () => {
+      updateSelection(cy, activePageId, edges);
+      if (cy.elements().nonempty()) {
+        cy.fit(cy.elements(), 25);
+      }
+    });
+
+    layout.run();
   };
 
   const handleExpandGraph = () => {
@@ -524,10 +596,10 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage }: 
         {pages.length > 0 ? (
           <>
             {isModalOpen && (
-              <div className="fixed inset-0 z-40">
+              <div className="fixed inset-0 z-45">
                 <div className="absolute inset-0 bg-black/30" onClick={() => setIsModalOpen(false)} />
                 <div
-                  className="absolute z-50 flex h-[min(76vh,640px)] w-[min(84vw,820px)] flex-col overflow-hidden rounded-3xl bg-white shadow-[0_30px_80px_rgba(17,25,40,0.25)]"
+                  className="absolute z-[101] flex h-[min(76vh,640px)] w-[min(84vw,820px)] flex-col overflow-hidden rounded-3xl bg-white shadow-[0_30px_80px_rgba(17,25,40,0.25)]"
                   style={{ left: modalOffset.x, top: modalOffset.y }}
                 >
                   <div

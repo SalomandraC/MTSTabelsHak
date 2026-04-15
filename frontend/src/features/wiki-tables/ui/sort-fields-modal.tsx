@@ -1,5 +1,5 @@
 import { ArrowUpDown, PlusCircle, Search, Trash2 } from 'lucide-react';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import type { MwsField } from '../../../shared/api/wikilive';
 import { ModalActionButton } from '../../../shared/ui';
@@ -38,9 +38,13 @@ export function SortFieldsModal({
   const modalId = useId();
   const [query, setQuery] = useState('');
   const [draftRules, setDraftRules] = useState<SortRuleDraft[]>(sortRules);
+  const prevIsOpenRef = useRef(false);
 
   useEffect(() => {
-    if (isOpen) {
+    const wasJustOpened = !prevIsOpenRef.current && isOpen;
+    prevIsOpenRef.current = isOpen;
+
+    if (wasJustOpened) {
       setDraftRules(
         sortRules.length > 0
           ? sortRules
@@ -50,7 +54,7 @@ export function SortFieldsModal({
       );
       setQuery('');
     }
-  }, [fields, isOpen, sortRules]);
+  }, [isOpen, sortRules, fields]);
 
   const filteredFields = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -72,7 +76,7 @@ export function SortFieldsModal({
   );
 
   return (
-    <div className="fixed inset-0 z-[95] bg-black/35" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[101] bg-black/35" onMouseDown={onClose}>
       <section
         className="fixed left-1/2 top-1/2 flex max-h-[calc(100vh-2rem)] w-[min(38rem,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-[#e8edf5] bg-white shadow-[0_24px_70px_rgba(17,25,40,0.18)]"
         role="dialog"

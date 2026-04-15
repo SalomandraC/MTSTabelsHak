@@ -9,6 +9,7 @@ type CommentsPanelProps = {
   activeThreadId: string | null;
   isLoading: boolean;
   errorMessage: string;
+  canComment?: boolean;
   onRetry: () => void;
   onClose: () => void;
   onSubmitMessage: (body: string) => Promise<void>;
@@ -89,7 +90,7 @@ function CommentMessageItem({
               title="Редактирование комментария"
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              className="min-h-20 w-full resize-none rounded-md border border-editor-border-control bg-white px-3 py-2 text-sm outline-none focus:border-[#907ff0]"
+              className="min-h-20 w-full resize-none rounded-md border border-editor-border-control bg-white px-3 py-2 text-sm outline-none focus:border-[#d70032]"
               autoFocus
             />
             <div className="flex items-center gap-2">
@@ -99,7 +100,7 @@ function CommentMessageItem({
                   void onEdit(draft).then(() => setIsEditing(false));
                 }}
                 disabled={!draft.trim()}
-                className="h-8 rounded-md bg-[#907ff0] px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-8 rounded-md bg-[#d70032] px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Сохранить
               </button>
@@ -128,6 +129,7 @@ export function CommentsPanel({
   activeThreadId,
   isLoading,
   errorMessage,
+  canComment = true,
   onRetry,
   onClose,
   onSubmitMessage,
@@ -136,9 +138,10 @@ export function CommentsPanel({
   onResolveThread,
 }: CommentsPanelProps) {
   const [body, setBody] = useState('');
+  const [isResolveConfirmOpen, setIsResolveConfirmOpen] = useState(false);
   const currentUserId = getCurrentUser()?.userId;
   const title = activeThread?.isDraft ? 'Новый комментарий' : 'Комментарии';
-  const canResolve = Boolean(activeThread && !activeThread.isDraft && activeThread.status === 'open');
+  const canResolve = Boolean(canComment && activeThread && !activeThread.isDraft && activeThread.status === 'open');
 
   useEffect(() => {
     setBody('');
@@ -163,7 +166,7 @@ export function CommentsPanel({
           <button
             type="button"
             onClick={onRetry}
-            className="mt-4 h-10 rounded-md bg-[#907ff0] px-4 text-sm font-semibold text-white"
+            className="mt-4 h-10 rounded-md bg-[#d70032] px-4 text-sm font-semibold text-white"
           >
             Попробовать еще раз
           </button>
@@ -212,8 +215,8 @@ export function CommentsPanel({
             {canResolve ? (
               <button
                 type="button"
-                onClick={() => void onResolveThread(activeThread!.id)}
-                className="flex h-8 w-8 items-center justify-center rounded-md text-[#30a46c] hover:bg-[#edf8f1]"
+                onClick={() => setIsResolveConfirmOpen(true)}
+                className="flex h-8 w-8 items-center justify-center rounded-md bg-[#d70032] text-white hover:bg-[#b00025]"
                 aria-label="Решить вопрос"
                 title="Решить вопрос"
               >
@@ -238,7 +241,7 @@ export function CommentsPanel({
 
       {content}
 
-      {activeThread && activeThread.status === 'open' ? (
+      {canComment && activeThread && activeThread.status === 'open' ? (
         <form
           className="border-t border-editor-border-subtle p-2"
           onSubmit={(event) => {
@@ -255,7 +258,7 @@ export function CommentsPanel({
           <label className="sr-only" htmlFor="comment-reply-input">
             Комментарий
           </label>
-          <div className="flex items-end gap-2 rounded-md border border-editor-border-control bg-white px-3 py-2 focus-within:border-[#907ff0]">
+          <div className="flex items-end gap-2 rounded-md border border-editor-border-control bg-white px-3 py-2 focus-within:border-[#d70032]">
             <textarea
               id="comment-reply-input"
               title="Комментарий"
@@ -268,13 +271,48 @@ export function CommentsPanel({
             <button
               type="submit"
               disabled={!body.trim() || isLoading}
-              className="mb-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#907ff0] text-white disabled:cursor-not-allowed disabled:opacity-45"
+              className="mb-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#d70032] text-white disabled:cursor-not-allowed disabled:opacity-45"
               aria-label="Отправить комментарий"
             >
               <Send size={15} />
             </button>
           </div>
         </form>
+      ) : null}
+
+      {isResolveConfirmOpen && activeThread ? (
+        <div className="fixed inset-0 z-[101] flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setIsResolveConfirmOpen(false)} />
+          <div className="relative z-10 w-full max-w-md rounded-[1rem] border border-[#d70032] bg-white p-6 shadow-xl">
+            <div className="mb-4 rounded-lg border border-[#ffb3ba] bg-[#fff1f3] p-4 text-sm text-[#991b1b]">
+              <p className="font-semibold text-[#b91c1c]">Подтвердите решение</p>
+              <p className="mt-2 text-sm text-[#6b1a1a]">
+                Вы уверены, что хотите решить эту ветку комментариев? Действие закроет обсуждение.
+              </p>
+            </div>
+            <div className="mb-4 text-sm text-[#1d2023]">
+              <p className="font-semibold">{activeThread.anchorText ?? 'Комментарий'}</p>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsResolveConfirmOpen(false)}
+                className="rounded-lg border border-[#d70032] bg-white px-4 py-2 text-sm font-semibold text-[#d70032] hover:bg-[#fee2e2]"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void onResolveThread(activeThread.id).then(() => setIsResolveConfirmOpen(false));
+                }}
+                className="rounded-lg bg-[#d70032] px-4 py-2 text-sm font-semibold text-white hover:bg-[#b00025]"
+              >
+                Решить
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </div>
   );

@@ -1,118 +1,136 @@
 @startuml WikiLive_Component_Diagram
-title WikiLive - UML Component Diagram
+title WikiLive - Component Diagram (Updated)
 
 skinparam componentStyle rectangle
 skinparam shadowing false
 skinparam wrapWidth 220
-skinparam maxMessageSize 140
+skinparam maxMessageSize 160
 skinparam packageStyle rectangle
 skinparam defaultTextAlignment center
 
 actor "User" as User
 
 package "Browser / Frontend\nReact + Vite + Tiptap" as Frontend {
-  [Workspace Page\nnavigation, page tree,\neditor layout] as FE_Workspace
-  [Auth Gate\naccess token in memory] as FE_Auth
+  [Workspace App\nMWS-first tree, page navigation] as FE_Workspace
+  [Auth Gate + Session Store\naccess token in memory] as FE_Auth
   [WikiLive API Client\nREST adapter] as FE_ApiClient
-  [Page Editor Controller\nstate orchestration] as FE_EditorController
-  [Tiptap Editor Core\nschema, extensions,\ncommands] as FE_Tiptap
-  [Slash Menu\nkeyboard commands] as FE_Slash
-  [Page Links + Backlinks UI\npage picker, graph] as FE_Links
-  [MWS Table Embed Block\ntable picker, live preview] as FE_MwsEmbed
-  database "Browser Local Storage\nYjs draft cache,\nclient/device ids" as BrowserStorage
+  [Editor Orchestrator\nstate + autosave + modals] as FE_Editor
+  [Tiptap Core + Extensions\nslash, links, comments,\nembeds, templates, formulas] as FE_Tiptap
+  [MWS Table Embed UI\nlive grid, picker, actions] as FE_MwsEmbed
+  [AI Sidebar / Inline Copilot] as FE_Ai
+  [Plugins + Templates UI] as FE_PluginsTemplates
+  [Graph / Backlinks Panel] as FE_Graph
+  database "Browser Local Storage\nlocal drafts, preferences,\nview options" as BrowserStorage
   [Hocuspocus Provider\nYjs WebSocket client] as FE_CollabProvider
 }
 
 package "Backend / WikiLive API\nNestJS" as Backend {
-  [Auth API\nlogin, refresh, me] as BE_Auth
-  [Wiki Tree API\nfolders, pages tree] as BE_Tree
-  [Pages API\npage CRUD, metadata,\nembed metadata] as BE_Pages
-  [Links API\nbacklinks, outgoing links] as BE_Links
-  [Document Indexing Service\nextract links + embeds] as BE_Indexing
-  [Search Service] as BE_Search
-  [Collaboration API\nopen session, checkpoint] as BE_CollabApi
-  [Hocuspocus WS Server\nshared editing, awareness] as BE_Hocuspocus
-  [Collab Persistence\nYjs snapshots,\nappend-only updates] as BE_CollabPersistence
-  [MWS Tables BFF / Adapter\nnormalize spaces, nodes,\nfields, views, records,\nresolve embed] as BE_Mws
-  [Document Maintenance Processor\ncheckpoint / reindex jobs] as BE_Maintenance
+  [Auth API\nlogin/refresh/logout/me] as BE_Auth
+  [Pages + Access API\nCRUD, page access policy] as BE_Pages
+  [Wiki Tree / Workspace API\nfolders, move node, MWS-first tree] as BE_Tree
+  [Links API\nbacklinks/outgoing links] as BE_Links
+  [Comments API\nthreads + messages] as BE_Comments
+  [Collab API\nsession bootstrap, checkpoints] as BE_CollabApi
+  [History API\ncheckpoints list/get] as BE_History
+  [Plugins API\ncatalog, activation, settings] as BE_Plugins
+  [Templates API\nCRUD + instantiate] as BE_Templates
+  [Search API\ncontext search endpoint] as BE_Search
+  [AI API\nchat, autocomplete, transform,\ntool execution, planning] as BE_Ai
+  [MWS BFF Adapter\nspaces, nodes, datasheets,\nfields, views, records, attachments,\nresolve embed, table pages] as BE_Mws
+  [Hocuspocus WS Server\npresence + CRDT transport] as BE_Hocuspocus
+  [Collab Persistence\nYjs updates, snapshots, checkpoints] as BE_CollabPersistence
+  [Indexing Worker\nlink/embed extraction,\ncontext indexing jobs] as BE_Indexing
+  [Export Gateway\nproxy to document-generator] as BE_Export
   [Prisma ORM] as BE_Prisma
 }
 
+package "Services" as Services {
+  [Context Engine\nFastAPI semantic search\n/index/documents, /search] as S_Context
+  [Document Generator\nExpress /generate\nPDF, DOCX, MD] as S_DocGen
+}
+
 package "Infrastructure" as Infra {
-  database "PostgreSQL\nwiki_nodes, wiki_pages,\npage_documents,\npage_crdt_updates,\npage_checkpoints,\npage_links,\npage_embeds,\ncollab_sessions" as Postgres
-  database "Redis\nshort-lived MWS cache,\nqueue backend" as Redis
-  queue "BullMQ Queue\ndocument maintenance" as BullMQ
+  database "PostgreSQL\nwiki_nodes, wiki_pages,\npage_documents, crdt_updates,\ncheckpoints, links, comments,\ntemplates, plugin states" as Postgres
+  database "Redis\ncache + queue backend" as Redis
+  queue "BullMQ\nmaintenance/indexing jobs" as BullMQ
 }
 
 cloud "MWS Tables API\nhttps://tables.mws.ru/fusion/v1/" as MwsApi
+cloud "MWS GPT API" as MwsGptApi
 
-User --> FE_Workspace : uses
-FE_Workspace --> FE_Auth : guarded routes
-FE_Workspace --> FE_ApiClient : loads tree, pages,\nlinks, MWS data
-FE_Workspace --> FE_EditorController : opens selected page
+User --> FE_Workspace : uses app
+FE_Workspace --> FE_Auth
+FE_Workspace --> FE_ApiClient
+FE_Workspace --> FE_Editor
 
-FE_EditorController --> FE_Tiptap : configures editor
-FE_EditorController --> FE_Slash : opens / commands
-FE_EditorController --> FE_Links : inserts page links
-FE_EditorController --> FE_MwsEmbed : inserts table block
-FE_EditorController --> BrowserStorage : read/write local draft
-FE_EditorController --> FE_CollabProvider : binds Y.Doc
+FE_Editor --> FE_Tiptap
+FE_Editor --> FE_MwsEmbed
+FE_Editor --> FE_Ai
+FE_Editor --> FE_PluginsTemplates
+FE_Editor --> FE_Graph
+FE_Editor --> BrowserStorage : local autosave + recovery
+FE_Editor --> FE_CollabProvider : bind Y.Doc
 
-FE_Tiptap --> FE_Slash : command execution
-FE_Tiptap --> FE_Links : page link extension
-FE_Tiptap --> FE_MwsEmbed : mwsTableEmbed extension
+FE_ApiClient --> BE_Auth
+FE_ApiClient --> BE_Pages
+FE_ApiClient --> BE_Tree
+FE_ApiClient --> BE_Links
+FE_ApiClient --> BE_Comments
+FE_ApiClient --> BE_CollabApi
+FE_ApiClient --> BE_History
+FE_ApiClient --> BE_Plugins
+FE_ApiClient --> BE_Templates
+FE_ApiClient --> BE_Search
+FE_ApiClient --> BE_Ai
+FE_ApiClient --> BE_Mws
+FE_ApiClient --> BE_Export
+FE_CollabProvider --> BE_Hocuspocus : WebSocket Yjs updates
 
-FE_ApiClient --> BE_Auth : HTTPS REST\n/auth, /me
-FE_ApiClient --> BE_Tree : HTTPS REST\n/wiki-tree
-FE_ApiClient --> BE_Pages : HTTPS REST\n/pages
-FE_ApiClient --> BE_Links : HTTPS REST\n/backlinks, /outgoing-links
-FE_ApiClient --> BE_CollabApi : HTTPS REST\n/open-session, checkpoint
-FE_ApiClient --> BE_Mws : HTTPS REST\n/mws/*
-FE_CollabProvider --> BE_Hocuspocus : WebSocket\nYjs updates + awareness
-
-BE_Auth --> BE_Mws : validates MWS API key
-BE_Tree --> BE_Prisma
+BE_Auth --> BE_Mws : validate API key by MWS spaces
 BE_Pages --> BE_Prisma
-BE_Pages --> BE_Indexing : page content/embed metadata
-BE_Links --> BE_Indexing
+BE_Tree --> BE_Prisma
 BE_Links --> BE_Prisma
-BE_Search --> BE_Prisma
+BE_Comments --> BE_Prisma
+BE_History --> BE_Prisma
+BE_Plugins --> BE_Prisma
+BE_Templates --> BE_Prisma
 
-BE_CollabApi --> BE_CollabPersistence : bootstrap document state
-BE_CollabApi --> BE_Prisma : collab sessions
-BE_Hocuspocus --> BE_CollabPersistence : persist CRDT updates
-BE_Hocuspocus --> BE_CollabApi : session/token validation
-BE_CollabPersistence --> BE_Indexing : reindex after checkpoint
-BE_CollabPersistence --> BullMQ : enqueue maintenance
-BE_Maintenance --> BE_CollabPersistence : compact/checkpoint
-BE_Maintenance --> BE_Indexing : refresh links/embeds
+BE_CollabApi --> BE_CollabPersistence
+BE_Hocuspocus --> BE_CollabPersistence
+BE_CollabApi --> BE_Prisma : sessions bootstrap
 
-BE_Mws --> Redis : cache MWS reads
-BE_Mws --> MwsApi : bearer-token requests\nspaces, nodes, datasheets,\nfields, views, records
+BE_CollabPersistence --> BullMQ : enqueue indexing/maintenance
+BE_Indexing --> BullMQ
+BE_Indexing --> S_Context : index/delete document chunks
+BE_Search --> S_Context : semantic search request
+BE_Ai --> S_Context : retrieval context
+BE_Ai --> MwsGptApi : inference requests
+
+BE_Mws --> Redis : read-through cache
+BE_Mws --> MwsApi : upstream REST calls
+
+BE_Export --> S_DocGen : /generate
 
 BE_Prisma --> Postgres
 BE_CollabPersistence --> BE_Prisma
 BE_Indexing --> BE_Prisma
-BE_Maintenance --> BE_Prisma
 BullMQ --> Redis
 
 note right of FE_MwsEmbed
-  Embed keeps MWS identity:
-  spaceId, nodeId, datasheetId,
-  viewId, selected fields,
-  display mode and filters.
+  mwsTableEmbed stores identity + config,
+  not full table snapshot.
+  Data is fetched live via backend BFF.
 end note
 
-note bottom of BE_Mws
-  BFF isolates the frontend from
-  raw MWS Tables API details and
-  keeps mocks/adapters replaceable.
+note bottom of S_Context
+  Qdrant persistent vector index,
+  filtered by space for retrieval safety.
 end note
 
 note bottom of BE_CollabPersistence
-  Collaboration is verifiable through
-  Yjs updates, snapshots, checkpoints
-  and presence over Hocuspocus.
+  Collaboration is verifiable via
+  append-only updates, snapshots,
+  checkpoints and presence.
 end note
 
 @enduml
