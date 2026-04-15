@@ -381,6 +381,7 @@ function WorkspaceTreeItem({
   const actionsMenuRef = useRef<HTMLDivElement>(null);
   const createInputRef = useRef<HTMLInputElement>(null);
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [createMode, setCreateMode] = useState<'page' | 'folder' | null>(null);
   const [isCreatingPage, setIsCreatingPage] = useState(false);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
@@ -403,6 +404,7 @@ function WorkspaceTreeItem({
 
   const closeActionsMenu = useCallback(() => {
     setIsActionsMenuOpen(false);
+    setIsConfirmDeleteOpen(false);
     setCreateMode(null);
     setIsCreatingPage(false);
     setIsCreatingFolder(false);
@@ -1026,7 +1028,9 @@ export function WorkspacePage() {
   const [isCreatingTablePage, setIsCreatingTablePage] = useState(false);
   const [isDeletingTable, setIsDeletingTable] = useState(false);
   const [isDeletingPage, setIsDeletingPage] = useState(false);
+  const [isDeletingFolder, setIsDeletingFolder] = useState(false);
   const [isDeletePageConfirmOpen, setIsDeletePageConfirmOpen] = useState(false);
+  const [deleteFolderTarget, setDeleteFolderTarget] = useState<{ folderId: string; title: string } | null>(null);
   const [isBlankAreaCreateOpen, setIsBlankAreaCreateOpen] = useState(false);
   const [blankAreaCreateMode, setBlankAreaCreateMode] = useState<'page' | 'folder' | null>(null);
   const [isBlankAreaSubmitting, setIsBlankAreaSubmitting] = useState(false);
@@ -2332,14 +2336,17 @@ export function WorkspacePage() {
     }
   };
 
+  const openDeleteFolderConfirm = (folderId: string, title: string) => {
+    setDeleteFolderTarget({ folderId, title });
+  };
+
+  const closeDeleteFolderConfirm = () => {
+    setDeleteFolderTarget(null);
+  };
+
   const handleDeleteFolder = async (folderId: string, title: string) => {
-    const confirmed = window.confirm(`Удалить папку "${title}"? Вложенные элементы будут скрыты из дерева.`);
-
-    if (!confirmed) {
-      return;
-    }
-
     setStatusMessage('Удаляем папку');
+    setIsDeletingFolder(true);
 
     try {
       await wikiliveApi.deleteFolder(folderId);
@@ -2347,8 +2354,19 @@ export function WorkspacePage() {
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Не удалось удалить папку');
     } finally {
+      setIsDeletingFolder(false);
       setStatusMessage('');
     }
+  };
+
+  const handleConfirmDeleteFolder = async () => {
+    if (!deleteFolderTarget) {
+      return;
+    }
+
+    const { folderId, title } = deleteFolderTarget;
+    closeDeleteFolderConfirm();
+    await handleDeleteFolder(folderId, title);
   };
 
   const handleRenamePage = async (title: string) => {
@@ -2715,7 +2733,7 @@ export function WorkspacePage() {
                       onSelectMwsTable={handleSelectMwsTable}
                       onToggleFolder={handleToggleFolder}
                       onDeletePage={(pageId, title) => void handleDeletePage(pageId, title)}
-                      onDeleteFolder={(folderId, title) => void handleDeleteFolder(folderId, title)}
+                      onDeleteFolder={(folderId, title) => void openDeleteFolderConfirm(folderId, title)}
                       onRenameFolder={(folderId, title) => void handleRenameFolder(folderId, title)}
                       onCreatePage={async (title, parentNodeId) => {
                         await handleCreatePage(title, parentNodeId);
@@ -3236,8 +3254,17 @@ export function WorkspacePage() {
                         {isDeletingPage ? 'Удаляем страницу...' : 'Удалить страницу'}
                       </button>
                       {isDeletePageConfirmOpen ? createPortal(
-                        <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/30 p-4" role="dialog" aria-modal="true" aria-label="Подтверждение удаления страницы">
-                          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-lg">
+                        <div
+                          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/30 p-4"
+                          role="dialog"
+                          aria-modal="true"
+                          aria-label="Подтверждение удаления страницы"
+                          onClick={() => setIsDeletePageConfirmOpen(false)}
+                        >
+                          <div
+                            className="w-full max-w-sm rounded-lg bg-white p-6 shadow-lg"
+                            onClick={(event) => event.stopPropagation()}
+                          >
                             <p className="text-sm leading-6 text-[#1f1f1f]">
                               Удалить страницу «{activePage?.title ?? 'Без названия'}»? Таблицы MWS при этом не удаляются.
                             </p>
@@ -3259,6 +3286,45 @@ export function WorkspacePage() {
                                 className="rounded-lg bg-[#d70032] px-4 py-2 text-sm font-semibold text-white hover:bg-[#b8002b] disabled:cursor-wait disabled:opacity-60"
                               >
                                 {isDeletingPage ? 'Удаляем страницу...' : 'Удалить страницу'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>,
+                        document.body,
+                      ) : null}
+
+                      {deleteFolderTarget ? createPortal(
+                        <div
+                          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/30 p-4"
+                          role="dialog"
+                          aria-modal="true"
+                          aria-label="Подтверждение удаления папки"
+                          onClick={closeDeleteFolderConfirm}
+                        >
+                          <div
+                            className="w-full max-w-sm rounded-lg bg-white p-6 shadow-lg"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <p className="text-sm leading-6 text-[#1f1f1f]">
+                              Удалить папку «{deleteFolderTarget.title}»? Вложенные элементы будут скрыты из дерева.
+                            </p>
+                            <div className="mt-6 flex justify-end gap-3">
+                              <button
+                                type="button"
+                                onClick={closeDeleteFolderConfirm}
+                                className="rounded-lg border border-editor-border-subtle bg-white px-4 py-2 text-sm font-semibold text-[#505762] hover:bg-[#f7f8fa]"
+                              >
+                                Отмена
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void handleConfirmDeleteFolder();
+                                }}
+                                disabled={isDeletingFolder}
+                                className="rounded-lg bg-[#d70032] px-4 py-2 text-sm font-semibold text-white hover:bg-[#b8002b] disabled:cursor-wait disabled:opacity-60"
+                              >
+                                {isDeletingFolder ? 'Удаляем папку...' : 'Удалить папку'}
                               </button>
                             </div>
                           </div>

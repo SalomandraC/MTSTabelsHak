@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { RefObject } from 'react';
 import { ChevronRight, FileDown } from 'lucide-react';
@@ -75,6 +75,12 @@ export function WorkspacePageActionsMenu({
   const [exportSubmenuOpen, setExportSubmenuOpen] = useState(false);
   const isFolder = nodeKind === 'wikiFolder' || nodeKind === 'mwsFolder';
   const isFolderCreateMode = createMode === 'folder';
+
+  useEffect(() => {
+    if (!isOpen) {
+      setIsConfirmDeleteOpen(false);
+    }
+  }, [isOpen]);
 
   if (!isOpen) {
     return null;
@@ -216,7 +222,8 @@ export function WorkspacePageActionsMenu({
                   role="menuitem"
                   onClick={(event) => {
                     event.stopPropagation();
-                    setIsConfirmDeleteOpen(true);
+                    onCloseActionsMenu();
+                    onDeleteFolder?.();
                   }}
                   className="flex w-full items-center px-3 py-2 text-left text-sm text-[#d70032] hover:bg-[#fff1f3]"
                 >
@@ -279,7 +286,13 @@ export function WorkspacePageActionsMenu({
             </button>
           ) : null}
           {isConfirmDeleteOpen && createPortal(
-            <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/30 p-4" role="dialog" aria-modal="true" aria-label="Подтверждение удаления">
+            <div
+              className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/30 p-4"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Подтверждение удаления"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
               <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-lg">
                 <p className="text-sm leading-6 text-[#1f1f1f]">
                   {isFolder
