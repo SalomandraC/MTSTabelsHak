@@ -1855,7 +1855,18 @@ export function AiInlineCopilot({
       {status ? <p className="mb-2 text-xs text-editor-text-tertiary">{status}</p> : null}
 
       <div className="max-h-44 overflow-auto rounded-md border border-editor-border-subtle bg-[#fafbfd] p-2 text-xs text-editor-text-primary">
-        {pendingReportText ? (
+        {createdPage ? (
+          <div className="mb-3 rounded border border-[#cdeccf] bg-[#f3fff4] p-2 text-[#1d5e2a]">
+            <p className="text-xs font-semibold">✅ Отчет успешно создан!</p>
+            <a
+              className="mt-1 inline-flex rounded border border-[#1d5e2a] px-2 py-1 text-xs font-semibold text-[#1d5e2a] transition-colors hover:bg-[#e4f8e7]"
+              href={createdPage.href}
+            >
+              Открыть отчет
+            </a>
+          </div>
+        ) : null}
+        {pendingReportText && !createdPage ? (
           <div className="mb-3 flex flex-col gap-2 sm:flex-row">
             <button
               type="button"
@@ -1899,17 +1910,7 @@ export function AiInlineCopilot({
             ⚡️ Применить
           </button>
         ) : null}
-        {createdPage ? (
-          <div className="mt-2 rounded border border-[#cdeccf] bg-[#f3fff4] p-2 text-[#1d5e2a]">
-            <p className="text-xs font-semibold">✅ Отчет успешно создан!</p>
-            <a
-              className="mt-1 inline-flex rounded border border-[#1d5e2a] px-2 py-1 text-xs font-semibold text-[#1d5e2a] transition-colors hover:bg-[#e4f8e7]"
-              href={createdPage.href}
-            >
-              Открыть отчет
-            </a>
-          </div>
-        ) : null}
+
       </div>
     </section>
   );
