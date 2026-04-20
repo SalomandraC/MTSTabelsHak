@@ -4,7 +4,6 @@ import type { Editor, JSONContent } from '@tiptap/core';
 
 import { type MwsField, type MwsRecord, wikiliveApi } from '../../../../shared/api/wikilive';
 import {
-  insertAiTextWithLiveReferences,
   parseMarkdownReportWithLiveReferences,
   parseMarkdownWithLiveReferences,
 } from '../../../page-editor/model/live-reference-parser.ts';
@@ -808,22 +807,6 @@ function buildSchemaSafeDoc(rootBlocks: JSONContent[]): { type: 'doc'; content: 
   };
 }
 
-function insertAiAnswer(editor: Editor | null, text: string, options: { spaceId: string }): boolean {
-  if (!editor) {
-    return false;
-  }
-
-  const parsedBlocks = parseMarkdownWithLiveReferences(editor, text, { spaceId: options.spaceId });
-
-  if (parsedBlocks.length > 0) {
-    const from = editor.state.selection.from;
-    const to = editor.state.selection.to;
-    return editor.chain().focus().insertContentAt({ from, to }, parsedBlocks).run();
-  }
-
-  return insertAiTextWithLiveReferences(editor, text, { spaceId: options.spaceId });
-}
-
 function getInlineContextMarkdown(editor: Editor | null): string {
   return capContextMarkdown(getEditorMarkdown(editor));
 }
@@ -855,6 +838,7 @@ export function AiInlineCopilot({
 }) {
   const [prompt, setPrompt] = useState('');
   const [output, setOutput] = useState('');
+  const [pendingInlineAnswerText, setPendingInlineAnswerText] = useState<string | null>(null);
   const [pendingReportText, setPendingReportText] = useState<string | null>(null);
   const [pendingAnalysisText, setPendingAnalysisText] = useState<string | null>(null);
   const [structurePlan, setStructurePlan] = useState<StructureInstruction[]>([]);
@@ -872,6 +856,7 @@ export function AiInlineCopilot({
     if (!isOpen) {
       setPrompt('');
       setOutput('');
+      setPendingInlineAnswerText(null);
       setPendingReportText(null);
       setPendingAnalysisText(null);
       setStructurePlan([]);
@@ -904,6 +889,12 @@ export function AiInlineCopilot({
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose, showContextMenu]);
+
+  useEffect(() => {
+    if (pendingInlineAnswerText && output !== pendingInlineAnswerText) {
+      setPendingInlineAnswerText(null);
+    }
+  }, [output, pendingInlineAnswerText]);
 
   useEffect(() => {
     if (pendingReportText && output !== pendingReportText) {
@@ -1486,6 +1477,40 @@ export function AiInlineCopilot({
     console.error('Analysis fallback insertion also did not change the document.');
   };
 
+  const handleInsertInlineAnswer = () => {
+    if (!editor || !pendingInlineAnswerText) {
+      return;
+    }
+
+    editor.commands.focus();
+    const beforeDocument = JSON.stringify(editor.getJSON());
+    const { sanitizedText, contentJson } = parseAiMarkdownForInsert(editor, pendingInlineAnswerText, spaceId);
+    const inserted = editor.chain().focus().insertContent(contentJson ?? sanitizedText).run();
+    const afterDocument = JSON.stringify(editor.getJSON());
+
+    if (inserted && afterDocument !== beforeDocument) {
+      requestAnimationFrame(() => {
+        editor.commands.focus();
+      });
+      setStatus('✅ Ответ вставлен в документ');
+      setPendingInlineAnswerText(null);
+      return;
+    }
+
+    console.error('Inline answer insertion did not change the document, falling back to plain text.');
+    const fallbackInserted = editor.chain().focus().insertContent(sanitizedText).run();
+    if (fallbackInserted && JSON.stringify(editor.getJSON()) !== beforeDocument) {
+      requestAnimationFrame(() => {
+        editor.commands.focus();
+      });
+      setStatus('⚠️ Ответ вставлен как обычный текст');
+      setPendingInlineAnswerText(null);
+      return;
+    }
+
+    console.error('Inline answer fallback insertion also did not change the document.');
+  };
+
   const handleInsertAnalysisToNewFile = async () => {
     if (!pendingAnalysisText) {
       return;
@@ -1908,11 +1933,11 @@ export function AiInlineCopilot({
         intent: 'chat',
       }, signal);
 
-      insertAiAnswer(editor, answer, { spaceId });
-
       handleAiChatResponse(response);
 
       setOutput(answer);
+      setPendingInlineAnswerText(answer);
+      setStatus('⚡️ Ответ готов. Нажмите кнопку вставки, чтобы добавить его в документ.');
     });
   };
 
@@ -2187,6 +2212,24 @@ export function AiInlineCopilot({
               className="inline-flex items-center justify-center rounded-md border border-[#d70032] bg-white px-3 py-1.5 text-xs font-semibold text-[#d70032] transition-colors hover:bg-[#fff1f3]"
             >
               Добавить в новый документ
+            </button>
+          </div>
+        ) : null}
+        {pendingInlineAnswerText && !pendingReportText && !pendingAnalysisText ? (
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={handleInsertInlineAnswer}
+              className="inline-flex items-center justify-center rounded-md border border-[#d70032] bg-[#d70032] px-3 py-1.5 text-xs font-semibold text-white shadow-[0_8px_16px_rgba(215,0,50,0.14)] transition-colors hover:bg-[#b8002b]"
+            >
+              Добавить в этот документ
+            </button>
+            <button
+              type="button"
+              onClick={() => setPendingInlineAnswerText(null)}
+              className="inline-flex items-center justify-center rounded-md border border-[#d70032] bg-white px-3 py-1.5 text-xs font-semibold text-[#d70032] transition-colors hover:bg-[#fff1f3]"
+            >
+              Не вставлять
             </button>
           </div>
         ) : null}

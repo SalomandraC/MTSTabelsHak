@@ -20,6 +20,9 @@ const MARKDOWN_TABLE_RULE = [
 const PAGE_CONTEXT_MAX_CHARS = 50_000;
 const SELECTED_DOC_MAX_CHARS = 12_000;
 const RETRIEVED_SNIPPET_MAX_CHARS = 2_400;
+const CHAT_INTENT_MAX_TOKENS = 3000;
+const ANALYZE_INTENT_MAX_TOKENS = 4096;
+const WRITE_REPORT_INTENT_MAX_TOKENS = 4096;
 
 @Injectable()
 export class AiChatService {
@@ -35,7 +38,12 @@ export class AiChatService {
   async askQuestion(input: ChatQuestionInput, user: UserContext): Promise<ChatQuestionResponse> {
     const intent: AiIntent = input.intent ?? 'chat';
     const model = this.aiAssistantService.resolveModelForIntent(intent);
-    const maxTokens = intent === 'write_report' ? 4096 : intent === 'analyze' ? 3000 : 512;
+    const maxTokens =
+      intent === 'write_report'
+        ? WRITE_REPORT_INTENT_MAX_TOKENS
+        : intent === 'analyze'
+          ? ANALYZE_INTENT_MAX_TOKENS
+          : CHAT_INTENT_MAX_TOKENS;
 
     const contextMarkdown = this.clampText(this.snapshotToMarkdown(input.pageSnapshot), PAGE_CONTEXT_MAX_CHARS);
     const explicitContextMarkdown = this.buildExplicitContextMarkdown(input.contextDocuments);
