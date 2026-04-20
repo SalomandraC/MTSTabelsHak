@@ -121,6 +121,10 @@ function safeEvaluateArithmetic(expression: string): number | null {
   }
 }
 
+function normalizeFormulaDisplayExpression(expression: string): string {
+  return expression.replace(/\s+/g, '');
+}
+
 function collectFormulaRefTokens(expression: string): FormulaRefToken[] {
   const tokens: FormulaRefToken[] = [];
   LIVE_REF_TOKEN.lastIndex = 0;
@@ -212,6 +216,7 @@ export function createInlineNodeResolver(auth?: ExportAuthContext) {
     }
 
     let normalizedExpression = expression;
+    let displayExpression = expression;
 
     for (const ref of refs) {
       const liveValue = await fetchLiveReferenceValue(ref.datasheetId, ref.recordId, ref.fieldId);
@@ -225,6 +230,7 @@ export function createInlineNodeResolver(auth?: ExportAuthContext) {
       }
 
       normalizedExpression = normalizedExpression.split(ref.raw).join(`(${numericValue})`);
+      displayExpression = displayExpression.split(ref.raw).join(String(numericValue));
     }
 
     const result = safeEvaluateArithmetic(normalizedExpression);
@@ -235,9 +241,11 @@ export function createInlineNodeResolver(auth?: ExportAuthContext) {
       };
     }
 
+    const displayValue = Number.isInteger(result) ? String(result) : String(Number(result.toFixed(4)));
+
     return {
       type: 'text',
-      text: Number.isInteger(result) ? String(result) : String(Number(result.toFixed(4))),
+      text: `${normalizeFormulaDisplayExpression(displayExpression)} = ${displayValue}`,
     };
   }
 

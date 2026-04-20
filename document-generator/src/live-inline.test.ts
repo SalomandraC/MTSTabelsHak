@@ -57,7 +57,7 @@ test('live inline resolver fetches live reference values and evaluates live form
 
     assert.deepEqual(
       resolved.map((node) => node.text),
-      ['120', ' / ', '150', '{{Менеджер}}'],
+      ['120', ' / ', '120+30 = 150', '{{Менеджер}}'],
     );
 
     assert.equal(
