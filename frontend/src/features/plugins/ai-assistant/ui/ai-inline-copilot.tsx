@@ -1,6 +1,6 @@
 import { SendHorizontal, Square, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Content, Editor, JSONContent } from '@tiptap/core';
+import type { Editor, JSONContent } from '@tiptap/core';
 
 import { type MwsField, type MwsRecord, wikiliveApi } from '../../../../shared/api/wikilive';
 import {
@@ -658,11 +658,20 @@ function ensureAiMarkdownBlockSpacing(text: string): string {
   return normalizedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-function parseAiMarkdownForInsert(editor: Editor, rawText: string): { sanitizedText: string; contentJson: Content | null } {
+function parseAiMarkdownForInsert(
+  editor: Editor,
+  rawText: string,
+  spaceId: string,
+): { sanitizedText: string; contentJson: JSONContent[] | null } {
   const sanitizedText = ensureAiMarkdownBlockSpacing(sanitizeAiResponse(rawText));
-  const markdownStorage = (editor.storage as { markdown?: { parse?: (value: string) => Content | null } }).markdown;
-  const contentJson = markdownStorage?.parse?.(sanitizedText) ?? null;
-  return { sanitizedText, contentJson };
+  const parsedBlocks = parseMarkdownWithLiveReferences(editor, sanitizedText, { spaceId });
+
+  if (parsedBlocks.length > 0) {
+    return { sanitizedText, contentJson: parsedBlocks };
+  }
+
+  const fallbackBlocks = parseMarkdownReportWithLiveReferences(sanitizedText, { spaceId });
+  return { sanitizedText, contentJson: fallbackBlocks.length > 0 ? fallbackBlocks : null };
 }
 
 function normalizeReportMarkdown(reportText: string): string {
@@ -1375,7 +1384,7 @@ export function AiInlineCopilot({
 
     editor.commands.focus();
     const beforeDocument = JSON.stringify(editor.getJSON());
-    const { sanitizedText, contentJson } = parseAiMarkdownForInsert(editor, pendingAnalysisText);
+    const { sanitizedText, contentJson } = parseAiMarkdownForInsert(editor, pendingAnalysisText, spaceId);
     const inserted = editor.chain().focus().insertContent(contentJson ?? sanitizedText).run();
     const afterDocument = JSON.stringify(editor.getJSON());
 
@@ -1578,7 +1587,7 @@ export function AiInlineCopilot({
 
     editor.commands.focus();
     const beforeDocument = JSON.stringify(editor.getJSON());
-    const { sanitizedText, contentJson } = parseAiMarkdownForInsert(editor, pendingReportText);
+    const { sanitizedText, contentJson } = parseAiMarkdownForInsert(editor, pendingReportText, spaceId);
     const inserted = editor.chain().focus().insertContent(contentJson ?? sanitizedText).run();
     const afterDocument = JSON.stringify(editor.getJSON());
 

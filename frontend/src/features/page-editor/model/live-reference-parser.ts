@@ -187,9 +187,109 @@ function pruneEmptyTextNodes(node: JSONContent): JSONContent | null {
       };
 }
 
+    function createTextNode(text: string, marks?: JSONContent['marks']): JSONContent {
+      return marks && marks.length > 0 ? { type: 'text', text, marks } : { type: 'text', text };
+    }
+
+    function flushTextChunk(parts: JSONContent[], chunk: string, isBold: boolean): void {
+      if (!chunk) {
+        return;
+      }
+
+      parts.push(createTextNode(chunk, isBold ? [{ type: 'bold' }] : undefined));
+    }
+
+    function parseInlineMarkdownAndLiveReferences(text: string, options: LiveReferenceParseOptions = {}): JSONContent[] {
+      const value = String(text ?? '');
+      if (!value) {
+        return [];
+      }
+
+      const parts: JSONContent[] = [];
+      let cursor = 0;
+      let buffer = '';
+      let isBold = false;
+
+      const flushBuffer = () => {
+        flushTextChunk(parts, buffer, isBold);
+        buffer = '';
+      };
+
+      while (cursor < value.length) {
+        const nextRef = value.indexOf('[Ref:', cursor);
+        const nextFormula = value.indexOf('[Formula:', cursor);
+        const nextBold = value.indexOf('**', cursor);
+        const candidates = [nextRef, nextFormula, nextBold].filter((index) => index >= 0);
+        const nextTokenStart = candidates.length > 0 ? Math.min(...candidates) : -1;
+
+        if (nextTokenStart < 0) {
+          buffer += value.slice(cursor);
+          break;
+        }
+
+        if (nextTokenStart > cursor) {
+          buffer += value.slice(cursor, nextTokenStart);
+        }
+
+        if (value.startsWith('**', nextTokenStart)) {
+          flushBuffer();
+          isBold = !isBold;
+          cursor = nextTokenStart + 2;
+          continue;
+        }
+
+        flushBuffer();
+
+        if (value.startsWith('[Ref:', nextTokenStart)) {
+          const end = value.indexOf(']', nextTokenStart);
+          if (end > nextTokenStart) {
+            const token = value.slice(nextTokenStart, end + 1);
+            const match = token.match(LIVE_REFERENCE_TOKEN);
+
+            if (match) {
+              const [, datasheetId, recordId, fieldId] = match;
+              parts.push({
+                type: 'liveReference',
+                attrs: {
+                  spaceId: options.spaceId ?? '',
+                  datasheetId,
+                  recordId,
+                  fieldId,
+                  label: `${recordId} / ${fieldId}`,
+                },
+              });
+              cursor = end + 1;
+              continue;
+            }
+          }
+        }
+
+        if (value.startsWith('[Formula:', nextTokenStart)) {
+          const formulaToken = extractFormulaToken(value, nextTokenStart);
+          if (formulaToken) {
+            parts.push({
+              type: 'liveFormula',
+              attrs: {
+                spaceId: options.spaceId ?? '',
+                expression: formulaToken.expression,
+              },
+            });
+            cursor = formulaToken.end;
+            continue;
+          }
+        }
+
+        buffer += value.slice(nextTokenStart, nextTokenStart + 1);
+        cursor = nextTokenStart + 1;
+      }
+
+      flushBuffer();
+      return parts;
+    }
+
 function mapNodeWithLiveReferences(node: JSONContent, options: LiveReferenceParseOptions): JSONContent[] {
   if (node.type === 'text' && typeof node.text === 'string' && hasLiveReferenceToken(node.text)) {
-    return parseInlineContentWithLiveReferences(node.text, options);
+        return parseInlineMarkdownAndLiveReferences(node.text, options);
   }
 
   if (!Array.isArray(node.content)) {
@@ -231,6 +331,13 @@ export function hasLiveReferenceToken(text: string): boolean {
 }
 
 export function parseInlineContentWithLiveReferences(text: string, options: LiveReferenceParseOptions = {}): JSONContent[] {
+  return parseInlineMarkdownAndLiveReferences(text, options);
+}
+
+export function parseInlineContentWithoutMarkdownWithLiveReferences(
+  text: string,
+  options: LiveReferenceParseOptions = {},
+): JSONContent[] {
   const value = String(text ?? '');
   if (!value) {
     return [];
