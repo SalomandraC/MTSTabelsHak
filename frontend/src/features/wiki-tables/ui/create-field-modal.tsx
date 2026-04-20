@@ -44,7 +44,7 @@ export function CreateFieldModal({
   const [dateFormat, setDateFormat] = useState('YYYY-MM-DD');
   const [timeFormat, setTimeFormat] = useState('HH:mm');
   const [includeTime, setIncludeTime] = useState(false);
-  const [checkboxIcon, setCheckboxIcon] = useState('');
+  const [checkboxIcon, setCheckboxIcon] = useState('check');
   const [selectOptions, setSelectOptions] = useState<SelectOptionDraft[]>([
     createEmptyOption(1),
     createEmptyOption(2)
@@ -60,7 +60,7 @@ export function CreateFieldModal({
     setDateFormat('YYYY-MM-DD');
     setTimeFormat('HH:mm');
     setIncludeTime(false);
-    setCheckboxIcon('');
+    setCheckboxIcon('check');
     setSelectOptions([createEmptyOption(1), createEmptyOption(2)]);
   };
 

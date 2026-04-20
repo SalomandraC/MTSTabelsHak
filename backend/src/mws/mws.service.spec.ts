@@ -57,7 +57,7 @@ describe('MwsService', () => {
     });
   });
 
-  it('omits empty property for checkbox create to rely on MWS defaults', async () => {
+  it('adds default checkbox icon when checkbox property is empty', async () => {
     const requestSpy = jest.spyOn(service as any, 'request') as jest.Mock;
     requestSpy.mockResolvedValue({
       data: { id: 'fld-checkbox', name: 'Чекбокс' },
@@ -82,6 +82,9 @@ describe('MwsService', () => {
     expect(payload).toEqual({
       name: 'Чекбокс',
       type: 'Checkbox',
+      property: {
+        icon: 'check',
+      },
     });
   });
 

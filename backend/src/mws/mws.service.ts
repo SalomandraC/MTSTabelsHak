@@ -1242,17 +1242,10 @@ export class MwsService {
       const icon =
         property && typeof property.icon === 'string' ? property.icon.trim() : '';
 
-      if (!icon) {
-        return {
-          name: normalizedName,
-          type: normalizedType,
-        };
-      }
-
       return {
         name: normalizedName,
         type: normalizedType,
-        property: { ...property, icon },
+        property: { ...property, icon: icon || 'check' },
       };
     }
 

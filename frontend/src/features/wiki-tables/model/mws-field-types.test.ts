@@ -24,7 +24,7 @@ describe('getMwsFieldTypeLabel', () => {
       createFieldProperty('Checkbox', {
         checkboxIcon: '  ',
       }),
-    ).toBeUndefined();
+    ).toEqual({ icon: 'check' });
   });
 
   it('trims default values for text-like properties', () => {

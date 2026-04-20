@@ -91,6 +91,7 @@ export function createFieldProperty(
 ) {
   const normalizedDefaultValue = options.defaultValue?.trim() ?? '';
   const normalizedCheckboxIcon = options.checkboxIcon?.trim() ?? '';
+  const safeCheckboxIcon = normalizedCheckboxIcon || 'check';
 
   switch (type) {
     case 'SingleSelect':
@@ -135,13 +136,8 @@ export function createFieldProperty(
           : {}),
       };
     case 'Checkbox':
-      // Let MWS apply its default checkbox style when icon is not explicitly set.
-      if (!normalizedCheckboxIcon) {
-        return undefined;
-      }
-
       return {
-        icon: normalizedCheckboxIcon,
+        icon: safeCheckboxIcon,
       };
     case 'Attachment':
     case 'Text':
