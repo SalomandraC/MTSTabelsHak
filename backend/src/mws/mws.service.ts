@@ -61,6 +61,21 @@ export type NormalizedMwsNode = {
   children: NormalizedMwsNode[];
 };
 
+type NormalizedMwsField = {
+  id: string;
+  name: string;
+  type: string;
+  description?: string | null;
+  property?: Record<string, unknown>;
+};
+
+type NormalizedMwsRecord = {
+  recordId: string;
+  fields: Record<string, unknown>;
+  createdAt?: number | null;
+  updatedAt?: number | null;
+};
+
 @Injectable()
 export class MwsService {
   private readonly baseUrl: string;
@@ -381,7 +396,9 @@ export class MwsService {
 
       const payload = this.unwrapPayload(data);
       return {
-        items: this.readArray(payload, ['fields', 'items']),
+        items: this.readArray(payload, ['fields', 'items'])
+          .map((field: unknown) => this.normalizeField(field))
+          .filter((field): field is NormalizedMwsField => Boolean(field.id)),
       };
     });
   }
@@ -394,7 +411,13 @@ export class MwsService {
       dto,
     );
     await this.invalidateDatasheetCache(datasheetId);
-    return { field: this.unwrapPayload(data) };
+    return {
+      field: this.normalizeField(this.unwrapPayload(data), {
+        name: dto.name,
+        type: dto.type,
+        property: dto.property,
+      }),
+    };
   }
 
   async deleteField(spaceId: string, datasheetId: string, fieldId: string, user: UserContext) {
@@ -594,7 +617,12 @@ export class MwsService {
       fieldKey: 'id',
     });
     await this.invalidateDatasheetCache(datasheetId);
-    return { items: data.data?.records ?? [] };
+    const payload = this.unwrapPayload(data);
+    return {
+      items: this.readArray(payload, ['records', 'items'])
+        .map((record: unknown) => this.normalizeRecord(record))
+        .filter((record): record is NormalizedMwsRecord => Boolean(record.recordId)),
+    };
   }
 
   async updateRecords(datasheetId: string, dto: UpdateMwsRecordsDto, user: UserContext) {
@@ -603,7 +631,12 @@ export class MwsService {
       fieldKey: 'id',
     });
     await this.invalidateDatasheetCache(datasheetId);
-    return { items: data.data?.records ?? [] };
+    const payload = this.unwrapPayload(data);
+    return {
+      items: this.readArray(payload, ['records', 'items'])
+        .map((record: unknown) => this.normalizeRecord(record))
+        .filter((record): record is NormalizedMwsRecord => Boolean(record.recordId)),
+    };
   }
 
   async deleteRecords(datasheetId: string, recordIds: string[], user: UserContext) {
@@ -642,7 +675,6 @@ export class MwsService {
             viewId: dto.viewId,
             pageSize: dto.pageSize ?? 20,
             pageNum: 1,
-            fields: dto.selectedFieldIds?.join(','),
             fieldKey: 'id',
             cellFormat: 'json',
             filterByFormula: dto.filterByFormula,
@@ -658,9 +690,7 @@ export class MwsService {
           datasheetId: dto.datasheetId,
           view: views.items.find((item: any) => item.id === dto.viewId) ?? views.items[0] ?? null,
           views: views.items,
-          fields: dto.selectedFieldIds?.length
-            ? fields.items.filter((field: any) => dto.selectedFieldIds?.includes(field.id))
-            : fields.items,
+          fields: this.mergeSelectedFields(fields.items, dto.selectedFieldIds),
           preview,
           total: preview.total,
           capabilities: {
@@ -1051,11 +1081,86 @@ export class MwsService {
     const payload = this.unwrapPayload(data);
     const nestedRecords = this.readNestedValue(payload, ['records']);
     return {
-      items: this.readArray(payload, ['records', 'items']),
+      items: this.readArray(payload, ['records', 'items'])
+        .map((record: unknown) => this.normalizeRecord(record))
+        .filter((record): record is NormalizedMwsRecord => Boolean(record.recordId)),
       pageNum: Number(payload.pageNum ?? nestedRecords?.pageNum ?? query.pageNum ?? 1),
       pageSize: Number(payload.pageSize ?? nestedRecords?.pageSize ?? query.pageSize ?? 50),
       total: Number(payload.total ?? nestedRecords?.total ?? 0),
     };
+  }
+
+  private normalizeField(
+    value: unknown,
+    fallback?: { name?: string; type?: string; property?: Record<string, unknown> },
+  ): NormalizedMwsField {
+    const field = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+    const id = this.readString(field.id ?? field.fieldId);
+    const name =
+      this.readString(field.name ?? field.title ?? field.label) ??
+      fallback?.name ??
+      id ??
+      '';
+    const type =
+      this.readString(field.type ?? field.fieldType) ??
+      fallback?.type ??
+      'SingleText';
+    const property = this.readObject(field.property) ?? fallback?.property;
+    const description = this.readString(field.description) ?? null;
+
+    return {
+      id: id ?? '',
+      name,
+      type,
+      description,
+      property,
+    };
+  }
+
+  private normalizeRecord(value: unknown): NormalizedMwsRecord {
+    const record = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+    const fields = this.readObject(record.fields) ?? {};
+
+    return {
+      recordId: this.readString(record.recordId ?? record.id) ?? '',
+      fields,
+      createdAt: this.readNullableNumber(record.createdAt),
+      updatedAt: this.readNullableNumber(record.updatedAt),
+    };
+  }
+
+  private mergeSelectedFields(fields: NormalizedMwsField[], selectedFieldIds?: string[]) {
+    if (!Array.isArray(selectedFieldIds) || selectedFieldIds.length === 0) {
+      return fields;
+    }
+
+    const fieldMap = new Map(fields.map((field) => [field.id, field] as const));
+    const selected = selectedFieldIds
+      .map((fieldId) => fieldMap.get(fieldId))
+      .filter((field): field is NormalizedMwsField => Boolean(field));
+    const selectedIdSet = new Set(selected.map((field) => field.id));
+    const extras = fields.filter((field) => !selectedIdSet.has(field.id));
+
+    return [...selected, ...extras];
+  }
+
+  private readString(value: unknown) {
+    return typeof value === 'string' && value.trim() ? value : null;
+  }
+
+  private readObject(value: unknown) {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  }
+
+  private readNullableNumber(value: unknown) {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
   }
 
   private readBackendSortRules(rawSort: unknown): BackendSortRule[] {
