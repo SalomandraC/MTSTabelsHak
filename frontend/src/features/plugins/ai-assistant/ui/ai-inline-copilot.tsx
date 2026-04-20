@@ -712,11 +712,13 @@ export function AiInlineCopilot({
   const [prompt, setPrompt] = useState('');
   const [output, setOutput] = useState('');
   const [pendingReportText, setPendingReportText] = useState<string | null>(null);
+  const [pendingAnalysisText, setPendingAnalysisText] = useState<string | null>(null);
   const [structurePlan, setStructurePlan] = useState<StructureInstruction[]>([]);
   const [status, setStatus] = useState('');
   const [isBusy, setIsBusy] = useState(false);
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [createdPage, setCreatedPage] = useState<{ id: string; title: string; href: string; status?: string } | null>(null);
+  const [createdAnalysisPage, setCreatedAnalysisPage] = useState<{ id: string; title: string; href: string; status?: string } | null>(null);
   const [selectedContextId, setSelectedContextId] = useState('detected');
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -727,10 +729,12 @@ export function AiInlineCopilot({
       setPrompt('');
       setOutput('');
       setPendingReportText(null);
+      setPendingAnalysisText(null);
       setStructurePlan([]);
       setStatus('');
       setShowContextMenu(false);
       setCreatedPage(null);
+      setCreatedAnalysisPage(null);
       setSelectedContextId('detected');
     }
   }, [isOpen]);
@@ -1213,7 +1217,13 @@ export function AiInlineCopilot({
   };
 
   const runAnalyze = async () => {
+    await prepareAnalysisForCurrentFile();
+  };
+
+  const prepareAnalysisForCurrentFile = async () => {
     await withBusy(async (signal) => {
+      let analysisText = '';
+
       if (activeContext.kind === 'table' && activeContext.datasheetId) {
         const context = await getTableContext({
           datasheetId: activeContext.datasheetId,
@@ -1246,12 +1256,8 @@ export function AiInlineCopilot({
           viewId: activeContext.viewId,
         });
 
-        const intro = `Вижу вашу таблицу с ${context.records.length} записями, готов анализировать...`;
-        setOutput(`${intro}\n\n${response.answer}`);
-        return;
-      }
-
-      if (activeContext.kind === 'all') {
+        analysisText = response.answer;
+      } else if (activeContext.kind === 'all') {
         const markdown = getInlineContextMarkdown(editor);
         const tables = await buildAllTablesContextPayload();
         const response = await wikiliveApi.aiChat({
@@ -1272,32 +1278,121 @@ export function AiInlineCopilot({
         });
 
         handleAiChatResponse(response);
-        setOutput(response.answer);
-        return;
+        analysisText = response.answer;
+      } else {
+        const markdown = getInlineContextMarkdown(editor);
+        const response = await wikiliveApi.aiChat({
+          question: [
+            'Ты помощник по тексту.',
+            `Вот содержание документа: ${markdown}`,
+            'Сделай краткий аналитический обзор и предложи улучшения.',
+            LIVE_DATA_BINDING_RULES,
+          ].join('\n'),
+          pageId: pageId ?? undefined,
+          pageTitle,
+          pageSnapshot: { markdown },
+          intent: 'chat',
+          spaceId,
+        }, {
+          signal,
+        });
+
+        handleAiChatResponse(response);
+        analysisText = response.answer;
       }
 
-      const markdown = getInlineContextMarkdown(editor);
-      const response = await wikiliveApi.aiChat({
-        question: [
-          'Ты помощник по тексту.',
-          `Вот содержание документа: ${markdown}`,
-          'Сделай краткий аналитический обзор и предложи улучшения.',
-          LIVE_DATA_BINDING_RULES,
-        ].join('\n'),
+      const sanitizedAnalysisText = normalizeReportMarkdown(analysisText);
+      setPendingAnalysisText(sanitizedAnalysisText);
+      setOutput(sanitizedAnalysisText);
+      setStatus('⚡️ Анализ готов. Нажмите кнопку вставки, чтобы добавить его в документ.');
+    });
+  };
+
+  const handleInsertAnalysis = () => {
+    if (!editor || !pendingAnalysisText) {
+      return;
+    }
+
+    editor.commands.focus();
+    const insertPos = editor.state.selection.from;
+    const beforeDocument = JSON.stringify(editor.getJSON());
+    const analysisBlocks = parseMarkdownReportWithLiveReferences(pendingAnalysisText, { spaceId });
+
+    const inserted = editor.chain().insertContentAt(insertPos, analysisBlocks).run();
+    const afterDocument = JSON.stringify(editor.getJSON());
+
+    if (inserted && afterDocument !== beforeDocument) {
+      setStatus('✅ Анализ вставлен в документ');
+      setPendingAnalysisText(null);
+      return;
+    }
+
+    console.error('Analysis insertion did not change the document, falling back to plain text.');
+    const fallbackInserted = editor.chain().focus().insertContentAt(insertPos, pendingAnalysisText).run();
+    if (fallbackInserted && JSON.stringify(editor.getJSON()) !== beforeDocument) {
+      setStatus('⚠️ Анализ вставлен как обычный текст');
+      setPendingAnalysisText(null);
+      return;
+    }
+
+    console.error('Analysis fallback insertion also did not change the document.');
+  };
+
+  const handleInsertAnalysisToNewFile = async () => {
+    if (!pendingAnalysisText) {
+      return;
+    }
+
+    const analysisText = pendingAnalysisText;
+
+    await withBusy(async (signal) => {
+      const title = `Анализ от ${new Date().toLocaleDateString('ru-RU')}`;
+      const analysisDoc = {
+        type: 'doc',
+        content: buildReportRootBlock(editor, analysisText, spaceId),
+      };
+
+      const created = await wikiliveApi.aiExecuteTool({
+        toolName: 'create_wiki_page',
+        args: {
+          workspaceId: spaceId,
+          title,
+          content: analysisDoc,
+        },
         pageId: pageId ?? undefined,
-        pageTitle,
-        pageSnapshot: { markdown },
-        intent: 'chat',
-        spaceId,
+        workspaceId: spaceId,
       }, {
         signal,
       });
 
-      handleAiChatResponse(response);
+      if (!created.ok) {
+        throw new Error(created.error?.message ?? 'Не удалось создать страницу анализа');
+      }
 
-      setOutput(response.answer);
+      const payload = (created.data ?? {}) as {
+        pageId?: string;
+        title?: string;
+        pageLink?: string;
+        pageUrl?: string;
+        status?: string;
+      };
+      const createdId = String(payload.pageId ?? '');
+      if (!createdId) {
+        throw new Error('Сервис не вернул id новой страницы');
+      }
+
+      setCreatedAnalysisPage({
+        id: createdId,
+        title: String(payload.title ?? title),
+        href: String(payload.pageUrl ?? `/spaces/${spaceId}/pages/${createdId}`),
+        status: String(payload.status ?? 'created'),
+      });
+      setPendingAnalysisText(null);
+      setOutput(analysisText);
+      setStatus('✅ Анализ успешно создан!');
     });
   };
+
 
   const runDiagramGeneration = async () => {
     await withBusy(async (signal) => {
@@ -1800,7 +1895,7 @@ export function AiInlineCopilot({
         <button
           type="button"
           className="rounded-md border border-[#ffd9e1] bg-white px-2 py-1 text-xs text-[#5a6170] transition-colors hover:bg-[#fff1f3] disabled:opacity-50"
-          onClick={() => applyPromptSuggestion('Проанализируй документ и дай краткие выводы:')}
+          onClick={() => void runAnalyze()}
           disabled={isBusy}
         >
           Анализ
@@ -1866,6 +1961,17 @@ export function AiInlineCopilot({
             </a>
           </div>
         ) : null}
+        {createdAnalysisPage ? (
+          <div className="mb-3 rounded border border-[#cdeccf] bg-[#f3fff4] p-2 text-[#1d5e2a]">
+            <p className="text-xs font-semibold">✅ Анализ успешно создан!</p>
+            <a
+              className="mt-1 inline-flex rounded border border-[#1d5e2a] px-2 py-1 text-xs font-semibold text-[#1d5e2a] transition-colors hover:bg-[#e4f8e7]"
+              href={createdAnalysisPage.href}
+            >
+              Открыть анализ
+            </a>
+          </div>
+        ) : null}
         {pendingReportText && !createdPage ? (
           <div className="mb-3 flex flex-col gap-2 sm:flex-row">
             <button
@@ -1878,6 +1984,24 @@ export function AiInlineCopilot({
             <button
               type="button"
               onClick={() => void handleInsertReportToNewFile()}
+              className="inline-flex items-center justify-center rounded-md border border-[#d70032] bg-white px-3 py-1.5 text-xs font-semibold text-[#d70032] transition-colors hover:bg-[#fff1f3]"
+            >
+              Добавить в новый документ
+            </button>
+          </div>
+        ) : null}
+        {pendingAnalysisText && !createdAnalysisPage ? (
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={handleInsertAnalysis}
+              className="inline-flex items-center justify-center rounded-md border border-[#d70032] bg-[#d70032] px-3 py-1.5 text-xs font-semibold text-white shadow-[0_8px_16px_rgba(215,0,50,0.14)] transition-colors hover:bg-[#b8002b]"
+            >
+              Добавить в этот документ
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleInsertAnalysisToNewFile()}
               className="inline-flex items-center justify-center rounded-md border border-[#d70032] bg-white px-3 py-1.5 text-xs font-semibold text-[#d70032] transition-colors hover:bg-[#fff1f3]"
             >
               Добавить в новый документ
