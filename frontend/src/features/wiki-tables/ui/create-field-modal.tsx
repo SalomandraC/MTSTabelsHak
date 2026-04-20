@@ -1,8 +1,10 @@
 import { useEffect, useId, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { ModalActionButton } from '../../../shared/ui';
 import {
   createFieldProperty,
+  getMwsFieldTypeIcon,
   MWS_FIELD_TYPE_OPTIONS,
   type SelectOptionDraft,
   SELECT_OPTION_COLORS,
@@ -109,13 +111,17 @@ export function CreateFieldModal({
     return null;
   }
 
-  return (
-    <div className="fixed inset-0 z-[101] bg-black/35" onMouseDown={onClose}>
+  if (typeof document === 'undefined') {
+    return null;
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[320] bg-black/35 p-3 sm:p-6" onMouseDown={onClose}>
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={modalId}
-        className="fixed left-1/2 top-1/2 flex max-h-[calc(100vh-2rem)] w-[min(34rem,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-[#e8edf5] bg-white shadow-[0_24px_70px_rgba(17,25,40,0.18)]"
+        className="fixed left-1/2 top-1/2 flex max-h-[calc(100vh-2rem)] w-[min(34rem,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-editor-border-subtle bg-white shadow-[0_24px_70px_rgba(17,25,40,0.22)]"
         onMouseDown={(event) => event.stopPropagation()}
         data-mws-stop-event="true"
       >
@@ -150,7 +156,7 @@ export function CreateFieldModal({
             >
               {MWS_FIELD_TYPE_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {option.label}
+                  {getMwsFieldTypeIcon(option.value)} {option.label}
                 </option>
               ))}
             </select>
@@ -353,6 +359,7 @@ export function CreateFieldModal({
           </ModalActionButton>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

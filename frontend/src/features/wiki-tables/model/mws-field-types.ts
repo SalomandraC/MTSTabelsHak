@@ -35,8 +35,28 @@ export const MWS_FIELD_TYPE_LABELS: Record<string, string> = {
   Phone: 'Телефон',
 };
 
+export const MWS_FIELD_TYPE_ICONS: Record<string, string> = {
+  SingleText: 'A',
+  Text: 'A=',
+  SingleSelect: 'O',
+  MultiSelect: '≡',
+  Number: '#',
+  Currency: '¥',
+  Percent: '%',
+  DateTime: '◷',
+  Attachment: '⎘',
+  Checkbox: '☑',
+  URL: '⌁',
+  Email: '✉',
+  Phone: '☎',
+};
+
 export function getMwsFieldTypeLabel(type: string) {
   return MWS_FIELD_TYPE_LABELS[type] ?? type;
+}
+
+export function getMwsFieldTypeIcon(type: string) {
+  return MWS_FIELD_TYPE_ICONS[type] ?? '•';
 }
 
 export const MWS_FIELD_TYPE_OPTIONS: Array<{ value: SupportedMwsFieldType; label: string }> = [

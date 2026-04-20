@@ -13,6 +13,7 @@ import { GroupRecordsModal } from './group-records-modal';
 import { HideFieldsModal } from './hide-fields-modal';
 import { SortFieldsModal } from './sort-fields-modal';
 import { TableGridCanvas } from './table-grid-canvas';
+import { getMwsFieldTypeIcon } from '../model/mws-field-types';
 import {
   ADD_COLUMN_WIDTH,
   ADD_ROW_HEIGHT,
@@ -151,8 +152,10 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
   const [attachmentUploadError, setAttachmentUploadError] = useState('');
   const [activeFieldMenu, setActiveFieldMenu] = useState<{
     field: MwsField;
-    x: number;
-    y: number;
+    clientX: number;
+    clientY: number;
+    openScrollLeft: number;
+    openScrollTop: number;
   } | null>(null);
   const selectEditorRef = useRef<HTMLDivElement | null>(null);
   const activeFieldMenuIndex = activeFieldMenu
@@ -236,11 +239,17 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       ctx.strokeStyle = '#dde2ea';
       ctx.strokeRect(x - 0.5, 0.5, COLUMN_WIDTH, HEADER_HEIGHT);
       ctx.fillStyle = isActiveFieldMenuColumn ? '#1d4ed8' : '#3f3f46';
+      const icon = getMwsFieldTypeIcon(field.type);
+      ctx.font =
+        '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+      ctx.fillText(icon, x + 10, HEADER_HEIGHT / 2);
+
+      ctx.fillStyle = isActiveFieldMenuColumn ? '#1d4ed8' : '#3f3f46';
       ctx.font =
         '600 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
       ctx.fillText(
-        clampText(ctx, field.name, COLUMN_WIDTH - 28),
-        x + 12,
+        clampText(ctx, field.name, COLUMN_WIDTH - 46),
+        x + 28,
         HEADER_HEIGHT / 2
       );
       ctx.font =
@@ -553,8 +562,10 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
 
     setActiveFieldMenu({
       field,
-      x: clientX,
-      y: clientY + 8
+      clientX,
+      clientY,
+      openScrollLeft: controller.scrollOffset.left,
+      openScrollTop: controller.scrollOffset.top,
     });
   };
 
@@ -868,8 +879,15 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         position={
           activeFieldMenu
             ? {
-                x: activeFieldMenu.x,
-                y: activeFieldMenu.y
+                x:
+                  activeFieldMenu.clientX +
+                  window.scrollX +
+                  (activeFieldMenu.openScrollLeft - controller.scrollOffset.left),
+                y:
+                  activeFieldMenu.clientY +
+                  window.scrollY +
+                  (activeFieldMenu.openScrollTop - controller.scrollOffset.top) +
+                  8,
               }
             : null
         }
