@@ -11,6 +11,7 @@ import { getEditorMarkdown } from '../model/editor-markdown';
 import { AiOutputView } from '../model/ai-output-renderer';
 import { useAiTableContext } from '../model/use-ai-table-context';
 import { DEFAULT_MERMAID_CODE } from '../../diagrams';
+import type { LiveChartAttrs } from '../../charts';
 
 type CopilotTarget = 'table' | 'text';
 
@@ -151,6 +152,11 @@ function isStructurePrompt(prompt: string): boolean {
 function isReportPrompt(prompt: string): boolean {
   const value = prompt.toLowerCase();
   return /(отчет|report|summary|резюм)/i.test(value);
+}
+
+function isLiveChartPrompt(prompt: string): boolean {
+  const value = prompt.toLowerCase();
+  return /(визуализ|график|диаграмм|chart|graph|plot|сравни.*на.*диаграмм)/i.test(value);
 }
 
 function shouldCreateNewReportDocument(prompt: string): boolean {
@@ -1355,6 +1361,74 @@ export function AiInlineCopilot({
     await prepareAnalysisForCurrentFile();
   };
 
+  const runLiveChartInsert = async () => {
+    if (!activeContext.datasheetId) {
+      setStatus('Для построения живого графика выберите контекст таблицы.');
+      return;
+    }
+
+    await withBusy(async (signal) => {
+      const markdown = getInlineContextMarkdown(editor);
+      const response = await wikiliveApi.aiChat({
+        question: [
+          prompt.trim(),
+          'Если нужен график по данным таблицы, используй инструмент insert_live_chart.',
+          'Верни короткий комментарий после выбора конфигурации.',
+        ].join('\n'),
+        pageId: pageId ?? undefined,
+        spaceId,
+        pageTitle,
+        datasheetId: activeContext.datasheetId,
+        viewId: activeContext.viewId,
+        pageSnapshot: {
+          markdown,
+        },
+        intent: 'chat',
+      }, { signal });
+
+      handleAiChatResponse(response, {
+        datasheetId: activeContext.datasheetId,
+        viewId: activeContext.viewId,
+      });
+
+      const chartToolCall = [...(response.usedTools ?? [])]
+        .reverse()
+        .find((entry) => entry.toolName === 'insert_live_chart');
+
+      const args = chartToolCall?.args ?? null;
+      const yAxisFieldIds = Array.isArray(args?.yAxisFieldIds)
+        ? args.yAxisFieldIds.map((value) => String(value)).filter((value) => value.length > 0)
+        : [];
+
+      const chartConfig: LiveChartAttrs | null = args
+        ? {
+            chartType: String(args.chartType ?? 'bar').toLowerCase() === 'line'
+              ? 'line'
+              : String(args.chartType ?? 'bar').toLowerCase() === 'pie'
+                ? 'pie'
+                : 'bar',
+            datasheetId: String(args.datasheetId ?? activeContext.datasheetId ?? ''),
+            xAxisFieldId: String(args.xAxisFieldId ?? ''),
+            yAxisFieldIds,
+          }
+        : null;
+
+      if (!editor || !chartConfig?.datasheetId || !chartConfig.xAxisFieldId || chartConfig.yAxisFieldIds.length === 0) {
+        setOutput(response.answer);
+        setStatus('Не удалось автоматически построить конфигурацию графика. Уточните поля осей.');
+        return;
+      }
+
+      editor.chain().focus().insertLiveChart(chartConfig).run();
+      requestAnimationFrame(() => {
+        editor.commands.focus();
+      });
+
+      setOutput(response.answer);
+      setStatus('✅ Живой график добавлен в документ');
+    });
+  };
+
   const prepareAnalysisForCurrentFile = async () => {
     await withBusy(async (signal) => {
       let analysisText = '';
@@ -1908,6 +1982,11 @@ export function AiInlineCopilot({
 
     if (isAnalysisPrompt(trimmed)) {
       await runAnalyze();
+      return;
+    }
+
+    if (activeContext.kind === 'table' && activeContext.datasheetId && isLiveChartPrompt(trimmed)) {
+      await runLiveChartInsert();
       return;
     }
 

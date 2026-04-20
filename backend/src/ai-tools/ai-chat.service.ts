@@ -63,7 +63,7 @@ export class AiChatService {
 
     const toolDefinitions = this.aiToolRegistryService.getToolDefinitions().filter((definition) => {
       if (isTableContext) {
-        return ['create_records', 'patch_records', 'get_records', 'add_table_column'].includes(definition.function.name);
+        return ['create_records', 'patch_records', 'get_records', 'add_table_column', 'insert_live_chart'].includes(definition.function.name);
       }
 
       if (isWorkspaceAgentMode) {
@@ -231,6 +231,7 @@ export class AiChatService {
           'If user specifies row ranges (for example "rows 1-3" or "строки 1-3"), treat this as direct update intent for existing rows.',
           'When mentioning any numeric values, statuses, or dates that exist in provided MWS table context, you MUST use live reference token format [Ref:tableId:rowId:colId]. Never output plain numeric/status/date values if they can be bound to table cells.',
           'If the user asks for totals, averages, taxes, percentages, deltas, or any computed metric, return the formula as [Formula: expression] and use [Ref:tableId:rowId:colId] tokens inside the expression whenever possible.',
+          'Ты — эксперт по визуализации данных. Если пользователь просит "визуализировать", "построить график" или "сравнить на диаграмме" данные из таблицы MWS: Используй инструмент insert_live_chart. Определи, какие fieldId лучше всего подходят для осей. Выбери тип графика (bar — для сравнения, line — для трендов, pie — для долей). Верни JSON-конфигурацию для узла LiveChart.',
           'If user asks for document structure or heading plan, return only anchor-based JSON array format [{"anchor":"...","title":"...","level":1|2|3}].',
           'For anchor-based structure: enforce strict hierarchy H1 -> H2 -> H3, keep titles short and informative, preserve automatic numbering unless user explicitly asks otherwise, and never propose a heading that duplicates an existing heading in the document context.',
           'If user asks for a report, assess expected report size. If report is likely long (more than 5 analysis points), start answer with [ACTION: CREATE_NEW_PAGE]. If report is short, start answer with [ACTION: INLINE_INSERT].',

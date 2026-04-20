@@ -208,4 +208,18 @@ export const pluginDefinitions: PluginDefinition[] = [
       'slash-menu': true,
     },
   },
+  {
+    id: 'live-charts',
+    title: 'Живая аналитика',
+    description: 'Визуализация данных таблиц через динамические графики и диаграммы',
+    category: 'insights',
+    kind: 'optional',
+    defaultEnabled: true,
+    implemented: true,
+    placement: ['Редактор', 'Slash-меню', 'AI Inline Copilot'],
+    defaultSettings: {
+      'slash-menu': true,
+      'editor-extension': true,
+    },
+  },
 ];

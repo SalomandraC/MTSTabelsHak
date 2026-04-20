@@ -75,6 +75,8 @@ export class AiToolRegistryService {
           return await this.getDocumentContext(args, user);
         case 'list_workspace_nodes':
           return await this.listWorkspaceNodes(args, user);
+        case 'insert_live_chart':
+          return await this.insertLiveChart(args);
         default:
           throw new BadRequestException({
             code: 'AI_TOOL_UNKNOWN',
@@ -480,6 +482,25 @@ export class AiToolRegistryService {
         : {},
     }));
   }
+
+    private async insertLiveChart(args: Record<string, unknown>): Promise<ToolExecutionSuccess> {
+      const chartTypeRaw = String(args.chartType ?? '').toLowerCase();
+      const chartType = chartTypeRaw === 'line' || chartTypeRaw === 'pie' ? chartTypeRaw : 'bar';
+      const yAxisFieldIds = Array.isArray(args.yAxisFieldIds)
+        ? args.yAxisFieldIds.map((value) => String(value)).filter((value) => value.length > 0)
+        : [];
+
+      return {
+        ok: true,
+        toolName: 'insert_live_chart',
+        data: {
+          chartType,
+          datasheetId: String(args.datasheetId ?? ''),
+          xAxisFieldId: String(args.xAxisFieldId ?? ''),
+          yAxisFieldIds,
+        },
+      };
+    }
 
   private coerceUpdateRecords(value: unknown): Array<{ recordId: string; fields: Record<string, unknown> }> {
     if (!Array.isArray(value)) {

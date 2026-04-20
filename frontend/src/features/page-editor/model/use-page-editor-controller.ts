@@ -21,8 +21,10 @@ import { insertAiTextWithLiveReferences } from './live-reference-parser';
 import type { PageEditorSlashCommandItem } from './slash-command-items';
 import { getSlashCommandItems } from './slash-command-items';
 import { DEFAULT_MERMAID_CODE } from '../../plugins/diagrams';
+import type { LiveChartAttrs } from '../../plugins/charts';
 import { base64ToBytes, bytesToBase64, readStoredDraft, writeStoredDraft } from './yjs-utils';
 import { usePlugins } from '../../plugins';
+import { getLiveChartsSettings } from '../../plugins/model/plugin-registry';
 
 type SlashState = {
   isOpen: boolean;
@@ -248,6 +250,7 @@ export function usePageEditorController({
   const [templateVariableLabel, setTemplateVariableLabel] = useState('');
   const [templateVariableDescription, setTemplateVariableDescription] = useState('');
   const [isBookmarkModalOpen, setIsBookmarkModalOpen] = useState(false);
+  const [isLiveChartPickerOpen, setIsLiveChartPickerOpen] = useState(false);
   const [collabState, setCollabState] = useState<CollabState | null>(null);
 
   const slashStateRef = useRef(baseSlashState);
@@ -385,6 +388,14 @@ export function usePageEditorController({
         ydoc: collabState?.ydoc,
         provider: collabState?.provider,
         enableGhostText: isAiGhostEnabled,
+        enableLiveCharts: (() => {
+          const settings = getLiveChartsSettings(plugins);
+          if (Object.keys(settings).length === 0) {
+            return false;
+          }
+
+          return settings['editor-extension'] ?? true;
+        })(),
         requestAutocomplete: async (currentText: string) => {
           const globalFlags = window as unknown as { __wikiliveCopilotOpen?: boolean };
           if (globalFlags.__wikiliveCopilotOpen) {
@@ -424,6 +435,7 @@ export function usePageEditorController({
       isAiGhostEnabled,
       onOpenCommentThread,
       page?.title,
+      plugins,
       userColor,
       userDisplayName,
       userId,
@@ -938,6 +950,15 @@ export function usePageEditorController({
     closeBookmarkModal();
   };
 
+  const handleInsertLiveChart = (config: LiveChartAttrs) => {
+    if (!editor || !canEdit) {
+      return;
+    }
+
+    editor.chain().focus().insertLiveChart(config).run();
+    setIsLiveChartPickerOpen(false);
+  };
+
   const handleInsertTemplateVariable = () => {
     if (!editor || !canEdit) {
       return;
@@ -1072,6 +1093,12 @@ export function usePageEditorController({
     if (item.id === 'diagram') {
       setSlashState(baseSlashState);
       editor.chain().focus().insertMermaidDiagram({ code: DEFAULT_MERMAID_CODE }).run();
+      return;
+    }
+
+    if (item.id === 'live-chart') {
+      setSlashState(baseSlashState);
+      setIsLiveChartPickerOpen(true);
       return;
     }
 
@@ -1372,6 +1399,12 @@ export function usePageEditorController({
         return;
       }
 
+      if (isLiveChartPickerOpen && event.key === 'Escape') {
+        event.preventDefault();
+        setIsLiveChartPickerOpen(false);
+        return;
+      }
+
       if (!slashStateRef.current.isOpen || !editor || !canEdit) {
         return;
       }
@@ -1442,6 +1475,7 @@ export function usePageEditorController({
     isLinkModalOpen,
     isLiveFormulaModalOpen,
     isLiveReferencePickerOpen,
+    isLiveChartPickerOpen,
     isTemplateVariableModalOpen,
   ]);
 
@@ -1579,6 +1613,11 @@ export function usePageEditorController({
       isOpen: isBookmarkModalOpen,
       onConfirm: handleInsertBookmark,
       onClose: closeBookmarkModal,
+    },
+    liveChartPicker: {
+      isOpen: isLiveChartPickerOpen,
+      onClose: () => setIsLiveChartPickerOpen(false),
+      onSubmit: handleInsertLiveChart,
     },
     getCurrentDocumentStateValue,
     applyDocumentStateValue,

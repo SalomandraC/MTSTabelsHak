@@ -41,6 +41,10 @@ export const runtimePluginRegistry: RuntimePluginDefinition[] = [
   {
     id: 'bookmarks',
   },
+  {
+    id: 'live-charts',
+    editorSlots: ['editor_extension', 'slash_menu'],
+  },
 ];
 
 function isPluginRuntimeEnabled(items: PluginCatalogItem[], pluginId: string) {
@@ -100,6 +104,19 @@ export function getBookmarkSettings(items: PluginCatalogItem[]): Record<string, 
   return plugin.settings ?? {
     toolbar: true,
     'floating-toolbar': true,
+    'slash-menu': true,
+  };
+}
+
+/**
+ * Return settings map for the live-charts plugin, or defaults if not found.
+ * Keys: 'editor-extension', 'slash-menu'
+ */
+export function getLiveChartsSettings(items: PluginCatalogItem[]): Record<string, boolean> {
+  const plugin = items.find((item) => item.id === 'live-charts');
+  if (!plugin?.enabled) return {};
+  return plugin.settings ?? {
+    'editor-extension': true,
     'slash-menu': true,
   };
 }

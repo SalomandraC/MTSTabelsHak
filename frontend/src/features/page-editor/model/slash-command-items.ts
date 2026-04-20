@@ -21,6 +21,8 @@ export function getSlashCommandItems(plugins: PluginCatalogItem[]): PageEditorSl
     && (plugins.find(p => p.id === 'canvas-draw')?.settings?.['slash-menu'] ?? true);
   const diagramsEnabled = plugins.some(p => p.id === 'visual-diagrams' && p.enabled)
     && (plugins.find(p => p.id === 'visual-diagrams')?.settings?.['slash-menu'] ?? true);
+  const liveChartsEnabled = plugins.some(p => p.id === 'live-charts' && p.enabled)
+    && (plugins.find(p => p.id === 'live-charts')?.settings?.['slash-menu'] ?? true);
 
   const items: PageEditorSlashCommandItem[] = [
     {
@@ -265,6 +267,19 @@ export function getSlashCommandItems(plugins: PluginCatalogItem[]): PageEditorSl
       icon: 'MMD',
       run: (editor: Editor) => {
         editor.chain().focus().insertMermaidDiagram({ code: DEFAULT_MERMAID_CODE }).run();
+      },
+    });
+  }
+
+  if (liveChartsEnabled) {
+    items.push({
+      id: 'live-chart',
+      label: 'График',
+      hint: 'Построить живой график по данным таблицы MWS',
+      keywords: ['chart', 'graph', 'bar', 'line', 'pie', 'график', 'диаграмма', 'аналитика'],
+      icon: '📈',
+      run: () => {
+        // Handled in PageEditor controller with live chart builder flow.
       },
     });
   }

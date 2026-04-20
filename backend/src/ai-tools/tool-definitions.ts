@@ -213,6 +213,23 @@ const listWorkspaceNodesSchema: JsonSchema = {
   additionalProperties: false,
 };
 
+const insertLiveChartSchema: JsonSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  required: ['datasheetId', 'chartType', 'xAxisFieldId', 'yAxisFieldIds'],
+  properties: {
+    datasheetId: { type: 'string', minLength: 1 },
+    chartType: { type: 'string', enum: ['line', 'bar', 'pie'] },
+    xAxisFieldId: { type: 'string', minLength: 1 },
+    yAxisFieldIds: {
+      type: 'array',
+      minItems: 1,
+      items: { type: 'string', minLength: 1 },
+    },
+  },
+  additionalProperties: false,
+};
+
 export const AI_TOOL_DEFINITIONS: FunctionToolDefinition[] = [
   {
     type: 'function',
@@ -302,6 +319,14 @@ export const AI_TOOL_DEFINITIONS: FunctionToolDefinition[] = [
       parameters: listWorkspaceNodesSchema,
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'insert_live_chart',
+      description: 'Build LiveChart node config for MWS table visualization in editor',
+      parameters: insertLiveChartSchema,
+    },
+  },
 ];
 
 export const AI_TOOL_SCHEMA_BY_NAME: Record<string, JsonSchema> = {
@@ -316,4 +341,5 @@ export const AI_TOOL_SCHEMA_BY_NAME: Record<string, JsonSchema> = {
   search_workspace_documents: searchWorkspaceDocumentsSchema,
   get_document_context: getDocumentContextSchema,
   list_workspace_nodes: listWorkspaceNodesSchema,
+  insert_live_chart: insertLiveChartSchema,
 };
