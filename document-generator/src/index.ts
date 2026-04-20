@@ -61,7 +61,7 @@ app.post('/generate', async (req: Request, res: Response) => {
         break;
 
       case 'md': {
-        const md = generateMarkdown(title, blocks);
+        const md = await generateMarkdown(title, blocks, auth);
         buffer = Buffer.from(md, 'utf-8');
         contentType = 'text/markdown; charset=utf-8';
         filename = `${sanitizeFilename(title)}.md`;

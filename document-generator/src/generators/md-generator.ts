@@ -1,7 +1,11 @@
 import type { BlockNode } from '../types.js';
+import { createInlineNodeResolver, type ExportAuthContext } from '../live-inline.js';
 
-export function generateMarkdown(title: string, blocks: BlockNode[]): string {
+type AuthContext = ExportAuthContext;
+
+export async function generateMarkdown(title: string, blocks: BlockNode[], auth?: AuthContext): Promise<string> {
   const lines: string[] = [];
+  const inlineNodeResolver = createInlineNodeResolver(auth);
 
   if (title) {
     lines.push(`# ${title}`);
@@ -9,25 +13,30 @@ export function generateMarkdown(title: string, blocks: BlockNode[]): string {
   }
 
   for (const block of blocks) {
-    renderBlock(block, lines, 0);
+    await renderBlock(block, lines, 0, inlineNodeResolver.resolveInlineNodes);
   }
 
   return lines.join('\n').trim() + '\n';
 }
 
-function renderBlock(block: BlockNode, lines: string[], indent: number): void {
+async function renderBlock(
+  block: BlockNode,
+  lines: string[],
+  indent: number,
+  resolveInlineNodes: ReturnType<typeof createInlineNodeResolver>['resolveInlineNodes'],
+): Promise<void> {
   const pad = '  '.repeat(indent);
 
   switch (block.type) {
     case 'heading': {
       const prefix = '#'.repeat(block.level ?? 1);
-      lines.push(`${pad}${prefix} ${block.content ?? ''}`);
+      lines.push(`${pad}${prefix} ${await renderInline(block, resolveInlineNodes)}`);
       lines.push('');
       break;
     }
     case 'paragraph':
     case 'text': {
-      const text = renderInlineNodes(block);
+      const text = await renderInline(block, resolveInlineNodes);
       lines.push(`${pad}${text}`);
       lines.push('');
       break;
@@ -68,7 +77,7 @@ function renderBlock(block: BlockNode, lines: string[], indent: number): void {
     }
     case 'bullet_list': {
       for (const child of block.children ?? []) {
-        lines.push(`${pad}- ${renderInline(child)}`);
+        lines.push(`${pad}- ${await renderInline(child, resolveInlineNodes)}`);
       }
       lines.push('');
       break;
@@ -76,19 +85,21 @@ function renderBlock(block: BlockNode, lines: string[], indent: number): void {
     case 'ordered_list': {
       const arr = block.children ?? [];
       for (let i = 0; i < arr.length; i++) {
-        lines.push(`${pad}${i + 1}. ${renderInline(arr[i])}`);
+        lines.push(`${pad}${i + 1}. ${await renderInline(arr[i]!, resolveInlineNodes)}`);
       }
       lines.push('');
       break;
     }
     case 'task_item': {
       const check = block.checked ? '[x]' : '[ ]';
-      const text = (block.children ?? []).map(renderInline).join(' ');
+      const parts = await Promise.all((block.children ?? []).map((child) => renderInline(child, resolveInlineNodes)));
+      const text = parts.join(' ');
       lines.push(`${pad}- ${check} ${text}`);
       break;
     }
     case 'blockquote': {
-      const text = (block.children ?? []).map(renderInline).join(' ');
+      const parts = await Promise.all((block.children ?? []).map((child) => renderInline(child, resolveInlineNodes)));
+      const text = parts.join(' ');
       lines.push(`${pad}> ${text}`);
       lines.push('');
       break;
@@ -107,12 +118,20 @@ function renderBlock(block: BlockNode, lines: string[], indent: number): void {
   }
 }
 
-function renderInlineNodes(block: BlockNode): string {
+async function renderInlineNodes(
+  block: BlockNode,
+  resolveInlineNodes: ReturnType<typeof createInlineNodeResolver>['resolveInlineNodes'],
+): Promise<string> {
   if (!block.inlineNodes || block.inlineNodes.length === 0) {
     return block.content ?? '';
   }
 
-  return block.inlineNodes.map((n) => {
+  const resolvedNodes = await resolveInlineNodes(block.inlineNodes);
+
+  return resolvedNodes.map((n) => {
+    if (n.type === 'hard_break') {
+      return '  \n';
+    }
     if (n.type === 'page_link') {
       const label = n.pageTitle ?? n.text ?? 'Страница';
       if (n.href) return `[${label}](${n.href})`;
@@ -131,9 +150,15 @@ function renderInlineNodes(block: BlockNode): string {
   }).join('');
 }
 
-function renderInline(block: BlockNode): string {
-  if (block.inlineNodes) return renderInlineNodes(block);
+async function renderInline(
+  block: BlockNode,
+  resolveInlineNodes: ReturnType<typeof createInlineNodeResolver>['resolveInlineNodes'],
+): Promise<string> {
+  if (block.inlineNodes) return renderInlineNodes(block, resolveInlineNodes);
   if (block.content) return block.content;
-  if (block.children) return block.children.map(renderInline).join(' ');
+  if (block.children) {
+    const parts = await Promise.all(block.children.map((child) => renderInline(child, resolveInlineNodes)));
+    return parts.join(' ');
+  }
   return '';
 }

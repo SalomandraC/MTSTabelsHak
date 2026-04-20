@@ -11,6 +11,27 @@ export interface ProseMirrorDocument {
   content: ProseMirrorNode[];
 }
 
+export type BlockInlineNode = {
+  type: 'text' | 'page_link' | 'link' | 'live_reference' | 'live_formula' | 'template_variable' | 'hard_break';
+  text?: string;
+  pageId?: string;
+  pageTitle?: string;
+  href?: string;
+  bold?: boolean;
+  italic?: boolean;
+  strike?: boolean;
+  code?: boolean;
+  datasheetId?: string;
+  recordId?: string;
+  fieldId?: string;
+  label?: string;
+  value?: string;
+  expression?: string;
+  result?: string;
+  key?: string;
+  description?: string;
+};
+
 export interface BlockNode {
   type: 'heading' | 'paragraph' | 'text' | 'image' | 'iframe' | 'table' | 'code_block' | 'bullet_list' | 'ordered_list' | 'task_list' | 'task_item' | 'blockquote' | 'horizontal_rule' | 'link' | 'page_link';
   level?: number;
@@ -32,17 +53,7 @@ export interface BlockNode {
   pageId?: string | null;
   pageTitle?: string | null;
   // Structured inline nodes for rich rendering in docx
-  inlineNodes?: Array<{
-    type: 'text' | 'page_link' | 'link';
-    text?: string;
-    pageId?: string;
-    pageTitle?: string;
-    href?: string;
-    bold?: boolean;
-    italic?: boolean;
-    strike?: boolean;
-    code?: boolean;
-  }>;
+  inlineNodes?: BlockInlineNode[];
 }
 
 export interface GenerateRequest {

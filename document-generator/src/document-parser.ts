@@ -33,7 +33,8 @@ function flattenNode(node: ProseMirrorNode, blocks: BlockNode[], link?: ParserLi
       blocks.push({
         type: 'heading',
         level: (node.attrs?.level as number) ?? 1,
-        content: extractText(node),
+        content: renderInlineContent(node.content ?? [], link),
+        inlineNodes: extractInlineNodes(node.content ?? [], link),
       });
       break;
     }
@@ -42,11 +43,6 @@ function flattenNode(node: ProseMirrorNode, blocks: BlockNode[], link?: ParserLi
       if (node.content?.length === 1 && node.content[0].type === 'image') {
         flattenNode(node.content[0], blocks, link);
         return;
-      }
-      const inlineTypes = node.content?.map(n => n.type).join(',') ?? '';
-      const pageLinkCount = node.content?.filter(n => n.type === 'pageLink').length ?? 0;
-      if (pageLinkCount > 0) {
-        console.log(`[parser] paragraph inlineTypes="${inlineTypes}" pageLinkCount=${pageLinkCount}`);
       }
       blocks.push({
         type: 'paragraph',
@@ -197,6 +193,27 @@ function flattenListItem(node: ProseMirrorNode, blocks: BlockNode[], link?: Pars
 }
 
 function extractText(node: ProseMirrorNode): string {
+  if (node.type === 'pageLink') {
+    return (node.attrs?.title as string) ?? 'Страница';
+  }
+  if (node.type === 'templateVariable') {
+    const label = (node.attrs?.label as string) || (node.attrs?.key as string) || 'Параметр';
+    return `{{${label}}}`;
+  }
+  if (node.type === 'liveReference') {
+    const value = (node.attrs?.value as string) ?? '';
+    if (value.trim()) {
+      return value;
+    }
+    return (node.attrs?.label as string) || `${String(node.attrs?.recordId ?? 'record')} / ${String(node.attrs?.fieldId ?? 'field')}`;
+  }
+  if (node.type === 'liveFormula') {
+    const result = (node.attrs?.result as string) ?? '';
+    if (result.trim()) {
+      return result;
+    }
+    return (node.attrs?.expression as string) ?? '';
+  }
   if (node.text) return node.text;
   if (!node.content) return '';
   return node.content.map(extractText).join('');
@@ -243,6 +260,33 @@ function renderInlineContent(nodes: ProseMirrorNode[], link?: ParserLinkContext)
       return text;
     }
 
+    if (n.type === 'templateVariable') {
+      const label = (n.attrs?.label as string) || (n.attrs?.key as string) || 'Параметр';
+      return `{{${label}}}`;
+    }
+
+    if (n.type === 'liveReference') {
+      const value = String(n.attrs?.value ?? '').trim();
+      if (value) {
+        return value;
+      }
+
+      const label = String(n.attrs?.label ?? '').trim();
+      if (label) {
+        return label;
+      }
+
+      return `${String(n.attrs?.recordId ?? 'record')} / ${String(n.attrs?.fieldId ?? 'field')}`;
+    }
+
+    if (n.type === 'liveFormula') {
+      const result = String(n.attrs?.result ?? '').trim();
+      if (result) {
+        return result;
+      }
+      return String(n.attrs?.expression ?? '').trim();
+    }
+
     if (n.type === 'hardBreak') return '<br>';
     return '';
   }).join('');
@@ -261,15 +305,47 @@ function extractInlineNodes(nodes: ProseMirrorNode[], link?: ParserLinkContext):
         href = `${link.appBaseUrl.replace(/\/$/, '')}/spaces/${encodeURIComponent(link.spaceId)}/pages/${encodeURIComponent(pageId)}`;
       }
       result.push({ type: 'page_link', text: pageTitle ?? 'Страница', pageId, pageTitle, href });
+    } else if (n.type === 'templateVariable') {
+      result.push({
+        type: 'template_variable',
+        key: (n.attrs?.key as string) ?? undefined,
+        label: (n.attrs?.label as string) ?? undefined,
+        description: (n.attrs?.description as string) ?? undefined,
+      });
+    } else if (n.type === 'liveReference') {
+      result.push({
+        type: 'live_reference',
+        datasheetId: (n.attrs?.datasheetId as string) ?? undefined,
+        recordId: (n.attrs?.recordId as string) ?? undefined,
+        fieldId: (n.attrs?.fieldId as string) ?? undefined,
+        label: (n.attrs?.label as string) ?? undefined,
+        value: (n.attrs?.value as string) ?? undefined,
+      });
+    } else if (n.type === 'liveFormula') {
+      result.push({
+        type: 'live_formula',
+        expression: (n.attrs?.expression as string) ?? undefined,
+        result: (n.attrs?.result as string) ?? undefined,
+      });
+    } else if (n.type === 'hardBreak') {
+      result.push({
+        type: 'hard_break',
+      });
     } else if (n.type === 'text') {
-      const node: InlineNode = { type: 'text', text: n.text ?? '' };
+      const hasLinkMark = n.marks?.find((mark) => mark.type === 'link');
+      const node: InlineNode = hasLinkMark
+        ? {
+            type: 'link',
+            text: n.text ?? '',
+            href: (hasLinkMark.attrs?.href as string) ?? undefined,
+          }
+        : { type: 'text', text: n.text ?? '' };
       if (n.marks) {
         for (const mark of n.marks) {
           if (mark.type === 'bold') node.bold = true;
           if (mark.type === 'italic') node.italic = true;
           if (mark.type === 'strike') node.strike = true;
           if (mark.type === 'code') node.code = true;
-          if (mark.type === 'link') node.href = (mark.attrs?.href as string) ?? undefined;
         }
       }
       result.push(node);

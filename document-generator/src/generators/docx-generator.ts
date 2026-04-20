@@ -14,6 +14,7 @@ import {
   ShadingType,
 } from 'docx';
 import type { BlockNode } from '../types.js';
+import { createInlineNodeResolver, type ExportAuthContext } from '../live-inline.js';
 
 
 const API_BASE = process.env.API_BASE_URL ?? 'http://api:8080';
@@ -21,11 +22,7 @@ const API_BASE = process.env.API_BASE_URL ?? 'http://api:8080';
 type MwsField = { id: string; name: string };
 type MwsRecord = { recordId: string; fields: Record<string, unknown> };
 
-type AuthContext = {
-  accessToken?: string;
-  userId?: string;
-  displayName?: string;
-};
+type AuthContext = ExportAuthContext;
 
 type LinkContext = {
   appBaseUrl: string;
@@ -221,6 +218,9 @@ function buildInlineRuns(
   if (!inlineNodes || inlineNodes.length === 0) return [new TextRun('')];
 
   return inlineNodes.map((n) => {
+    if (n.type === 'hard_break') {
+      return new TextRun({ break: 1 });
+    }
     if (n.type === 'page_link' && n.pageId && link?.appBaseUrl && link?.spaceId) {
       const url = pageUrl(link, n.pageId);
       return new ExternalHyperlink({
@@ -267,23 +267,71 @@ function makeRuns(content: string, marks?: Array<{ type: string; attrs?: Record<
   return [new TextRun(opts)];
 }
 
+function buildParagraphTextRuns(content: string): (TextRun | ExternalHyperlink)[] {
+  return [new TextRun(content)];
+}
+
 // ─── Block → docx elements ────────────────────────────────────────────────────
 
-async function blockToDocxElements(block: BlockNode, auth?: AuthContext, link?: LinkContext): Promise<Paragraph[]> {
+async function buildResolvedInlineRuns(
+  block: BlockNode,
+  resolveInlineNodes: ReturnType<typeof createInlineNodeResolver>['resolveInlineNodes'],
+  link?: LinkContext,
+): Promise<(TextRun | ExternalHyperlink)[]> {
+  if (block.inlineNodes && block.inlineNodes.length > 0) {
+    const resolvedNodes = await resolveInlineNodes(block.inlineNodes);
+    return buildInlineRuns(resolvedNodes, link);
+  }
+
+  return buildParagraphTextRuns(block.content ?? '');
+}
+
+async function renderBlockText(
+  block: BlockNode,
+  resolveInlineNodes: ReturnType<typeof createInlineNodeResolver>['resolveInlineNodes'],
+): Promise<string> {
+  if (block.inlineNodes && block.inlineNodes.length > 0) {
+    const resolvedNodes = await resolveInlineNodes(block.inlineNodes);
+    return resolvedNodes.map((node) => {
+      if (node.type === 'hard_break') {
+        return '\n';
+      }
+      return node.text ?? node.pageTitle ?? '';
+    }).join('');
+  }
+
+  if (block.content) {
+    return block.content;
+  }
+
+  if (block.children) {
+    const parts = await Promise.all(block.children.map((child) => renderBlockText(child, resolveInlineNodes)));
+    return parts.join(' ');
+  }
+
+  return '';
+}
+
+async function blockToDocxElements(
+  block: BlockNode,
+  resolveInlineNodes: ReturnType<typeof createInlineNodeResolver>['resolveInlineNodes'],
+  auth?: AuthContext,
+  link?: LinkContext,
+): Promise<(Paragraph | Table)[]> {
   switch (block.type) {
     case 'heading': {
       const hLevel = Math.min(Math.max(block.level ?? 1, 1), 3) as 1 | 2 | 3;
       const headings = { 1: HeadingLevel.HEADING_1, 2: HeadingLevel.HEADING_2, 3: HeadingLevel.HEADING_3 };
       return [new Paragraph({
         heading: headings[hLevel],
-        children: [new TextRun(block.content ?? '')],
+        children: await buildResolvedInlineRuns(block, resolveInlineNodes, link),
         spacing: { before: block.level === 1 ? 0 : 240, after: 120 },
       })];
     }
 
     case 'paragraph':
     case 'text': {
-      const runs = buildInlineRuns(block.inlineNodes, link);
+      const runs = await buildResolvedInlineRuns(block, resolveInlineNodes, link);
       return [new Paragraph({
         children: runs,
         spacing: { after: 120 },
@@ -325,7 +373,7 @@ async function blockToDocxElements(block: BlockNode, auth?: AuthContext, link?: 
       if (block.datasheetId) {
         const data = await fetchTableData(block.datasheetId, block.viewId, auth);
         if (data && data.fields.length > 0) {
-          return buildDocxTable(block.content ?? '', data.fields, data.records) as Paragraph[];
+          return buildDocxTable(block.content ?? '', data.fields, data.records);
         }
       }
       return [new Paragraph({
@@ -365,7 +413,7 @@ async function blockToDocxElements(block: BlockNode, auth?: AuthContext, link?: 
       const items = await Promise.all((block.children ?? []).map(async (child) => {
         return new Paragraph({
           bullet: { level: 0 },
-          children: buildInlineRuns(child.inlineNodes, link),
+          children: await buildResolvedInlineRuns(child, resolveInlineNodes, link),
           spacing: { after: 60 },
           indent: { left: 360, hanging: 360 },
         });
@@ -377,7 +425,7 @@ async function blockToDocxElements(block: BlockNode, auth?: AuthContext, link?: 
       const items = await Promise.all((block.children ?? []).map(async (child) => {
         return new Paragraph({
           numbering: { reference: 'default-numbering', level: 0 },
-          children: buildInlineRuns(child.inlineNodes, link),
+          children: await buildResolvedInlineRuns(child, resolveInlineNodes, link),
           spacing: { after: 60 },
           indent: { left: 360, hanging: 360 },
         });
@@ -387,7 +435,7 @@ async function blockToDocxElements(block: BlockNode, auth?: AuthContext, link?: 
 
     case 'task_item': {
       const prefix = block.checked ? '☑ ' : '☐ ';
-      const text = (block.children ?? []).map(renderChildren).join(' ');
+      const text = await renderBlockText(block, resolveInlineNodes);
       return [new Paragraph({
         children: [new TextRun(`${prefix}${text}`)],
         spacing: { after: 60 },
@@ -395,7 +443,7 @@ async function blockToDocxElements(block: BlockNode, auth?: AuthContext, link?: 
     }
 
     case 'blockquote': {
-      const text = (block.children ?? []).map(renderChildren).join(' ');
+      const text = await renderBlockText(block, resolveInlineNodes);
       return [new Paragraph({
         children: [new TextRun({ text, italics: true, color: '5A6676' })],
         indent: { left: 480 },
@@ -416,16 +464,11 @@ async function blockToDocxElements(block: BlockNode, auth?: AuthContext, link?: 
   }
 }
 
-function renderChildren(block: BlockNode): string {
-  if (block.content) return block.content;
-  if (block.children) return block.children.map(renderChildren).join(' ');
-  return '';
-}
-
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function generateDocx(title: string, blocks: BlockNode[], auth?: AuthContext, link?: LinkContext): Promise<Buffer> {
   const children: (Paragraph | Table)[] = [];
+  const inlineNodeResolver = createInlineNodeResolver(auth);
 
   children.push(new Paragraph({
     heading: HeadingLevel.TITLE,
@@ -434,7 +477,7 @@ export async function generateDocx(title: string, blocks: BlockNode[], auth?: Au
   }));
 
   for (const block of blocks) {
-    const elements = await blockToDocxElements(block, auth, link);
+    const elements = await blockToDocxElements(block, inlineNodeResolver.resolveInlineNodes, auth, link);
     children.push(...elements);
   }
 
