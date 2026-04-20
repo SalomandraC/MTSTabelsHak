@@ -91,9 +91,14 @@ type ToolbarButtonProps = {
 
 type AiTransformUndoEntry = {
   from: number;
+  to: number;
   transformedText: string;
   originalText: string;
 };
+
+function normalizeUndoComparableText(value: string): string {
+  return value.replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
+}
 
 function ToolbarButton({
   icon,
@@ -214,7 +219,16 @@ export function FloatingToolbar({
     }
 
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) {
+        return;
+      }
+
       if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.key.toLowerCase() !== 'z') {
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest('.ProseMirror')) {
         return;
       }
 
@@ -222,7 +236,7 @@ export function FloatingToolbar({
         return;
       }
 
-      const canUndoNatively = editor.commands.undo?.();
+      const canUndoNatively = editor.can().chain().focus().undo().run();
       if (canUndoNatively) {
         return;
       }
@@ -232,19 +246,23 @@ export function FloatingToolbar({
         return;
       }
 
+      const boundedFrom = Math.max(0, Math.min(snapshot.from, editor.state.doc.content.size));
+      const boundedTo = Math.max(boundedFrom, Math.min(snapshot.to, editor.state.doc.content.size));
+
       const current = editor.state.doc.textBetween(
-        snapshot.from,
-        snapshot.from + snapshot.transformedText.length,
+        boundedFrom,
+        boundedTo,
         '\n',
       );
 
-      if (current !== snapshot.transformedText) {
+      if (normalizeUndoComparableText(current) !== normalizeUndoComparableText(snapshot.transformedText)) {
         return;
       }
 
       event.preventDefault();
+      event.stopPropagation();
       editor.chain().focus().insertContentAt(
-        { from: snapshot.from, to: snapshot.from + snapshot.transformedText.length },
+        { from: boundedFrom, to: boundedTo },
         snapshot.originalText,
       ).run();
 
@@ -519,13 +537,19 @@ export function FloatingToolbar({
         });
       }
 
-      editor.chain().focus().insertContentAt({ from, to }, response.text).run();
-
-      lastAiTransformUndoRef.current = {
-        from,
-        transformedText: response.text,
-        originalText: selectedText,
-      };
+      const replaced = editor.chain().focus().insertContentAt({ from, to }, response.text).run();
+      if (replaced) {
+        const afterSelectionFrom = editor.state.selection.from;
+        const transformedTo = Math.max(from, afterSelectionFrom);
+        lastAiTransformUndoRef.current = {
+          from,
+          to: transformedTo,
+          transformedText: response.text,
+          originalText: selectedText,
+        };
+      } else {
+        lastAiTransformUndoRef.current = null;
+      }
 
       if (options.styleId) {
         registerStyleUsage(options.styleId);

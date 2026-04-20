@@ -1464,6 +1464,9 @@ export function AiInlineCopilot({
     const afterDocument = JSON.stringify(editor.getJSON());
 
     if (inserted && afterDocument !== beforeDocument) {
+      requestAnimationFrame(() => {
+        editor.commands.focus();
+      });
       setStatus('✅ Анализ вставлен в документ');
       setPendingAnalysisText(null);
       return;
@@ -1472,6 +1475,9 @@ export function AiInlineCopilot({
     console.error('Analysis insertion did not change the document, falling back to plain text.');
     const fallbackInserted = editor.chain().focus().insertContent(sanitizedText).run();
     if (fallbackInserted && JSON.stringify(editor.getJSON()) !== beforeDocument) {
+      requestAnimationFrame(() => {
+        editor.commands.focus();
+      });
       setStatus('⚠️ Анализ вставлен как обычный текст');
       setPendingAnalysisText(null);
       return;
@@ -1683,6 +1689,9 @@ export function AiInlineCopilot({
     const afterDocument = JSON.stringify(editor.getJSON());
 
     if (inserted && afterDocument !== beforeDocument) {
+      requestAnimationFrame(() => {
+        editor.commands.focus();
+      });
       setStatus('✅ Отчет вставлен в документ');
       setPendingReportText(null);
       return;
@@ -1691,6 +1700,9 @@ export function AiInlineCopilot({
     console.error('AI report insertion did not change the document, falling back to plain text.');
     const fallbackInserted = editor.chain().focus().insertContent(sanitizedText).run();
     if (fallbackInserted && JSON.stringify(editor.getJSON()) !== beforeDocument) {
+      requestAnimationFrame(() => {
+        editor.commands.focus();
+      });
       setStatus('⚠️ Отчет вставлен как обычный текст');
       setPendingReportText(null);
       return;
