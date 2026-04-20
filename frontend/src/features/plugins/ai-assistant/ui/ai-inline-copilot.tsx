@@ -674,8 +674,40 @@ function parseAiMarkdownForInsert(
   return { sanitizedText, contentJson: fallbackBlocks.length > 0 ? fallbackBlocks : null };
 }
 
+function normalizeCollapsedMarkdownTables(text: string): string {
+  const value = String(text ?? '');
+  if (!value) {
+    return value;
+  }
+
+  const hasTableSeparator = /\|\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?/.test(value);
+  const hasNewLines = /\n/.test(value);
+
+  if (!hasTableSeparator) {
+    return value;
+  }
+
+  if (!hasNewLines) {
+    return value.replace(/\|\s+\|/g, '|\n|');
+  }
+
+  return value
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed.includes('|')) {
+        return line;
+      }
+
+      return line.replace(/\|\s+\|/g, '|\n|');
+    })
+    .join('\n');
+}
+
 function normalizeReportMarkdown(reportText: string): string {
-  const normalizedNewlines = stripAiActionToken(String(reportText ?? '')).replace(/\r\n/g, '\n');
+  const normalizedNewlines = normalizeCollapsedMarkdownTables(
+    stripAiActionToken(String(reportText ?? '')).replace(/\r\n/g, '\n'),
+  );
   const sourceLines = sanitizeAiResponse(normalizedNewlines).split('\n');
   const normalizedLines: string[] = [];
   let previousWasEmpty = false;
@@ -734,6 +766,11 @@ function buildReportRootBlock(editor: Editor | null, reportText: string, spaceId
   ];
 
   for (const block of contentBlocks) {
+    if (block.type === 'rootblock') {
+      rootBlocks.push(block);
+      continue;
+    }
+
     rootBlocks.push({
       type: 'rootblock',
       content: [block],
@@ -746,8 +783,29 @@ function buildReportRootBlock(editor: Editor | null, reportText: string, spaceId
   };
 }
 
-function shouldFallbackToMarkdownContent(errorMessage: string): boolean {
-  return /There is no mark type bold in this schema/i.test(errorMessage);
+function shouldFallbackToSchemaSafeContent(errorMessage: string): boolean {
+  return /There is no mark type .+ in this schema/i.test(errorMessage);
+}
+
+function stripMarksFromJson(value: JSONContent): JSONContent {
+  const node = { ...value } as JSONContent;
+
+  if (Array.isArray(node.content)) {
+    node.content = node.content.map((child) => stripMarksFromJson(child));
+  }
+
+  if ('marks' in node) {
+    delete (node as { marks?: unknown }).marks;
+  }
+
+  return node;
+}
+
+function buildSchemaSafeDoc(rootBlocks: JSONContent[]): { type: 'doc'; content: JSONContent[] } {
+  return {
+    type: 'doc',
+    content: rootBlocks.map((node) => stripMarksFromJson(node)),
+  };
 }
 
 function insertAiAnswer(editor: Editor | null, text: string, options: { spaceId: string }): boolean {
@@ -1431,7 +1489,7 @@ export function AiInlineCopilot({
 
     await withBusy(async (signal) => {
       const title = `Анализ от ${new Date().toLocaleDateString('ru-RU')}`;
-      const { rootBlocks, sanitizedText } = buildReportRootBlock(editor, analysisText, spaceId);
+      const { rootBlocks } = buildReportRootBlock(editor, analysisText, spaceId);
       const analysisDoc = {
         type: 'doc',
         content: rootBlocks,
@@ -1450,13 +1508,13 @@ export function AiInlineCopilot({
         signal,
       });
 
-      if (!created.ok && shouldFallbackToMarkdownContent(created.error?.message ?? '')) {
+      if (!created.ok && shouldFallbackToSchemaSafeContent(created.error?.message ?? '')) {
         created = await wikiliveApi.aiExecuteTool({
           toolName: 'create_wiki_page',
           args: {
             workspaceId: spaceId,
             title,
-            content: sanitizedText,
+            content: buildSchemaSafeDoc(rootBlocks),
           },
           pageId: pageId ?? undefined,
           workspaceId: spaceId,
@@ -1650,7 +1708,7 @@ export function AiInlineCopilot({
 
     await withBusy(async (signal) => {
       const title = buildReportTitle(pageTitle);
-      const { rootBlocks, sanitizedText } = buildReportRootBlock(editor, reportText, spaceId);
+      const { rootBlocks } = buildReportRootBlock(editor, reportText, spaceId);
       const reportDoc = {
         type: 'doc',
         content: rootBlocks,
@@ -1669,13 +1727,13 @@ export function AiInlineCopilot({
         signal,
       });
 
-      if (!created.ok && shouldFallbackToMarkdownContent(created.error?.message ?? '')) {
+      if (!created.ok && shouldFallbackToSchemaSafeContent(created.error?.message ?? '')) {
         created = await wikiliveApi.aiExecuteTool({
           toolName: 'create_wiki_page',
           args: {
             workspaceId: spaceId,
             title,
-            content: sanitizedText,
+            content: buildSchemaSafeDoc(rootBlocks),
           },
           pageId: pageId ?? undefined,
           workspaceId: spaceId,
@@ -1718,7 +1776,7 @@ export function AiInlineCopilot({
       const reportText = await createReportText(signal, reportRequest);
       const sanitizedReportText = normalizeReportMarkdown(reportText);
       const title = buildReportTitle(pageTitle);
-      const { rootBlocks, sanitizedText } = buildReportRootBlock(editor, sanitizedReportText, spaceId);
+      const { rootBlocks } = buildReportRootBlock(editor, sanitizedReportText, spaceId);
       const reportDoc = {
         type: 'doc',
         content: rootBlocks,
@@ -1737,13 +1795,13 @@ export function AiInlineCopilot({
         signal,
       });
 
-      if (!created.ok && shouldFallbackToMarkdownContent(created.error?.message ?? '')) {
+      if (!created.ok && shouldFallbackToSchemaSafeContent(created.error?.message ?? '')) {
         created = await wikiliveApi.aiExecuteTool({
           toolName: 'create_wiki_page',
           args: {
             workspaceId: spaceId,
             title,
-            content: sanitizedText,
+            content: buildSchemaSafeDoc(rootBlocks),
           },
           pageId: pageId ?? undefined,
           workspaceId: spaceId,

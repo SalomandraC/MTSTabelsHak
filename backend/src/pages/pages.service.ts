@@ -25,6 +25,28 @@ const WIKI_NODE_TYPE_MWS_FOLDER = 'mws_folder';
 const LIVE_REFERENCE_TOKEN = /^\[Ref:([^:\]\s]+):([^:\]\s]+):([^:\]\s]+)\]$/;
 const SUPPORTED_AI_MARKS = new Set(['bold']);
 
+function splitMarkdownTableRow(line: string): string[] | null {
+  const trimmed = line.trim();
+  if (!trimmed.includes('|')) {
+    return null;
+  }
+
+  const normalized = trimmed.startsWith('|') ? trimmed.slice(1) : trimmed;
+  const withoutTrailingPipe = normalized.endsWith('|') ? normalized.slice(0, -1) : normalized;
+  const cells = withoutTrailingPipe.split('|').map((cell) => cell.trim());
+
+  return cells.length > 1 ? cells : null;
+}
+
+function isMarkdownTableSeparator(line: string): boolean {
+  const cells = splitMarkdownTableRow(line);
+  if (!cells || cells.length === 0) {
+    return false;
+  }
+
+  return cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
 const aiGeneratedPageSchema = new Schema({
   nodes: {
     doc: {
@@ -561,6 +583,51 @@ export class PagesService {
       if (!line) {
         flushParagraph();
         index += 1;
+        continue;
+      }
+
+      const headerCells = splitMarkdownTableRow(rawLine);
+      const separatorLine = lines[index + 1];
+      if (headerCells && separatorLine && isMarkdownTableSeparator(separatorLine)) {
+        flushParagraph();
+
+        const rows: Array<Record<string, unknown>> = [
+          {
+            type: 'tableRow',
+            content: headerCells.map((cell) => ({
+              type: 'tableHeader',
+              content: [{ type: 'paragraph', content: this.parseInlineAiTokens(cell) }],
+            })),
+          },
+        ];
+
+        index += 2;
+        while (index < lines.length) {
+          const rowLine = lines[index];
+          const rowTrimmed = rowLine.trim();
+          if (!rowTrimmed) {
+            break;
+          }
+
+          const rowCells = splitMarkdownTableRow(rowLine);
+          if (!rowCells || isMarkdownTableSeparator(rowLine)) {
+            break;
+          }
+
+          rows.push({
+            type: 'tableRow',
+            content: rowCells.map((cell) => ({
+              type: 'tableCell',
+              content: [{ type: 'paragraph', content: this.parseInlineAiTokens(cell) }],
+            })),
+          });
+          index += 1;
+        }
+
+        blocks.push({
+          type: 'table',
+          content: rows,
+        });
         continue;
       }
 
