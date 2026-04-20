@@ -46,8 +46,8 @@ export class TransformRequestDto {
   transformation!: 'professional' | 'shorten' | 'expand' | 'fix_grammar';
 
   @IsOptional()
-  @IsIn(['standard', 'business', 'military', 'medieval', 'church', 'fix', 'expand'])
-  styleId?: 'standard' | 'business' | 'military' | 'medieval' | 'church' | 'fix' | 'expand';
+  @IsIn(['technical', 'executive_summary', 'action_plan', 'legal_formal', 'fix_grammar'])
+  styleId?: 'technical' | 'executive_summary' | 'action_plan' | 'legal_formal' | 'fix_grammar';
 
   @IsOptional()
   @IsString()

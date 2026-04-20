@@ -93,6 +93,19 @@ type StructureInstruction = {
 
 type AiChatApiResponse = Awaited<ReturnType<typeof wikiliveApi.aiChat>>;
 const MAX_INLINE_CONTEXT_MARKDOWN = 20000;
+const LIVE_DATA_BINDING_RULES = [
+  'Используй LiveReference в формате [Ref:tableId:rowId:colId] для всех ключевых чисел, статусов и дат, если они есть в табличном контексте.',
+  'Если упоминается вычисляемый показатель (KPI, маржа, КПД, конверсия, среднее, итог, процент, дельта), добавляй LiveFormula в формате [Formula: expression].',
+  'Внутри [Formula: ...] используй [Ref:tableId:rowId:colId] как операнды везде, где это возможно.',
+].join('\n');
+
+const DIAGRAM_ARCHITECT_PROMPT = [
+  'Ты — ведущий системный архитектор. Тебе дана спецификация системы. Твоя задача — визуализировать её структуру.',
+  'Если в тексте много сущностей — строй Class Diagram.',
+  'Если описан процесс — строй Flowchart или Sequence Diagram.',
+  'Всегда используй русский язык для названий блоков.',
+  'Верни ТОЛЬКО код Mermaid без пояснений.',
+].join('\n');
 
 function dispatchTableMutation(detail: {
   datasheetId: string;
@@ -1158,6 +1171,7 @@ export function AiInlineCopilot({
             `Вот ее данные JSON: ${JSON.stringify({ fields: context.fields, records: context.records.map((record) => ({ recordId: record.recordId, fields: record.fields })), total: context.total })}`,
             'Если данных таблицы недостаточно, первым делом вызови инструмент get_records.',
             'Сделай короткий анализ: тренды, аномалии, выводы.',
+            LIVE_DATA_BINDING_RULES,
           ].join('\n'),
           pageId: pageId ?? undefined,
           datasheetId: activeContext.datasheetId,
@@ -1190,6 +1204,7 @@ export function AiInlineCopilot({
             `Содержание документа: ${markdown}`,
             `Таблицы JSON: ${JSON.stringify(tables)}`,
             'Сделай целостный анализ с общими выводами.',
+            LIVE_DATA_BINDING_RULES,
           ].join('\n'),
           pageId: pageId ?? undefined,
           pageTitle,
@@ -1210,6 +1225,7 @@ export function AiInlineCopilot({
           'Ты помощник по тексту.',
           `Вот содержание документа: ${markdown}`,
           'Сделай краткий аналитический обзор и предложи улучшения.',
+          LIVE_DATA_BINDING_RULES,
         ].join('\n'),
         pageId: pageId ?? undefined,
         pageTitle,
@@ -1231,12 +1247,9 @@ export function AiInlineCopilot({
       const markdown = getInlineContextMarkdown(editor);
       const { response, answer } = await fetchAiAnswerWithTableRecovery({
         question: [
-          'Ты — системный архитектор. Твоя задача — визуализировать описание пользователя в формате Mermaid.js.',
-          'Правила:',
-          'Используй только актуальный синтаксис Mermaid.',
-          'Если описывается процесс — делай Flowchart. Если структура данных — Class Diagram.',
-          'Верни ТОЛЬКО чистый код Mermaid без пояснений и без блоков кода ```.',
-          `Описание пользователя: ${userPrompt || 'Построй базовую UML диаграмму для нового модуля.'}`,
+          DIAGRAM_ARCHITECT_PROMPT,
+          'Используй только валидный синтаксис Mermaid.js.',
+          `Техническая спецификация: ${userPrompt || 'Спецификация не указана. Построй базовую UML-диаграмму ключевых сущностей и связей.'}`,
           `Контекст документа: ${markdown}`,
         ].join('\n'),
         pageId: pageId ?? undefined,
@@ -1270,9 +1283,7 @@ export function AiInlineCopilot({
           'Если данных таблицы недостаточно, первым делом вызови инструмент get_records.',
           'Сгенерируй отчет в markdown формате.',
           'Если данные удобнее показывать в структуре, используй стандартные Markdown-таблицы.',
-          'Для каждой строки в колонке "Значение" используй живую переменную [Ref:datasheetId:recordId:fieldId], если она доступна из данных.',
-          'Когда в отчете упоминаешь конкретную ячейку таблицы, обязательно вставляй живую переменную в формате [Ref:datasheetId:recordId:fieldId].',
-          'Используй живые переменные для ключевых метрик, статусов, дат и значений, которые должны обновляться вместе с таблицей.',
+          LIVE_DATA_BINDING_RULES,
         ].join('\n'),
         pageId: pageId ?? undefined,
         datasheetId: activeContext.datasheetId,
@@ -1301,6 +1312,7 @@ export function AiInlineCopilot({
           `Содержание документа: ${markdown}`,
           `Таблицы JSON: ${JSON.stringify(tables)}`,
           `Дополнительный запрос: ${prompt.trim() || 'Сформируй общий аналитический отчет.'}`,
+          LIVE_DATA_BINDING_RULES,
         ].join('\n'),
         pageId: pageId ?? undefined,
         pageTitle,
@@ -1318,6 +1330,7 @@ export function AiInlineCopilot({
         'Ты помощник по тексту.',
         `Вот содержание документа: ${markdown}`,
         `Запрос пользователя: ${prompt.trim() || 'Сформируй отчет по текущему документу.'}`,
+        LIVE_DATA_BINDING_RULES,
       ].join('\n'),
       pageId: pageId ?? undefined,
       pageTitle,
@@ -1429,7 +1442,7 @@ export function AiInlineCopilot({
           'Ты помощник по тексту.',
           `Вот содержание документа: ${markdown}`,
           `Запрос пользователя: ${trimmed}`,
-          'Если нужно сослаться на конкретную ячейку MWS, используй токен в формате [Ref:tableId:rowId:colId].',
+          LIVE_DATA_BINDING_RULES,
           'Верни только текст, который можно вставить в документ.',
         ].join('\n'),
         pageId: pageId ?? undefined,
@@ -1662,7 +1675,11 @@ export function AiInlineCopilot({
         <button
           type="button"
           className="rounded-md border border-[#ffd9e1] bg-white px-2 py-1 text-xs text-[#5a6170] transition-colors hover:bg-[#fff1f3] disabled:opacity-50"
-          onClick={() => applyPromptSuggestion('[ACTION:DIAGRAM] Нарисуй процесс заказа еды от клика до доставки.')}
+          onClick={() =>
+            applyPromptSuggestion(
+              '[ACTION:DIAGRAM] Техническая спецификация: пользователь создаёт заказ, система проверяет данные, резервирует ресурсы, запускает оплату и подтверждает результат.',
+            )
+          }
           disabled={isBusy || !isDiagramFeatureEnabled}
         >
           Диаграмма

@@ -506,7 +506,7 @@ export type ResolveTableEmbedResponse = {
 };
 
 export type AiTransformType = 'professional' | 'shorten' | 'expand' | 'fix_grammar';
-export type AiTransformStyleId = 'standard' | 'business' | 'military' | 'medieval' | 'church' | 'fix' | 'expand';
+export type AiTransformStyleId = 'technical' | 'executive_summary' | 'action_plan' | 'legal_formal' | 'fix_grammar';
 
 export type AiAutocompletePayload = {
   currentText: string;

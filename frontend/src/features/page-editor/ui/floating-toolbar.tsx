@@ -1,7 +1,7 @@
 import type { Editor } from '@tiptap/core';
 import { useEditorState } from '@tiptap/react';
 import { Code2, List, ListOrdered, ListChecks, MessageSquare, MonitorPlay, Highlighter, BookmarkPlus, Link } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { handleListAction } from '../model/list-actions';
@@ -22,20 +22,52 @@ import H2 from '../../../app/images/H2.svg';
 import H3 from '../../../app/images/H3.svg';
 
 const redFilter = 'brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(2665%) hue-rotate(346deg) brightness(101%) contrast(97%)';
+const STYLE_USAGE_STORAGE_KEY = 'wikilive:ai-style-usage';
+const QUICK_ACCESS_DEFAULT_STYLE_ID: AiTransformStyleId = 'executive_summary';
+
+type StyleUsageCounters = Partial<Record<AiTransformStyleId, number>>;
 
 const IMPROVE_STYLE_OPTIONS: Array<{
+  id: string;
   styleId: AiTransformStyleId;
   label: string;
-  transformation: 'professional' | 'expand' | 'fix_grammar';
+  transformation: 'professional' | 'shorten' | 'fix_grammar';
+  omitStyleId?: boolean;
 }> = [
-  { styleId: 'standard', label: '🧾 Обычный', transformation: 'professional' },
-  { styleId: 'business', label: '💼 Деловой', transformation: 'professional' },
-  { styleId: 'military', label: '🪖 Военный', transformation: 'professional' },
-  { styleId: 'medieval', label: '🏰 Средневековый', transformation: 'professional' },
-  { styleId: 'church', label: '⛪ Церковнославянский', transformation: 'professional' },
-  { styleId: 'fix', label: '🩺 Исправить ошибки', transformation: 'fix_grammar' },
-  { styleId: 'expand', label: '🧠 Дополнить', transformation: 'expand' },
+  { id: 'technical', styleId: 'technical', label: '🛠️ Технический', transformation: 'professional' },
+  { id: 'executive_summary', styleId: 'executive_summary', label: '📊 Кратко для руководства', transformation: 'shorten' },
+  { id: 'shorten_plain', styleId: 'technical', label: '✂️ Сократить', transformation: 'shorten', omitStyleId: true },
+  { id: 'action_plan', styleId: 'action_plan', label: '✅ План действий', transformation: 'professional' },
+  { id: 'legal_formal', styleId: 'legal_formal', label: '🧾 Официально-деловой', transformation: 'professional' },
+  { id: 'fix_grammar', styleId: 'fix_grammar', label: '✍️ Корректор', transformation: 'fix_grammar' },
 ];
+
+function readStyleUsageCounters(): StyleUsageCounters {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  try {
+    const raw = window.localStorage.getItem(STYLE_USAGE_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const counters: StyleUsageCounters = {};
+
+    for (const option of IMPROVE_STYLE_OPTIONS) {
+      const value = parsed[option.styleId];
+      if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+        counters[option.styleId] = value;
+      }
+    }
+
+    return counters;
+  } catch {
+    return {};
+  }
+}
 
 type FloatingToolbarProps = {
   editor: Editor | null;
@@ -55,6 +87,12 @@ type ToolbarButtonProps = {
   isLast?: boolean;
   onClick: ((event: React.MouseEvent<HTMLButtonElement>) => void) | (() => void);
   'aria-label'?: string;
+};
+
+type AiTransformUndoEntry = {
+  from: number;
+  transformedText: string;
+  originalText: string;
 };
 
 function ToolbarButton({
@@ -124,9 +162,98 @@ export function FloatingToolbar({
   const [createBookmarkAnchor, setCreateBookmarkAnchor] = useState<DOMRect | null>(null);
   const [bookmarkPickerAnchor, setBookmarkPickerAnchor] = useState<DOMRect | null>(null);
   const [isImproveMenuOpen, setIsImproveMenuOpen] = useState(false);
-  const [aiLoadingAction, setAiLoadingAction] = useState<'improve' | 'shorten' | null>(null);
+  const [aiLoadingAction, setAiLoadingAction] = useState<'styles' | 'default_style' | null>(null);
   const [aiErrorMessage, setAiErrorMessage] = useState<string | null>(null);
+  const [styleUsageCounters, setStyleUsageCounters] = useState<StyleUsageCounters>(() => readStyleUsageCounters());
   const toolbarRef = useRef<HTMLDivElement>(null);
+  const lastAiTransformUndoRef = useRef<AiTransformUndoEntry | null>(null);
+
+  const quickAccessPreset = useMemo(() => {
+    let best = IMPROVE_STYLE_OPTIONS.find((option) => option.styleId === QUICK_ACCESS_DEFAULT_STYLE_ID) ?? IMPROVE_STYLE_OPTIONS[0];
+    let bestScore = Number(styleUsageCounters[best.styleId] ?? 0);
+
+    for (const option of IMPROVE_STYLE_OPTIONS) {
+      const score = Number(styleUsageCounters[option.styleId] ?? 0);
+      if (score > bestScore) {
+        best = option;
+        bestScore = score;
+      }
+    }
+
+    return best;
+  }, [styleUsageCounters]);
+
+  const quickAccessButtonLabel =
+    quickAccessPreset.styleId === QUICK_ACCESS_DEFAULT_STYLE_ID
+      ? '✂️ Сократить'
+      : '⚡ Наиболее частая функция';
+
+  const registerStyleUsage = useCallback((styleId: AiTransformStyleId) => {
+    setStyleUsageCounters((previous) => {
+      const nextValue = Number(previous[styleId] ?? 0) + 1;
+      const next: StyleUsageCounters = {
+        ...previous,
+        [styleId]: nextValue,
+      };
+
+      try {
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(STYLE_USAGE_STORAGE_KEY, JSON.stringify(next));
+        }
+      } catch {
+        // Ignore local storage failures; quick access still works for current session.
+      }
+
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!editor) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.key.toLowerCase() !== 'z') {
+        return;
+      }
+
+      if (!editor.isFocused) {
+        return;
+      }
+
+      const canUndoNatively = editor.commands.undo?.();
+      if (canUndoNatively) {
+        return;
+      }
+
+      const snapshot = lastAiTransformUndoRef.current;
+      if (!snapshot) {
+        return;
+      }
+
+      const current = editor.state.doc.textBetween(
+        snapshot.from,
+        snapshot.from + snapshot.transformedText.length,
+        '\n',
+      );
+
+      if (current !== snapshot.transformedText) {
+        return;
+      }
+
+      event.preventDefault();
+      editor.chain().focus().insertContentAt(
+        { from: snapshot.from, to: snapshot.from + snapshot.transformedText.length },
+        snapshot.originalText,
+      ).run();
+
+      lastAiTransformUndoRef.current = null;
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [editor]);
 
   const state = useEditorState({
     editor,
@@ -351,7 +478,7 @@ export function FloatingToolbar({
 
   const runAiTransform = async (
     transformation: 'professional' | 'shorten' | 'expand' | 'fix_grammar',
-    options: { styleId?: AiTransformStyleId; action: 'improve' | 'shorten' },
+    options: { styleId?: AiTransformStyleId; action: 'styles' | 'default_style' },
   ) => {
     const { from, to, empty } = editor.state.selection;
     if (empty) {
@@ -367,7 +494,8 @@ export function FloatingToolbar({
       setIsAiLoading(true);
       setAiLoadingAction(options.action);
       setAiErrorMessage(null);
-      const response = await wikiliveApi.aiTransform({
+
+      const requestPayload = {
         text: selectedText,
         transformation,
         styleId: options.styleId,
@@ -375,9 +503,33 @@ export function FloatingToolbar({
         pageSnapshot: {
           markdown: getEditorMarkdown(),
         },
-      });
+      };
+
+      let response;
+      try {
+        response = await wikiliveApi.aiTransform(requestPayload);
+      } catch {
+        if (!options.styleId) {
+          throw new Error('transform_failed_without_style');
+        }
+
+        response = await wikiliveApi.aiTransform({
+          ...requestPayload,
+          styleId: undefined,
+        });
+      }
 
       editor.chain().focus().insertContentAt({ from, to }, response.text).run();
+
+      lastAiTransformUndoRef.current = {
+        from,
+        transformedText: response.text,
+        originalText: selectedText,
+      };
+
+      if (options.styleId) {
+        registerStyleUsage(options.styleId);
+      }
     } catch {
       setAiErrorMessage('AI не смог изменить текст. Попробуйте другой стиль или повторите снова.');
     } finally {
@@ -649,10 +801,10 @@ export function FloatingToolbar({
             <ToolbarButton
               icon={(
                 <span className="inline-flex items-center gap-1 px-1 text-[11px] font-semibold">
-                  {isAiLoading && aiLoadingAction === 'improve' ? (
+                  {isAiLoading && aiLoadingAction === 'styles' ? (
                     <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border border-[rgba(80,87,98,0.45)] border-t-[rgba(80,87,98,1)]" />
                   ) : null}
-                  Улучшить
+                  Стили
                   <span className={[
                     'text-[10px] transition-transform duration-200',
                     isImproveMenuOpen ? 'rotate-180' : 'rotate-0',
@@ -665,7 +817,7 @@ export function FloatingToolbar({
               disabled={isAiLoading}
               isFirst={true}
               isLast={false}
-              aria-label="Улучшить стиль"
+              aria-label="Открыть список стилей"
             />
 
             <div
@@ -680,15 +832,20 @@ export function FloatingToolbar({
             >
               {IMPROVE_STYLE_OPTIONS.map(option => (
                 <button
-                  key={option.styleId}
+                  key={option.id}
                   type="button"
                   role="menuitem"
-                  onClick={() => void runAiTransform(option.transformation, { styleId: option.styleId, action: 'improve' })}
+                  onClick={() =>
+                    void runAiTransform(option.transformation, {
+                      styleId: option.omitStyleId ? undefined : option.styleId,
+                      action: 'styles',
+                    })
+                  }
                   disabled={isAiLoading}
                   className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs font-medium text-[rgba(47,54,66,1)] transition-colors hover:bg-[#edf0f5] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <span>{option.label}</span>
-                  <span className="text-[10px] text-[rgba(103,111,123,1)]">{option.styleId}</span>
+                  <span className="text-[10px] text-[rgba(103,111,123,1)]">{option.omitStyleId ? 'shorten' : option.styleId}</span>
                 </button>
               ))}
             </div>
@@ -696,17 +853,22 @@ export function FloatingToolbar({
           <ToolbarButton
             icon={(
               <span className="inline-flex items-center gap-1 px-1 text-[11px] font-semibold">
-                {isAiLoading && aiLoadingAction === 'shorten' ? (
+                {isAiLoading && aiLoadingAction === 'default_style' ? (
                   <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border border-[rgba(80,87,98,0.45)] border-t-[rgba(80,87,98,1)]" />
                 ) : null}
-                Сократить
+                {quickAccessButtonLabel}
               </span>
             )}
-            onClick={() => void runAiTransform('shorten', { action: 'shorten' })}
+            onClick={() =>
+              void runAiTransform(quickAccessPreset.transformation, {
+                styleId: quickAccessPreset.styleId,
+                action: 'default_style',
+              })
+            }
             disabled={isAiLoading}
             isFirst={false}
             isLast={true}
-            aria-label="Сократить текст"
+            aria-label={`Быстрый доступ: ${quickAccessPreset.label}`}
           />
         </>
       ) : null}

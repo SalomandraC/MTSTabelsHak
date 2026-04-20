@@ -75,37 +75,36 @@ describe('AiAssistantService', () => {
       choices: [{ message: { content: 'Professional rewrite' } }],
     });
 
-    const result = await service.transformText('rewrite me', 'professional', 'business', {
+    const result = await service.transformText('rewrite me', 'professional', 'technical', {
       pageTitle: 'Policy doc',
     });
 
     expect(result.text).toBe('Professional rewrite');
 
     const request = aiProviderClientService.complete.mock.calls[0][0];
-    expect(request.messages[0].content).toContain('business style suitable for enterprise communication');
+    expect(request.messages[0].content).toContain('technical style suitable for documentation and instructions');
     expect(request.messages[1].content).toContain('Transformation: professional');
-    expect(request.messages[1].content).toContain('style: business');
+    expect(request.messages[1].content).toContain('style: technical');
     expect(request.messages[1].content).toContain('rewrite me');
   });
 
-  it('uses church style prompt with biblical cadence guidance', async () => {
+  it('uses executive summary style prompt with key bullets and live references guidance', async () => {
     aiProviderClientService.complete.mockResolvedValueOnce({
-      choices: [{ message: { content: 'Ибо сказано: поступай мудро.' } }],
+      choices: [{ message: { content: '- KPI вырос\n- Риск снижен\n- Выручка [Ref:dst:r1:c1]' } }],
     });
 
-    const result = await service.transformText('действуй разумно', 'professional', 'church');
+    const result = await service.transformText('действуй разумно', 'shorten', 'executive_summary');
 
-    expect(result.text).toBe('Ибо сказано: поступай мудро.');
+    expect(result.text).toContain('Ref:dst:r1:c1');
 
     const request = aiProviderClientService.complete.mock.calls[0][0];
-    expect(request.messages[0].content).toContain('biblical cadence');
-    expect(request.messages[0].content).toContain('"ибо сказано"');
-    expect(request.messages[0].content).toContain('Do not fabricate real scripture references.');
-    expect(request.messages[1].content).toContain('style: church');
+    expect(request.messages[0].content).toContain('exactly 3-4 key bullet points');
+    expect(request.messages[0].content).toContain('[Ref:tableId:rowId:colId]');
+    expect(request.messages[1].content).toContain('style: executive_summary');
   });
 
   it('includes strict output rules for selected fragment transform', () => {
-    const messages = service.buildTransformMessages('Тестовый текст', 'professional', 'business');
+    const messages = service.buildTransformMessages('Тестовый текст', 'professional', 'legal_formal');
 
     expect(messages[0].content).toContain('Return only the transformed selected fragment text');
     expect(messages[0].content).toContain('Do not output labels or metadata');
@@ -117,7 +116,7 @@ describe('AiAssistantService', () => {
       choices: [{ message: { content: 'Page title: Wiki: Новая таблица\n---\nПереработанный вариант\nОбновленный текст' } }],
     });
 
-    const result = await service.transformText('Исходный текст без линий', 'professional', 'business');
+    const result = await service.transformText('Исходный текст без линий', 'professional', 'legal_formal');
 
     expect(result.text).toBe('Обновленный текст');
   });

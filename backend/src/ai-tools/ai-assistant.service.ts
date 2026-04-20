@@ -17,13 +17,16 @@ const TRANSFORM_SYSTEM_PROMPTS: Record<TextTransformationType, string> = {
 };
 
 const STYLE_SYSTEM_PROMPTS: Record<TextStyleId, string> = {
-  standard: 'Improve the text to be clear, natural, and coherent while preserving meaning and factual content.',
-  business: 'Rewrite the text in a concise business style suitable for enterprise communication with clear structure.',
-  military: 'Rewrite the text in a precise military operational style: concise commands, unambiguous wording, discipline-focused tone, no slang, preserving all facts.',
-  medieval: 'Rewrite the text in a restrained medieval literary style while keeping facts and meaning accurate.',
-  church: 'Rewrite the text in a respectful church-slavonic inspired style with biblical cadence. Use occasional scriptural framing and short quote-like constructions such as "ибо сказано" or "да будет", while preserving meaning, readability, and factual accuracy. Do not fabricate real scripture references.',
-  fix: 'Fix grammar, punctuation, spelling, and syntax issues while keeping tone and meaning unchanged.',
-  expand: 'Expand the text with clarifying detail, smoother transitions, and explicit structure while preserving intent.',
+  technical:
+    'Rewrite the text in a technical style suitable for documentation and instructions: direct, precise, dry language, no metaphors, no marketing phrases. Keep exact facts and constraints unchanged.',
+  executive_summary:
+    'Compress the text into exactly 3-4 key bullet points for executive readers. Focus on measurable outcomes, risks, timelines, and numeric indicators. When numeric values are available from table context, prefer live references in format [Ref:tableId:rowId:colId].',
+  action_plan:
+    'Transform the text into a clear step-by-step action plan. Use a numbered sequence with concrete actions, expected result per step, and dependencies when relevant.',
+  legal_formal:
+    'Rewrite the text in strict formal business/legal style suitable for official correspondence, regulations, and policy communication. Keep wording unambiguous and compliant.',
+  fix_grammar:
+    'Fix grammar, punctuation, spelling, and syntax only. Preserve author voice, wording choices, and structure as much as possible. Do not paraphrase unless required to correct an error.',
 };
 
 const SAME_LANGUAGE_RULE =
