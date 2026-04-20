@@ -2,13 +2,15 @@
 
 Модуль экспорта страниц WikiLive в форматы PDF, DOCX и Markdown.
 
+Важно: это отдельный export-only контур. Он не используется в pipeline импорта Markdown и не участвует в создании страниц из `.md` файлов.
+
 ## Архитектура
 
 ```
 Frontend (workspace-page.tsx)
   └─ handleExportPage()
        └─ exportDocument() [shared/lib/export-document.ts]
-            └─ POST http://docgen:3200/generate
+            └─ POST {VITE_DOCGEN_URL}/generate
                  └─ document-generator (отдельный Docker-сервис)
                       ├─ document-parser.ts   — ProseMirror JSON → BlockNode[]
                       ├─ pdf-generator.ts     — BlockNode[] → PDF (Puppeteer)
@@ -19,6 +21,8 @@ Frontend (workspace-page.tsx)
 ## Сервис document-generator
 
 Stateless Express-сервис на порту `3200`. Принимает JSON, возвращает бинарный файл.
+
+С фронтенда сервис вызывается через `frontend/src/shared/lib/export-document.ts`. По умолчанию используется `VITE_DOCGEN_URL ?? http://localhost:3200`, то есть браузерный клиент ходит в docgen через опубликованный HTTP endpoint, а не по docker hostname `docgen`.
 
 ### Endpoint
 
@@ -42,6 +46,12 @@ Content-Type: application/json
 
 Ответ: бинарный файл с заголовком `Content-Disposition: attachment`.
 
+Дополнительно сервис предоставляет health-check:
+
+```text
+GET /health
+```
+
 ### Переменные окружения
 
 | Переменная | По умолчанию | Описание |
@@ -58,14 +68,24 @@ Content-Type: application/json
 - Сервис: `document-generator/src/`
 - Dockerfile: `document-generator/Dockerfile`
 
+## Что не входит в модуль
+
+В модуль экспорта не входит импорт Markdown.
+
+- экспорт использует `document-generator` и работает от готового ProseMirror JSON;
+- импорт Markdown выполняется на фронтенде через `frontend/src/features/markdown-import/` и создаёт новые страницы через `wikiliveApi.createPage(...)`.
+
+Если коротко: export service не является универсальным document conversion pipeline в обе стороны, а отвечает только за выгрузку существующего документа наружу.
+
 ## Поток данных
 
-1. Пользователь нажимает «Экспортировать» → выбирает формат.
-2. `handleExportPage()` принудительно создаёт checkpoint активной страницы, затем загружает последний checkpoint через `listPageHistory` + `getPageHistoryCheckpoint`.
-3. `exportDocument()` отправляет ProseMirror JSON + auth + appBaseUrl в docgen.
-4. `document-parser.ts` разворачивает ProseMirror JSON в плоский список `BlockNode[]`.
-5. Генератор нужного формата обходит блоки и строит документ.
-6. Файл возвращается в браузер как download.
+1. Пользователь нажимает «Экспортировать» и выбирает формат.
+2. `handleExportPage()` принудительно создаёт checkpoint активной страницы.
+3. После этого фронтенд читает последний checkpoint через `listPageHistory` и `getPageHistoryCheckpoint`.
+4. `exportDocument()` отправляет ProseMirror JSON, auth, `appBaseUrl` и `spaceId` в `document-generator`.
+5. `document-parser.ts` разворачивает ProseMirror JSON в плоский список `BlockNode[]`.
+6. Генератор нужного формата строит итоговый документ.
+7. Браузер получает бинарный ответ и инициирует скачивание файла.
 
 ## Поддерживаемые блоки
 
@@ -92,17 +112,19 @@ GET /api/v1/mws/datasheets/{datasheetId}/fields
 GET /api/v1/mws/datasheets/{datasheetId}/records?pageSize=100
 ```
 
-Запросы авторизуются токеном пользователя из поля `auth` запроса. Если API недоступен — вставляется placeholder с названием таблицы.
+Запросы авторизуются токеном пользователя из поля `auth` запроса. Если API недоступен, генератор вставляет placeholder с названием таблицы вместо реальных данных.
 
 ## Ссылки на страницы
 
-`pageLink` ноды внутри параграфов рендерятся как кликабельные ссылки вида:
+`pageLink` ноды внутри параграфов и standalone `pageLink` блоки рендерятся как кликабельные ссылки вида:
 
 ```
 {appBaseUrl}/spaces/{spaceId}/pages/{pageId}
 ```
 
 В PDF — тег `<a href="...">`, в DOCX — `ExternalHyperlink`, в MD — `[title](url)`.
+
+Если `appBaseUrl`, `spaceId` или `pageId` отсутствуют, экспорт использует fallback без полноценного absolute URL.
 
 ## Docker
 
@@ -118,7 +140,7 @@ docgen:
     - "3200:3200"
 ```
 
-Образ использует Alpine + системный Chromium (`apk add chromium`) — работает нативно на ARM (Apple Silicon) и x86.
+Образ использует Alpine + системный Chromium (`apk add chromium`) и рассчитан на локальный запуск в demo-окружении.
 
 ## Зависимости
 
@@ -129,3 +151,16 @@ docgen:
 | `handlebars` | MIT | HTML-шаблон для PDF |
 | `express` | MIT | HTTP-сервер |
 | `cors` | MIT | CORS-заголовки |
+
+## Проверка и отладка
+
+- Фронтендовый entrypoint: `frontend/src/shared/lib/export-document.ts`
+- HTTP-сервис: `document-generator/src/index.ts`
+- Парсер ProseMirror: `document-generator/src/document-parser.ts`
+- Генераторы форматов: `document-generator/src/generators/*`
+
+Для локальной диагностики можно проверить доступность сервиса:
+
+```bash
+curl http://localhost:3200/health
+```

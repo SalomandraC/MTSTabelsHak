@@ -8,6 +8,16 @@ type AttachmentUploadModalProps = {
   isSubmitting: boolean;
   files: File[];
   errorMessage: string;
+  dialogLabel?: string;
+  title?: string;
+  description?: string;
+  accept?: string;
+  emptyStateText?: string;
+  dropzoneText?: string;
+  dropzoneActionText?: string;
+  cancelLabel?: string;
+  addMoreLabel?: string;
+  submitLabel?: string;
   onClose: () => void;
   onFilesSelect: (files: File[]) => void;
   onRemoveFile: (index: number) => void;
@@ -31,6 +41,16 @@ export function AttachmentUploadModal({
   isSubmitting,
   files,
   errorMessage,
+  dialogLabel = 'Добавить файлы',
+  title = 'Добавить файлы',
+  description = 'Перетащите несколько файлов сюда или выберите их с диска.',
+  accept,
+  emptyStateText = 'Пока нет выбранных файлов',
+  dropzoneText = 'Перетащите файлы сюда',
+  dropzoneActionText = 'или нажмите, чтобы выбрать',
+  cancelLabel = 'Отменить',
+  addMoreLabel = 'Добавить ещё',
+  submitLabel = 'Загрузить',
   onClose,
   onFilesSelect,
   onRemoveFile,
@@ -44,26 +64,27 @@ export function AttachmentUploadModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[101] bg-black/45" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[101] bg-black/45" onMouseDown={isSubmitting ? undefined : onClose}>
       <div
         className="fixed left-1/2 top-1/2 flex w-[min(44rem,calc(100vw-1.5rem))] max-w-[calc(100%-24px)] -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-[14px] border border-[#e8edf5] bg-white p-6 shadow-[0px_4px_24px_rgba(0,0,0,0.12),0px_8px_16px_rgba(0,0,0,0.08)]"
         role="dialog"
         aria-modal="true"
-        aria-label="Добавить файлы"
+        aria-label={dialogLabel}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-[1.75rem] font-semibold leading-8 text-[#252b36]">
-              Добавить файлы
+              {title}
             </h3>
             <p className="mt-1 text-sm text-[#6f7a8a]">
-              Перетащите несколько файлов сюда или выберите их с диска.
+              {description}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
+            disabled={isSubmitting}
             className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[#f0f2f6] text-[#333845]"
             aria-label="Закрыть"
           >
@@ -93,9 +114,9 @@ export function AttachmentUploadModal({
         >
           <UploadCloud className="h-8 w-8 text-[#6f7a8a]" />
           <div>
-            <p className="text-sm text-[#3b4250]">Перетащите файлы сюда</p>
+            <p className="text-sm text-[#3b4250]">{dropzoneText}</p>
             <p className="text-sm text-[#1f6feb] font-medium">
-              или нажмите, чтобы выбрать
+              {dropzoneActionText}
             </p>
           </div>
         </label>
@@ -104,7 +125,8 @@ export function AttachmentUploadModal({
           id={inputId}
           type="file"
           multiple
-          aria-label="Добавить файлы"
+          accept={accept}
+          aria-label={dialogLabel}
           className="hidden"
           onChange={(event) => {
             const nextFiles = Array.from(event.target.files ?? []);
@@ -144,7 +166,7 @@ export function AttachmentUploadModal({
             </div>
           ) : (
             <div className="px-2 py-6 text-center text-sm text-[#6f7a8a]">
-              Пока нет выбранных файлов
+              {emptyStateText}
             </div>
           )}
         </div>
@@ -153,16 +175,18 @@ export function AttachmentUploadModal({
           <ModalActionButton
             onClick={onClose}
             variant="secondary"
+            disabled={isSubmitting}
             className="w-full"
           >
-            Отменить
+            {cancelLabel}
           </ModalActionButton>
           <ModalActionButton
             onClick={() => fileInputRef.current?.click()}
             variant="secondary"
+            disabled={isSubmitting}
             className="w-full"
           >
-            Добавить ещё
+            {addMoreLabel}
           </ModalActionButton>
           <ModalActionButton
             onClick={onSubmit}
@@ -170,7 +194,7 @@ export function AttachmentUploadModal({
             variant="primary"
             className="w-full"
           >
-            Загрузить
+            {submitLabel}
           </ModalActionButton>
         </div>
       </div>
