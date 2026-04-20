@@ -82,6 +82,7 @@ export class AiToolRegistryService {
           });
       }
     } catch (error: any) {
+      console.log('TOOL CALL ERROR:', toolName, error?.message ?? 'Tool execution failed');
       const status = error?.status ?? error?.response?.status;
       return {
         ok: false,

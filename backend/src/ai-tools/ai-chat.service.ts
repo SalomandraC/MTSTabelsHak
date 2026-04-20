@@ -188,6 +188,7 @@ export class AiChatService {
     isWorkspaceAgentMode: boolean,
     intent: AiIntent,
   ): AiChatMessage[] {
+    const isAnalysisRequest = /(анализ|analysis|обзор|summary|тренд|аномал)/i.test(question);
     const tableContextLines = [
       input.datasheetId ? `Target MWS datasheetId: ${input.datasheetId}` : null,
       input.viewId ? `Target MWS viewId: ${input.viewId}` : null,
@@ -267,6 +268,9 @@ export class AiChatService {
         : null,
       intent === 'write_report'
         ? this.aiAssistantService.getWriteReportSystemPrompt()
+        : null,
+      intent === 'chat' && isAnalysisRequest
+        ? this.aiAssistantService.getAnalysisSystemPrompt()
         : null,
     ]
       .filter(Boolean)

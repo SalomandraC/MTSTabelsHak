@@ -54,6 +54,25 @@ const TRANSFORM_OUTPUT_RULES = [
   'Preserve the selected fragment structure: keep paragraph boundaries and line breaks semantically close to the input.',
 ].join(' ');
 
+const MARKDOWN_HEADING_STRICT_RULES = [
+  'Форматирование: Strict Headings — Используй только ОДИН символ # для заголовка первого уровня, ДВА ## для второго и так далее. Категорически запрещено писать # # или любые другие комбинации.',
+  'Форматирование: No Bold in Headings — Никогда не оборачивай текст внутри заголовка в жирный шрифт (**). Пиши просто: ## Название раздела.',
+  'Форматирование: Markdown Cleanliness — Не добавляй никаких лишних пробелов перед символами #.',
+].join(' ');
+
+const TOOL_ARGS_STRICT_RULE =
+  'Используй только разрешенные поля из схемы. Не добавляй отсебятины в аргументы инструментов.';
+
+const LIVE_REF_FORMULA_CRITICAL_RULE = [
+  'КРИТИЧЕСКОЕ ПРАВИЛО ФОРМАТИРОВАНИЯ:',
+  'Никогда не используй фигурные скобки {} для обращения к полям.',
+  'Живая Ссылка: Если ссылаешься на ячейку, используй ТОЛЬКО формат: [Ref:tableId:rowId:fieldId].',
+  'Пример: [Ref:dstf2fJvxaGwEoKbMU:recdovVDsiLv0:fld35V9AMgY5a]',
+  'Живая Формула: Если нужно выполнить вычисление, оборачивай ссылки в тег Formula.',
+  'Пример: [Formula:([Ref:tableId:row1:field1] * [Ref:tableId:row1:field2])]',
+  'Всегда бери реальные ID таблицы, строки и поля из предоставленного тебе JSON контекста таблицы MWS.',
+].join(' ');
+
 @Injectable()
 export class AiAssistantService {
   private readonly modelChat: string;
@@ -104,6 +123,20 @@ export class AiAssistantService {
       'Всегда используй [Ref:tableId:rowId:colId] для живых ссылок на данные.',
       'Если в отчете есть вычисляемые метрики (итоги, средние, KPI, маржа, КПД, дельты, проценты), обязательно добавляй формулу в формате [Formula: expression].',
       'Внутри [Formula: ...] используй [Ref:tableId:rowId:colId] токены для всех доступных операндов из таблиц.',
+      MARKDOWN_HEADING_STRICT_RULES,
+      LIVE_REF_FORMULA_CRITICAL_RULE,
+      TOOL_ARGS_STRICT_RULE,
+    ].join(' ');
+  }
+
+  getAnalysisSystemPrompt(): string {
+    return [
+      'Ты — ведущий бизнес-аналитик WikiLive. Подготовь структурированный аналитический текст по входным данным и контексту.',
+      'Используй четкую структуру и Markdown-заголовки, если это уместно для анализа.',
+      'Тон: официально-деловой, без сленга.',
+      MARKDOWN_HEADING_STRICT_RULES,
+      LIVE_REF_FORMULA_CRITICAL_RULE,
+      TOOL_ARGS_STRICT_RULE,
     ].join(' ');
   }
 

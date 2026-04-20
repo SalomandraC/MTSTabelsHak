@@ -117,8 +117,7 @@ const analyzeTableDataSchema: JsonSchema = {
 const createWikiPageSchema: JsonSchema = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   type: 'object',
-  required: ['title'],
-  anyOf: [{ required: ['workspaceId'] }, { required: ['spaceId'] }],
+  required: ['workspaceId', 'title', 'content'],
   properties: {
     workspaceId: { type: 'string', minLength: 1 },
     spaceId: { type: 'string', minLength: 1 },
@@ -126,7 +125,8 @@ const createWikiPageSchema: JsonSchema = {
     parentNodeId: { type: 'string' },
     icon: { type: 'string' },
     content: {
-      oneOf: [{ type: 'string' }, { type: 'object', additionalProperties: true }],
+      type: ['string', 'object'],
+      additionalProperties: true,
     },
   },
   additionalProperties: false,

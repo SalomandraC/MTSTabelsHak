@@ -598,9 +598,16 @@ function buildTableContinuationQuestion(currentAnswer: string): string {
   ].join('\n\n');
 }
 
+function sanitizeAiResponse(text: string): string {
+  return String(text ?? '')
+    .replace(/^(#+)\s+#+/gm, '$1')
+    .replace(/^(#+)\s*\*\*(.*?)\*\*/gm, '$1 $2')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
 function normalizeReportMarkdown(reportText: string): string {
   const normalizedNewlines = stripAiActionToken(String(reportText ?? '')).replace(/\r\n/g, '\n');
-  const sourceLines = normalizedNewlines.split('\n');
+  const sourceLines = sanitizeAiResponse(normalizedNewlines).split('\n');
   const normalizedLines: string[] = [];
   let previousWasEmpty = false;
 
@@ -704,11 +711,11 @@ export function AiInlineCopilot({
 }) {
   const [prompt, setPrompt] = useState('');
   const [output, setOutput] = useState('');
+  const [pendingReportText, setPendingReportText] = useState<string | null>(null);
   const [structurePlan, setStructurePlan] = useState<StructureInstruction[]>([]);
   const [status, setStatus] = useState('');
   const [isBusy, setIsBusy] = useState(false);
   const [showContextMenu, setShowContextMenu] = useState(false);
-  const [showReportActionsMenu, setShowReportActionsMenu] = useState(false);
   const [createdPage, setCreatedPage] = useState<{ id: string; title: string; href: string; status?: string } | null>(null);
   const [selectedContextId, setSelectedContextId] = useState('detected');
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
@@ -719,10 +726,10 @@ export function AiInlineCopilot({
     if (!isOpen) {
       setPrompt('');
       setOutput('');
+      setPendingReportText(null);
       setStructurePlan([]);
       setStatus('');
       setShowContextMenu(false);
-      setShowReportActionsMenu(false);
       setCreatedPage(null);
       setSelectedContextId('detected');
     }
@@ -743,17 +750,18 @@ export function AiInlineCopilot({
         return;
       }
 
-      if (showReportActionsMenu) {
-        setShowReportActionsMenu(false);
-        return;
-      }
-
       onClose();
     };
 
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [isOpen, onClose, showContextMenu, showReportActionsMenu]);
+  }, [isOpen, onClose, showContextMenu]);
+
+  useEffect(() => {
+    if (pendingReportText && output !== pendingReportText) {
+      setPendingReportText(null);
+    }
+  }, [output, pendingReportText]);
 
   useEffect(() => {
     return () => {
@@ -1228,6 +1236,7 @@ export function AiInlineCopilot({
             markdown: getInlineContextMarkdown(editor),
           },
           intent: 'chat',
+          spaceId,
         }, {
           signal,
         });
@@ -1257,6 +1266,7 @@ export function AiInlineCopilot({
           pageTitle,
           pageSnapshot: { markdown },
           intent: 'chat',
+          spaceId,
         }, {
           signal,
         });
@@ -1278,6 +1288,7 @@ export function AiInlineCopilot({
         pageTitle,
         pageSnapshot: { markdown },
         intent: 'chat',
+        spaceId,
       }, {
         signal,
       });
@@ -1300,6 +1311,7 @@ export function AiInlineCopilot({
           `Контекст документа: ${markdown}`,
         ].join('\n'),
         pageId: pageId ?? undefined,
+        spaceId,
         pageTitle,
         pageSnapshot: { markdown },
         intent: 'chat',
@@ -1336,6 +1348,7 @@ export function AiInlineCopilot({
           LIVE_DATA_BINDING_RULES,
         ].join('\n'),
         pageId: pageId ?? undefined,
+        spaceId,
         datasheetId: activeContext.datasheetId,
         viewId: activeContext.viewId,
         pageTitle,
@@ -1365,6 +1378,7 @@ export function AiInlineCopilot({
           LIVE_DATA_BINDING_RULES,
         ].join('\n'),
         pageId: pageId ?? undefined,
+        spaceId,
         pageTitle,
         pageSnapshot: { markdown },
         intent: 'write_report',
@@ -1383,6 +1397,7 @@ export function AiInlineCopilot({
         LIVE_DATA_BINDING_RULES,
       ].join('\n'),
       pageId: pageId ?? undefined,
+      spaceId,
       pageTitle,
       pageSnapshot: { markdown },
       intent: 'write_report',
@@ -1393,32 +1408,54 @@ export function AiInlineCopilot({
     return normalizeReportMarkdown(answer);
   };
 
-  const reportToCurrentFile = async () => {
-    setShowReportActionsMenu(false);
+  const prepareReportForCurrentFile = async () => {
     await withBusy(async (signal) => {
       const reportText = await createReportText(signal);
-      if (editor) {
-        const reportRootBlock = buildReportRootBlock(editor, reportText, spaceId);
-        const insertPos = activeContext.kind === 'table' && activeContext.datasheetId
-          ? findTableRootBlockInsertPos(editor, activeContext.datasheetId)
-          : null;
-
-        if (insertPos !== null) {
-          editor.chain().focus().insertContentAt(insertPos, reportRootBlock).run();
-        } else {
-          const endPosition = editor.state.doc.content.size;
-          editor.chain().focus().insertContentAt(endPosition, reportRootBlock).run();
-        }
-      }
-      setOutput(reportText);
+      const sanitizedReportText = normalizeReportMarkdown(reportText);
+      setPendingReportText(sanitizedReportText);
+      setOutput(sanitizedReportText);
+      setStatus('⚡️ Отчет готов. Нажмите кнопку вставки, чтобы добавить его в документ.');
     });
   };
 
-  const reportToNewFile = async () => {
-    setShowReportActionsMenu(false);
+  const handleInsertReport = () => {
+    if (!editor || !pendingReportText) {
+      return;
+    }
+
+    editor.commands.focus();
+    const insertPos = editor.state.selection.from;
+    const beforeDocument = JSON.stringify(editor.getJSON());
+    const reportRootBlock = buildReportRootBlock(editor, pendingReportText, spaceId);
+
+    const inserted = editor.chain().insertContentAt(insertPos, reportRootBlock).run();
+    const afterDocument = JSON.stringify(editor.getJSON());
+
+    if (inserted && afterDocument !== beforeDocument) {
+      setStatus('✅ Отчет вставлен в документ');
+      setPendingReportText(null);
+      return;
+    }
+
+    console.error('AI report insertion did not change the document, falling back to plain text.');
+    const fallbackInserted = editor.chain().focus().insertContentAt(insertPos, pendingReportText).run();
+    if (fallbackInserted && JSON.stringify(editor.getJSON()) !== beforeDocument) {
+      setStatus('⚠️ Отчет вставлен как обычный текст');
+      setPendingReportText(null);
+      return;
+    }
+
+    console.error('AI report fallback insertion also did not change the document.');
+  };
+
+  const handleInsertReportToNewFile = async () => {
+    if (!pendingReportText) {
+      return;
+    }
+
+    const reportText = pendingReportText;
+
     await withBusy(async (signal) => {
-      const reportRequest = buildAiPageCreationPrompt(activeContext.kind === 'table' ? activeContext.datasheetId : undefined);
-      const reportText = await createReportText(signal, reportRequest);
       const title = buildReportTitle(pageTitle);
       const reportDoc = {
         type: 'doc',
@@ -1460,7 +1497,60 @@ export function AiInlineCopilot({
         href: String(payload.pageUrl ?? `/spaces/${spaceId}/pages/${createdId}`),
         status: String(payload.status ?? 'created'),
       });
+      setPendingReportText(null);
       setOutput(reportText);
+      setStatus('✅ Отчет успешно создан!');
+    });
+  };
+
+  const reportToNewFile = async () => {
+    await withBusy(async (signal) => {
+      const reportRequest = buildAiPageCreationPrompt(activeContext.kind === 'table' ? activeContext.datasheetId : undefined);
+      const reportText = await createReportText(signal, reportRequest);
+      const sanitizedReportText = normalizeReportMarkdown(reportText);
+      const title = buildReportTitle(pageTitle);
+      const reportDoc = {
+        type: 'doc',
+        content: buildReportRootBlock(editor, sanitizedReportText, spaceId),
+      };
+
+      const created = await wikiliveApi.aiExecuteTool({
+        toolName: 'create_wiki_page',
+        args: {
+          workspaceId: spaceId,
+          title,
+          content: reportDoc,
+        },
+        pageId: pageId ?? undefined,
+        workspaceId: spaceId,
+      }, {
+        signal,
+      });
+
+      if (!created.ok) {
+        throw new Error(created.error?.message ?? 'Не удалось создать страницу отчета');
+      }
+
+      const payload = (created.data ?? {}) as {
+        pageId?: string;
+        title?: string;
+        pageLink?: string;
+        pageUrl?: string;
+        status?: string;
+      };
+      const createdId = String(payload.pageId ?? '');
+      if (!createdId) {
+        throw new Error('Сервис не вернул id новой страницы');
+      }
+
+      setCreatedPage({
+        id: createdId,
+        title: String(payload.title ?? title),
+        href: String(payload.pageUrl ?? `/spaces/${spaceId}/pages/${createdId}`),
+        status: String(payload.status ?? 'created'),
+      });
+      setPendingReportText(null);
+      setOutput(sanitizedReportText);
       setStatus('✅ Отчет успешно создан!');
     });
   };
@@ -1490,7 +1580,7 @@ export function AiInlineCopilot({
       if (shouldCreateNewReportDocument(trimmed)) {
         await reportToNewFile();
       } else {
-        await reportToCurrentFile();
+        await prepareReportForCurrentFile();
       }
 
       return;
@@ -1517,6 +1607,7 @@ export function AiInlineCopilot({
           'Верни только текст, который можно вставить в документ.',
         ].join('\n'),
         pageId: pageId ?? undefined,
+        spaceId,
         pageTitle,
         pageSnapshot: { markdown },
         intent: 'chat',
@@ -1561,6 +1652,7 @@ export function AiInlineCopilot({
             : `Текст для анализа:\n${sourceText}`,
         ].join('\n'),
         pageId: pageId ?? undefined,
+        spaceId,
         pageTitle,
         pageSnapshot: { markdown: sourceText },
         intent: 'chat',
@@ -1729,32 +1821,11 @@ export function AiInlineCopilot({
           <button
             type="button"
             className="rounded-md border border-[#ffd9e1] bg-white px-2 py-1 text-xs text-[#5a6170] transition-colors hover:bg-[#fff1f3] disabled:opacity-50"
-            onClick={() => setShowReportActionsMenu((value) => !value)}
+            onClick={() => void prepareReportForCurrentFile()}
             disabled={isBusy}
           >
             Отчет
           </button>
-
-          {showReportActionsMenu ? (
-            <div className="absolute left-0 z-[95] mt-1 w-44 rounded-md border border-[#ffd9e1] bg-white p-1 shadow-[0_8px_20px_rgba(215,0,50,0.08)]">
-              <button
-                type="button"
-                className="block w-full rounded px-2 py-1 text-left text-xs text-[#5a6170] hover:bg-[#fff1f3]"
-                onClick={() => void reportToCurrentFile()}
-                disabled={isBusy}
-              >
-                Вставить здесь
-              </button>
-              <button
-                type="button"
-                className="block w-full rounded px-2 py-1 text-left text-xs text-[#5a6170] hover:bg-[#fff1f3]"
-                onClick={() => void reportToNewFile()}
-                disabled={isBusy}
-              >
-                В новый файл
-              </button>
-            </div>
-          ) : null}
         </div>
 
         <button
@@ -1784,6 +1855,24 @@ export function AiInlineCopilot({
       {status ? <p className="mb-2 text-xs text-editor-text-tertiary">{status}</p> : null}
 
       <div className="max-h-44 overflow-auto rounded-md border border-editor-border-subtle bg-[#fafbfd] p-2 text-xs text-editor-text-primary">
+        {pendingReportText ? (
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={handleInsertReport}
+              className="inline-flex items-center justify-center rounded-md border border-[#d70032] bg-[#d70032] px-3 py-1.5 text-xs font-semibold text-white shadow-[0_8px_16px_rgba(215,0,50,0.14)] transition-colors hover:bg-[#b8002b]"
+            >
+              Добавить в этот документ
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleInsertReportToNewFile()}
+              className="inline-flex items-center justify-center rounded-md border border-[#d70032] bg-white px-3 py-1.5 text-xs font-semibold text-[#d70032] transition-colors hover:bg-[#fff1f3]"
+            >
+              Добавить в новый документ
+            </button>
+          </div>
+        ) : null}
         {structurePlan.length > 0 ? (
           <div className="space-y-2">
             <p className="font-semibold">Я расставлю {structurePlan.length} заголовков:</p>

@@ -159,13 +159,42 @@ function parseMarkdownTableBlock(
   };
 }
 
+function pruneEmptyTextNodes(node: JSONContent): JSONContent | null {
+  if (node.type === 'text') {
+    if (typeof node.text !== 'string' || node.text.length === 0) {
+      return null;
+    }
+
+    return node;
+  }
+
+  if (!Array.isArray(node.content)) {
+    return node;
+  }
+
+  const cleanedContent = node.content.flatMap((child) => {
+    const cleaned = pruneEmptyTextNodes(child);
+    return cleaned ? [cleaned] : [];
+  });
+
+  return cleanedContent.length > 0
+    ? {
+        ...node,
+        content: cleanedContent,
+      }
+    : {
+        ...node,
+      };
+}
+
 function mapNodeWithLiveReferences(node: JSONContent, options: LiveReferenceParseOptions): JSONContent[] {
   if (node.type === 'text' && typeof node.text === 'string' && hasLiveReferenceToken(node.text)) {
     return parseInlineContentWithLiveReferences(node.text, options);
   }
 
   if (!Array.isArray(node.content)) {
-    return [node];
+    const cleaned = pruneEmptyTextNodes(node);
+    return cleaned ? [cleaned] : [];
   }
 
   const mappedContent: JSONContent[] = [];
@@ -173,12 +202,12 @@ function mapNodeWithLiveReferences(node: JSONContent, options: LiveReferencePars
     mappedContent.push(...mapNodeWithLiveReferences(child, options));
   }
 
-  return [
-    {
-      ...node,
-      content: mappedContent,
-    },
-  ];
+  const cleanedNode = pruneEmptyTextNodes({
+    ...node,
+    content: mappedContent,
+  });
+
+  return cleanedNode ? [cleanedNode] : [];
 }
 
 export function parseMarkdownWithLiveReferences(
@@ -203,6 +232,10 @@ export function hasLiveReferenceToken(text: string): boolean {
 
 export function parseInlineContentWithLiveReferences(text: string, options: LiveReferenceParseOptions = {}): JSONContent[] {
   const value = String(text ?? '');
+  if (!value) {
+    return [];
+  }
+
   const parts: JSONContent[] = [];
   let cursor = 0;
 
@@ -213,18 +246,24 @@ export function parseInlineContentWithLiveReferences(text: string, options: Live
     const nextTokenStart = candidates.length > 0 ? Math.min(...candidates) : -1;
 
     if (nextTokenStart < 0) {
-      parts.push({
-        type: 'text',
-        text: value.slice(cursor),
-      });
+      const tail = value.slice(cursor);
+      if (tail) {
+        parts.push({
+          type: 'text',
+          text: tail,
+        });
+      }
       break;
     }
 
     if (nextTokenStart > cursor) {
-      parts.push({
-        type: 'text',
-        text: value.slice(cursor, nextTokenStart),
-      });
+      const chunk = value.slice(cursor, nextTokenStart);
+      if (chunk) {
+        parts.push({
+          type: 'text',
+          text: chunk,
+        });
+      }
     }
 
     if (value.startsWith('[Ref:', nextTokenStart)) {
@@ -264,15 +303,14 @@ export function parseInlineContentWithLiveReferences(text: string, options: Live
       continue;
     }
 
-    parts.push({
-      type: 'text',
-      text: value.slice(nextTokenStart, nextTokenStart + 1),
-    });
+    const singleChar = value.slice(nextTokenStart, nextTokenStart + 1);
+    if (singleChar) {
+      parts.push({
+        type: 'text',
+        text: singleChar,
+      });
+    }
     cursor = nextTokenStart + 1;
-  }
-
-  if (parts.length === 0) {
-    return [{ type: 'text', text: value }];
   }
 
   return parts;
