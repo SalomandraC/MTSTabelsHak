@@ -7,6 +7,14 @@ export class CompletionRequestDto {
   currentText!: string;
 
   @IsOptional()
+  @IsIn(['paragraph', 'heading', 'listItem', 'tableCell', 'formula', 'liveReference'])
+  completionMode?: 'paragraph' | 'heading' | 'listItem' | 'tableCell' | 'formula' | 'liveReference';
+
+  @IsOptional()
+  @IsString()
+  cursorContext?: string;
+
+  @IsOptional()
   @IsString()
   pageTitle?: string;
 

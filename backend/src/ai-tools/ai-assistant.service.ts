@@ -73,6 +73,21 @@ const LIVE_REF_FORMULA_CRITICAL_RULE = [
   'Всегда бери реальные ID таблицы, строки и поля из предоставленного тебе JSON контекста таблицы MWS.',
 ].join(' ');
 
+const COMPLETION_MODE_RULES: Record<NonNullable<PageContextInput['completionMode']>, string> = {
+  paragraph:
+    'Continuation mode: paragraph. Continue the current sentence or paragraph naturally in prose. Do not output a bare table cell address. Use [Formula: ...] only if the surrounding text is explicitly about calculation, totals, averages, percentages, or deltas. Use [Ref:tableId:rowId:colId] only when a live table cell is clearly the intended continuation.',
+  heading:
+    'Continuation mode: heading. Produce a short heading fragment or next heading text. Keep it concise and do not output table-cell addresses.',
+  listItem:
+    'Continuation mode: list item. Continue the bullet or numbered item in a short, concrete sentence. Do not turn it into a table cell address unless the context is explicitly table-like.',
+  tableCell:
+    'Continuation mode: table cell. Continue the current table cell content in standard markdown-table style. Prefer concise prose or a live token if needed; do not output a standalone raw cell address when a sentence or formula fits better.',
+  formula:
+    'Continuation mode: formula. Output a valid live formula token in the form [Formula: ...]. If the formula needs table data, use [Ref:tableId:rowId:colId] inside the expression. Do not output only an address by itself.',
+  liveReference:
+    'Continuation mode: live reference. Output a live reference token in the form [Ref:tableId:rowId:colId] only when the context clearly points to a table cell. Do not output a plain human-readable address or a raw cell coordinate.',
+};
+
 @Injectable()
 export class AiAssistantService {
   private readonly modelChat: string;
@@ -777,14 +792,20 @@ export class AiAssistantService {
   }
 
   buildCompletionMessages(currentText: string, context: PageContextInput = {}): AiChatMessage[] {
+    const modeRule = context.completionMode ? COMPLETION_MODE_RULES[context.completionMode] : '';
+    const cursorContext = context.cursorContext?.trim() ? `\n\nCursor context:\n${context.cursorContext.trim()}` : '';
+
     return [
       {
         role: 'system',
         content: [
           'You are a ghost-text assistant for a wiki editor.',
-          'Continue the current text with a short, natural continuation.',
+          'Continue the current text with a short, natural continuation that matches the local context.',
           'Do not explain your reasoning.',
           'Keep the output brief, relevant, and ready to insert directly into the editor.',
+          'Default to normal prose unless the local context clearly indicates a heading, list item, table cell, formula, or live reference.',
+          'Never output a bare table cell address when a sentence continuation or a live token is more appropriate.',
+          modeRule,
           SAME_LANGUAGE_RULE,
           PROFESSIONAL_TONE_RULE,
         ].join(' '),
@@ -795,7 +816,7 @@ export class AiAssistantService {
           title: context.pageTitle,
           heading: 'Current text',
           body: currentText,
-        }),
+        }) + cursorContext + this.renderContextSnapshot(context.pageSnapshot),
       },
     ];
   }

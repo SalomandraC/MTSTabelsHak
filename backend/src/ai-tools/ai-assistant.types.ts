@@ -18,6 +18,8 @@ export interface PageContextInput {
   pageTitle?: string;
   pageSnapshot?: Record<string, unknown> | string;
   selectedText?: string;
+  completionMode?: 'paragraph' | 'heading' | 'listItem' | 'tableCell' | 'formula' | 'liveReference';
+  cursorContext?: string;
 }
 
 export interface ChatContextInput {

@@ -31,6 +31,8 @@ describe('AiAssistantService', () => {
 
     const result = await service.getCompletion('Current sentence', {
       pageTitle: 'Demo page',
+      completionMode: 'paragraph',
+      cursorContext: 'Текущий абзац с пояснением',
     });
 
     expect(result.text).toBe('continue the sentence');
@@ -44,8 +46,12 @@ describe('AiAssistantService', () => {
 
     const request = aiProviderClientService.complete.mock.calls[0][0];
     expect(request.messages[0].content).toContain('ghost-text assistant');
+    expect(request.messages[0].content).toContain('Continuation mode: paragraph');
+    expect(request.messages[0].content).toContain('Never output a bare table cell address');
     expect(request.messages[1].content).toContain('Current sentence');
     expect(request.messages[1].content).toContain('Page title: Demo page');
+    expect(request.messages[1].content).toContain('Cursor context:');
+    expect(request.messages[1].content).toContain('Текущий абзац с пояснением');
   });
 
   it('requests JSON output for content generation', async () => {

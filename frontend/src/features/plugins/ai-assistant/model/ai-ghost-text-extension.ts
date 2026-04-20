@@ -14,6 +14,8 @@ type AIGhostTextStorage = {
   anchorPos: number | null;
 };
 
+type GhostCompletionMode = 'paragraph' | 'heading' | 'listItem' | 'tableCell' | 'formula' | 'liveReference';
+
 type CopilotVisibilityEvent = CustomEvent<{ open: boolean }>;
 
 const ghostTextPluginKey = new PluginKey<DecorationSet>('aiGhostTextPlugin');
@@ -61,6 +63,51 @@ function isSlashCommandActive(editor: { state: any }): boolean {
   );
 
   return /(?:^|\s)\/[^\n]*$/u.test(textBeforeCursor);
+}
+
+function inferCompletionMode(currentText: string): GhostCompletionMode {
+  const normalized = String(currentText ?? '').replace(/\r\n/g, '\n');
+  const lines = normalized.split('\n');
+  const lastLine = (lines[lines.length - 1] ?? '').trim();
+  const contextWindow = normalized.slice(-320);
+
+  if (/^#{1,6}\s+/.test(lastLine)) {
+    return 'heading';
+  }
+
+  if (/^[-*]\s+/.test(lastLine) || /^\d+\.\s+/.test(lastLine)) {
+    return 'listItem';
+  }
+
+  if (/\|/.test(lastLine) && /\|\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?/.test(normalized)) {
+    return 'tableCell';
+  }
+
+  if (/\[Formula:|\b(итог|сумм|средн|процент|delta|разниц|вычисл|kpi|марж|формул|ratio|average|total)\b/i.test(contextWindow)) {
+    return 'formula';
+  }
+
+  if (/\[Ref:|\b(ячейк|показател|значени|строк|колонк|таблиц|ссылка)\b/i.test(contextWindow)) {
+    return 'liveReference';
+  }
+
+  return 'paragraph';
+}
+
+function getMinCharsForMode(mode: GhostCompletionMode, baseMinChars: number): number {
+  switch (mode) {
+    case 'heading':
+    case 'listItem':
+      return Math.min(baseMinChars, 6);
+    case 'tableCell':
+      return Math.min(baseMinChars, 4);
+    case 'formula':
+    case 'liveReference':
+      return Math.min(baseMinChars, 2);
+    case 'paragraph':
+    default:
+      return Math.min(baseMinChars, 12);
+  }
 }
 
 function clearSuggestion(instance: {
@@ -211,8 +258,10 @@ function scheduleGhostSuggestion(instance: {
   }
 
   const currentText = buildContextWithFullWord(instance.editor);
+  const completionMode = inferCompletionMode(currentText);
+  const minChars = getMinCharsForMode(completionMode, instance.options.minChars);
 
-  if (currentText.trim().length < instance.options.minChars) {
+  if (currentText.trim().length < minChars) {
     clearSuggestion(instance);
     window.clearTimeout(instance.__aiGhostTimer);
     return;
@@ -271,7 +320,7 @@ export const AIGhostTextExtension = Extension.create<AIGhostTextOptions, AIGhost
   addOptions() {
     return {
       debounceMs: 700,
-      minChars: 24,
+      minChars: 16,
       fetchCompletion: async () => '',
     };
   },

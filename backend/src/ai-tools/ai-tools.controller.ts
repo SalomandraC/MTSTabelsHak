@@ -35,6 +35,8 @@ export class AiToolsController {
   @Public()
   autocomplete(@Body() dto: CompletionRequestDto) {
     return this.aiAssistantService.getCompletion(dto.currentText, {
+      completionMode: dto.completionMode,
+      cursorContext: dto.cursorContext,
       pageTitle: dto.pageTitle,
       pageSnapshot: dto.pageSnapshot,
     });

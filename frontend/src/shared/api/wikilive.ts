@@ -512,6 +512,8 @@ export type AiAutocompletePayload = {
   currentText: string;
   pageTitle?: string;
   pageSnapshot?: Record<string, unknown> | string;
+  completionMode?: 'paragraph' | 'heading' | 'listItem' | 'tableCell' | 'formula' | 'liveReference';
+  cursorContext?: string;
 };
 
 export type AiGeneratePayload = {

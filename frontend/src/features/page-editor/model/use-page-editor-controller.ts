@@ -160,6 +160,46 @@ function normalizeTemplateKey(label: string): string {
     .slice(0, 40) || `template_${Math.random().toString(16).slice(2, 8)}`;
 }
 
+type GhostCompletionMode = 'paragraph' | 'heading' | 'listItem' | 'tableCell' | 'formula' | 'liveReference';
+
+function inferGhostCompletionMode(currentText: string): GhostCompletionMode {
+  const normalized = String(currentText ?? '').replace(/\r\n/g, '\n');
+  const lines = normalized.split('\n');
+  const nonEmptyLines = lines.map((line) => line.trim()).filter(Boolean);
+  const lastLine = nonEmptyLines[nonEmptyLines.length - 1] ?? '';
+  const tail = nonEmptyLines.slice(-3).join(' ');
+  const contextWindow = `${tail} ${normalized.slice(-240)}`.trim();
+
+  if (/^#{1,6}\s+/.test(lastLine)) {
+    return 'heading';
+  }
+
+  if (/^[-*]\s+/.test(lastLine) || /^\d+\.\s+/.test(lastLine)) {
+    return 'listItem';
+  }
+
+  if (/\|/.test(lastLine) && /\|\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?/.test(normalized)) {
+    return 'tableCell';
+  }
+
+  if (/\[Formula:|\b(итог|сумм|средн|процент|delta|разниц|вычисл|kpi|марж|формул|ratio|average|total)\b/i.test(contextWindow)) {
+    return 'formula';
+  }
+
+  if (/\[Ref:|\b(ячейк|показател|значени|строк|колонк|таблиц|ссылка)\b/i.test(contextWindow)) {
+    return 'liveReference';
+  }
+
+  return 'paragraph';
+}
+
+function buildGhostCursorContext(currentText: string): string {
+  const normalized = String(currentText ?? '').replace(/\r\n/g, '\n').trimEnd();
+  const lines = normalized.split('\n');
+  const tailLines = lines.slice(-4);
+  return tailLines.join('\n').slice(-500);
+}
+
 export function usePageEditorController({
   spaceId,
   page,
@@ -355,11 +395,17 @@ export function usePageEditorController({
             return '';
           }
 
+          const completionMode = inferGhostCompletionMode(currentText);
+          const cursorContext = buildGhostCursorContext(currentText);
           const response = await wikiliveApi.aiAutocomplete({
             currentText,
             pageTitle: page?.title,
+            completionMode,
+            cursorContext,
             pageSnapshot: {
               markdown: currentText,
+              completionMode,
+              cursorContext,
             },
           });
 
