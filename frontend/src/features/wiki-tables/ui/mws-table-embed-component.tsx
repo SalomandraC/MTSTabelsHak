@@ -912,7 +912,11 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         onSubmit={(payload) => {
           void controller
             .createField(payload)
-            .then(() => setIsCreateFieldModalOpen(false));
+            .then((created) => {
+              if (created) {
+                setIsCreateFieldModalOpen(false);
+              }
+            });
         }}
       />
       <HideFieldsModal

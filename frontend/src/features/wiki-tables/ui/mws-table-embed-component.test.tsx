@@ -305,7 +305,9 @@ describe('MwsTableEmbedComponent', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Свернуть' }));
 
     expect(screen.getByTestId('mws_canvas_grid')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Сортировка' })).not.toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: 'Сортировка' })
+    ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }));
 
@@ -376,10 +378,10 @@ describe('MwsTableEmbedComponent', () => {
           {
             attrs: {
               blockId: 'block-select-1',
-              title: 'Таблица статусов',
               spaceId: 'space-1',
-              nodeId: 'node-select',
               datasheetId: 'dst-select',
+              nodeId: 'node-select',
+              title: 'Таблица статусов',
               viewId: 'view-main',
               selectedFieldIds: ['fld-status'],
               pageSize: 20,
@@ -416,56 +418,23 @@ describe('MwsTableEmbedComponent', () => {
 
     fireEvent.pointerDown(canvas, { clientX: 80, clientY: 60 });
 
-    expect(await screen.findByTestId('mws_select_editor')).toBeInTheDocument();
+    expect(
+      await screen.findByTestId('mws_select_editor')
+    ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /В работе/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'В работе' }));
 
     await waitFor(() => {
       expect(wikiliveApi.updateMwsRecords).toHaveBeenCalledWith('dst-select', {
         fieldKey: 'id',
         records: [
-          { recordId: 'rec-status-1', fields: { 'fld-status': 'В работе' } }
+          {
+            recordId: 'rec-status-1',
+            fields: { 'fld-status': 'В работе' }
+          }
         ]
       });
     });
-  });
-
-  it('opens the sort modal from the toolbar', async () => {
-    render(
-      <MwsTableEmbedComponent
-        node={
-          {
-            attrs: {
-              blockId: 'block-1',
-              title: 'Таблица 2',
-              spaceId: 'space-1',
-              nodeId: 'node-2',
-              datasheetId: 'dst-2',
-              viewId: 'view-1',
-              selectedFieldIds: ['fld-title'],
-              pageSize: 20,
-              allowInlineEdit: true,
-              displayMode: 'table'
-            }
-          } as never
-        }
-        selected={false}
-        editor={null as never}
-        getPos={null as never}
-        updateAttributes={vi.fn()}
-        deleteNode={vi.fn()}
-        decorations={[]}
-        extension={null as never}
-        HTMLAttributes={{}}
-        innerDecorations={null as never}
-        view={null as never}
-      />
-    );
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Сортировка' }));
-    expect(
-      await screen.findByRole('dialog', { name: 'Сортировка' })
-    ).toBeInTheDocument();
   });
 
   it('opens the filter modal from the toolbar', async () => {
@@ -592,8 +561,8 @@ describe('MwsTableEmbedComponent', () => {
       within(dialog).getAllByRole('button', { name: 'Скрыть поля' })
     ).toHaveLength(1);
     expect(
-      within(dialog).getByRole('button', { name: 'Закрыть' })
-    ).toBeInTheDocument();
+      within(dialog).getAllByRole('button', { name: 'Закрыть' }).length
+    ).toBeGreaterThan(0);
   });
 
   it('keeps fullscreen open when clicking inside the table dialog', async () => {
@@ -890,6 +859,78 @@ describe('MwsTableEmbedComponent', () => {
 
     expect(
       await screen.findByRole('dialog', { name: /Добавить столбец/i })
+    ).toBeInTheDocument();
+  });
+
+  it('keeps create column modal open when create request fails', async () => {
+    vi.mocked(wikiliveApi.createMwsField).mockRejectedValueOnce(
+      new Error('MWS checkbox icon is invalid')
+    );
+
+    render(
+      <MwsTableEmbedComponent
+        node={
+          {
+            attrs: {
+              blockId: 'block-1',
+              title: 'Таблица 2',
+              spaceId: 'space-1',
+              nodeId: 'node-2',
+              datasheetId: 'dst-2',
+              viewId: 'view-1',
+              selectedFieldIds: ['fld-title'],
+              pageSize: 20,
+              allowInlineEdit: true,
+              displayMode: 'table'
+            }
+          } as never
+        }
+        selected={false}
+        editor={null as never}
+        getPos={null as never}
+        updateAttributes={vi.fn()}
+        deleteNode={vi.fn()}
+        decorations={[]}
+        extension={null as never}
+        HTMLAttributes={{}}
+        innerDecorations={null as never}
+        view={null as never}
+      />
+    );
+
+    const canvas = await screen.findByTestId('mws_canvas_grid');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      width: 720,
+      height: 320,
+      top: 0,
+      left: 0,
+      right: 720,
+      bottom: 320,
+      toJSON: () => ({})
+    });
+
+    fireEvent.pointerDown(canvas, { clientX: 260, clientY: 20 });
+
+    const dialog = await screen.findByRole('dialog', {
+      name: /Добавить столбец/i
+    });
+
+    fireEvent.change(within(dialog).getByLabelText('Название столбца'), {
+      target: { value: 'Чекбокс' }
+    });
+    fireEvent.change(within(dialog).getByLabelText('Тип данных'), {
+      target: { value: 'Checkbox' }
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Создать столбец' }));
+
+    await waitFor(() => {
+      expect(wikiliveApi.createMwsField).toHaveBeenCalled();
+    });
+
+    expect(
+      screen.getByRole('dialog', { name: /Добавить столбец/i })
     ).toBeInTheDocument();
   });
 

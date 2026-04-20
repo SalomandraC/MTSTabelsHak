@@ -282,6 +282,162 @@ function readAttachmentUrl(value: unknown): string | null {
   return typeof raw === 'string' && raw.trim().length > 0 ? raw : null;
 }
 
+function readNumericFieldValue(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value
+      .trim()
+      .replace(/\s+/g, '')
+      .replace(',', '.')
+      .replace('%', '')
+      .replace(/[^0-9.+-]/g, '');
+    if (!normalized) {
+      return null;
+    }
+
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  if (value && typeof value === 'object') {
+    const nestedValue =
+      (value as { value?: unknown; number?: unknown }).value ??
+      (value as { value?: unknown; number?: unknown }).number;
+    return readNumericFieldValue(nestedValue);
+  }
+
+  return null;
+}
+
+function readDateTimestamp(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  if (value && typeof value === 'object') {
+    const nestedValue =
+      (value as { value?: unknown; date?: unknown; timestamp?: unknown }).
+        value ??
+      (value as { value?: unknown; date?: unknown; timestamp?: unknown }).
+        date ??
+      (value as { value?: unknown; date?: unknown; timestamp?: unknown })
+        .timestamp;
+    return readDateTimestamp(nestedValue);
+  }
+
+  return null;
+}
+
+function formatNumberValue(value: number, precision?: number): string {
+  if (typeof precision === 'number' && precision >= 0) {
+    return new Intl.NumberFormat('ru-RU', {
+      minimumFractionDigits: precision,
+      maximumFractionDigits: precision,
+    }).format(value);
+  }
+
+  return new Intl.NumberFormat('ru-RU', {
+    maximumFractionDigits: 6,
+  }).format(value);
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function formatDatePart(date: Date, pattern: string): string {
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  switch (pattern) {
+    case 'YYYY/MM/DD':
+      return `${year}/${month}/${day}`;
+    case 'YYYY-MM-DD':
+      return `${year}-${month}-${day}`;
+    case 'DD/MM/YYYY':
+      return `${day}/${month}/${year}`;
+    case 'YYYY-MM':
+      return `${year}-${month}`;
+    case 'MM-DD':
+      return `${month}-${day}`;
+    case 'YYYY':
+      return year;
+    case 'MM':
+      return month;
+    case 'DD':
+      return day;
+    default:
+      return `${year}-${month}-${day}`;
+  }
+}
+
+function formatTimePart(date: Date, pattern: string): string {
+  const hours24 = date.getHours();
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+
+  if (pattern === 'hh:mm') {
+    const hours12 = hours24 % 12 || 12;
+    return `${String(hours12).padStart(2, '0')}:${minutes}`;
+  }
+
+  return `${String(hours24).padStart(2, '0')}:${minutes}`;
+}
+
+function renderPrimitiveValue(value: unknown): string {
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
+    return String(value);
+  }
+
+  if (value && typeof value === 'object') {
+    const candidate = value as {
+      text?: unknown;
+      title?: unknown;
+      name?: unknown;
+      value?: unknown;
+      label?: unknown;
+      email?: unknown;
+      phone?: unknown;
+      url?: unknown;
+      href?: unknown;
+    };
+
+    for (const next of [
+      candidate.text,
+      candidate.title,
+      candidate.name,
+      candidate.label,
+      candidate.email,
+      candidate.phone,
+      candidate.url,
+      candidate.href,
+      candidate.value,
+    ]) {
+      if (typeof next === 'string' && next.trim()) {
+        return next;
+      }
+    }
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '';
+  }
+}
+
 function normalizeSortValue(
   rawValue: unknown,
   field: MwsField
@@ -295,16 +451,13 @@ function normalizeSortValue(
     field.type === 'Currency' ||
     field.type === 'Percent'
   ) {
-    const numeric =
-      typeof rawValue === 'number'
-        ? rawValue
-        : Number(renderCell(rawValue, field));
-    return Number.isFinite(numeric) ? numeric : renderCell(rawValue, field);
+    const numeric = readNumericFieldValue(rawValue);
+    return isFiniteNumber(numeric) ? numeric : renderCell(rawValue, field);
   }
 
   if (field.type === 'DateTime') {
-    const parsed = Date.parse(renderCell(rawValue, field));
-    return Number.isFinite(parsed) ? parsed : renderCell(rawValue, field);
+    const parsed = readDateTimestamp(rawValue);
+    return isFiniteNumber(parsed) ? parsed : renderCell(rawValue, field);
   }
 
   return renderCell(rawValue, field).toLowerCase();
@@ -531,6 +684,107 @@ export function renderCell(value: unknown, field?: MwsField): string {
     return '';
   }
 
+  if (field?.type === 'Checkbox') {
+    const checked =
+      typeof value === 'boolean'
+        ? value
+        : typeof value === 'number'
+          ? value !== 0
+          : typeof value === 'string'
+            ? ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
+            : Boolean(value);
+
+    return checked ? '✓' : '';
+  }
+
+  if (field?.type === 'SingleSelect' || field?.type === 'MultiSelect') {
+    return readSelectedOptionNames(value).join(', ');
+  }
+
+  if (field?.type === 'Number') {
+    const numeric = readNumericFieldValue(value);
+    if (!isFiniteNumber(numeric)) {
+      return renderPrimitiveValue(value);
+    }
+
+    const precision =
+      typeof field.property?.precision === 'number'
+        ? field.property.precision
+        : undefined;
+    return formatNumberValue(numeric, precision);
+  }
+
+  if (field?.type === 'Currency') {
+    const numeric = readNumericFieldValue(value);
+    if (!isFiniteNumber(numeric)) {
+      return renderPrimitiveValue(value);
+    }
+
+    const precision =
+      typeof field.property?.precision === 'number'
+        ? field.property.precision
+        : 2;
+    const symbol =
+      typeof field.property?.symbol === 'string' &&
+      field.property.symbol.trim().length > 0
+        ? field.property.symbol
+        : '₽';
+    const symbolAlign =
+      typeof field.property?.symbolAlign === 'string'
+        ? field.property.symbolAlign
+        : 'Left';
+    const rendered = formatNumberValue(numeric, precision);
+
+    return symbolAlign.toLowerCase() === 'right'
+      ? `${rendered} ${symbol}`
+      : `${symbol} ${rendered}`;
+  }
+
+  if (field?.type === 'Percent') {
+    const numeric = readNumericFieldValue(value);
+    if (!isFiniteNumber(numeric)) {
+      return renderPrimitiveValue(value);
+    }
+
+    const precision =
+      typeof field.property?.precision === 'number'
+        ? field.property.precision
+        : 0;
+    return `${formatNumberValue(numeric, precision)}%`;
+  }
+
+  if (field?.type === 'DateTime') {
+    const timestamp = readDateTimestamp(value);
+    if (!isFiniteNumber(timestamp)) {
+      return renderPrimitiveValue(value);
+    }
+
+    const date = new Date(timestamp);
+    const dateFormat =
+      typeof field.property?.dateFormat === 'string'
+        ? field.property.dateFormat
+        : 'YYYY-MM-DD';
+    const includeTime = Boolean(field.property?.includeTime);
+    const timeFormat =
+      typeof field.property?.timeFormat === 'string'
+        ? field.property.timeFormat
+        : 'HH:mm';
+    const datePart = formatDatePart(date, dateFormat);
+    if (!includeTime) {
+      return datePart;
+    }
+
+    return `${datePart} ${formatTimePart(date, timeFormat)}`;
+  }
+
+  if (
+    field?.type === 'URL' ||
+    field?.type === 'Email' ||
+    field?.type === 'Phone'
+  ) {
+    return renderPrimitiveValue(value);
+  }
+
   if (
     typeof value === 'string' ||
     typeof value === 'number' ||
@@ -543,31 +797,131 @@ export function renderCell(value: unknown, field?: MwsField): string {
     return value.map((item) => renderCell(item, field)).join(', ');
   }
 
-  return JSON.stringify(value);
+  return renderPrimitiveValue(value);
 }
 
 export function getFieldValue(record: MwsRecord, field: MwsField) {
   return record.fields[field.id] ?? record.fields[field.name];
 }
 
-function parseEditedValue(field: MwsField, value: unknown) {
+type ParsedFieldValue = {
+  value: unknown;
+  errorMessage: string | null;
+};
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function isValidPhone(value: string) {
+  const cleaned = value.replace(/[\s()-]/g, '');
+  const digitsCount = cleaned.replace(/[^0-9]/g, '').length;
+  return /^[+0-9][0-9+\-()\s]{4,24}$/.test(value) && digitsCount >= 5;
+}
+
+function isValidUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export function parseEditedValue(field: MwsField, value: unknown): ParsedFieldValue {
   if (field.type === 'Checkbox') {
-    return Boolean(value);
+    return {
+      value: Boolean(value),
+      errorMessage: null,
+    };
   }
 
   if (field.type === 'SingleSelect') {
-    return value;
+    return {
+      value,
+      errorMessage: null,
+    };
   }
 
   if (field.type === 'MultiSelect') {
-    return Array.isArray(value) ? value : [];
+    return {
+      value: Array.isArray(value) ? value : [],
+      errorMessage: null,
+    };
   }
 
   if (['Number', 'Currency', 'Percent'].includes(field.type)) {
-    return value === '' ? null : Number(value);
+    if (value === '' || value === null || value === undefined) {
+      return {
+        value: null,
+        errorMessage: null,
+      };
+    }
+
+    const numeric = readNumericFieldValue(value);
+    if (!isFiniteNumber(numeric)) {
+      return {
+        value: null,
+        errorMessage: 'Введите корректное числовое значение',
+      };
+    }
+
+    return {
+      value: numeric,
+      errorMessage: null,
+    };
   }
 
-  return String(value);
+  if (field.type === 'DateTime') {
+    const normalized = String(value ?? '').trim();
+    if (!normalized) {
+      return {
+        value: null,
+        errorMessage: null,
+      };
+    }
+
+    const timestamp = readDateTimestamp(normalized);
+    if (!isFiniteNumber(timestamp)) {
+      return {
+        value: null,
+        errorMessage: 'Введите корректную дату и время',
+      };
+    }
+
+    return {
+      value: normalized,
+      errorMessage: null,
+    };
+  }
+
+  const normalized = String(value ?? '').trim();
+
+  if (field.type === 'Email' && normalized && !isValidEmail(normalized)) {
+    return {
+      value: normalized,
+      errorMessage: 'Введите корректный email адрес',
+    };
+  }
+
+  if (field.type === 'Phone' && normalized && !isValidPhone(normalized)) {
+    return {
+      value: normalized,
+      errorMessage: 'Введите корректный номер телефона',
+    };
+  }
+
+  if (field.type === 'URL' && normalized && !isValidUrl(normalized)) {
+    return {
+      value: normalized,
+      errorMessage: 'Введите корректную ссылку (http:// или https://)',
+    };
+  }
+
+  return {
+    value: normalized,
+    errorMessage: null,
+  };
 }
 
 function readOptionName(value: unknown): string | null {
@@ -1145,17 +1499,25 @@ export function useWikiTableEmbed(
 
   const updateCell = (record: MwsRecord, field: MwsField, value: unknown) => {
     if (!attrs.datasheetId || !EDITABLE_FIELD_TYPES.has(field.type)) {
-      return;
+      return false;
     }
 
-    const parsedValue = parseEditedValue(field, value);
+    const parsed = parseEditedValue(field, value);
+    if (parsed.errorMessage) {
+      setStaleMessage(parsed.errorMessage);
+      return false;
+    }
+
+    const parsedValue = parsed.value;
     const currentValue = getFieldValue(record, field);
     if (
       JSON.stringify(currentValue ?? null) ===
       JSON.stringify(parsedValue ?? null)
     ) {
-      return;
+      return true;
     }
+
+    setStaleMessage('');
 
     // Optimistic update: reflect cell edit immediately in UI.
     setRecords((current) =>
@@ -1192,6 +1554,8 @@ export function useWikiTableEmbed(
           error instanceof Error ? error.message : 'Не удалось обновить ячейку'
         );
       });
+
+    return true;
   };
 
   const createRow = async () => {
@@ -1279,7 +1643,7 @@ export function useWikiTableEmbed(
     payload: Omit<CreateMwsFieldPayload, 'spaceId'>
   ) => {
     if (!attrs.datasheetId || !attrs.spaceId) {
-      return;
+      return false;
     }
 
     const optimisticField: MwsField = {
@@ -1312,74 +1676,79 @@ export function useWikiTableEmbed(
       }))
     );
     setStaleMessage('');
+    setIsMutating(true);
 
-    void wikiliveApi
-      .createMwsField(attrs.datasheetId, {
+    try {
+      const response = await wikiliveApi.createMwsField(attrs.datasheetId, {
         spaceId: attrs.spaceId,
         ...payload
-      })
-      .then((response) => {
-        const createdField = response.field;
-        if (!createdField) {
-          return loadEmbed({ silent: true });
+      });
+
+      const createdField = response.field;
+      if (!createdField) {
+        await loadEmbed({ silent: true });
+        return true;
+      }
+
+      setData((current) => {
+        if (!current) {
+          return current;
         }
 
-        setData((current) => {
-          if (!current) {
-            return current;
+        return {
+          ...current,
+          embed: {
+            ...current.embed,
+            fields: current.embed.fields.map((field) =>
+              field.id === optimisticField.id ? createdField : field
+            )
           }
-
-          return {
-            ...current,
-            embed: {
-              ...current.embed,
-              fields: current.embed.fields.map((field) =>
-                field.id === optimisticField.id ? createdField : field
-              )
-            }
-          };
-        });
-        setRecords((current) =>
-          current.map((record) => {
-            if (!(optimisticField.id in record.fields)) {
-              return record;
-            }
-
-            const nextFields = { ...record.fields };
-            nextFields[createdField.id] = nextFields[optimisticField.id];
-            delete nextFields[optimisticField.id];
-            return { ...record, fields: nextFields };
-          })
-        );
-        setStaleMessage('');
-      })
-      .catch((error) => {
-        setData((current) => {
-          if (!current) {
-            return current;
-          }
-
-          return {
-            ...current,
-            embed: {
-              ...current.embed,
-              fields: current.embed.fields.filter(
-                (field) => field.id !== optimisticField.id
-              )
-            }
-          };
-        });
-        setRecords((current) =>
-          current.map((record) => {
-            const nextFields = { ...record.fields };
-            delete nextFields[optimisticField.id];
-            return { ...record, fields: nextFields };
-          })
-        );
-        setStaleMessage(
-          error instanceof Error ? error.message : 'Не удалось создать столбец'
-        );
+        };
       });
+      setRecords((current) =>
+        current.map((record) => {
+          if (!(optimisticField.id in record.fields)) {
+            return record;
+          }
+
+          const nextFields = { ...record.fields };
+          nextFields[createdField.id] = nextFields[optimisticField.id];
+          delete nextFields[optimisticField.id];
+          return { ...record, fields: nextFields };
+        })
+      );
+      setStaleMessage('');
+      return true;
+    } catch (error) {
+      setData((current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          embed: {
+            ...current.embed,
+            fields: current.embed.fields.filter(
+              (field) => field.id !== optimisticField.id
+            )
+          }
+        };
+      });
+      setRecords((current) =>
+        current.map((record) => {
+          const nextFields = { ...record.fields };
+          delete nextFields[optimisticField.id];
+          return { ...record, fields: nextFields };
+        })
+      );
+      setStaleMessage(
+        error instanceof Error ? error.message : 'Не удалось создать столбец'
+      );
+      return false;
+    } finally {
+      setIsMutating(false);
+    }
   };
 
   const applyAiField = (field: MwsField | null) => {
@@ -1661,11 +2030,16 @@ export function useWikiTableEmbed(
     const row = visibleRows[editingCell.rowIndex];
     const record = row && row.kind === 'record' ? row.record : null;
     const field = visibleFields[editingCell.fieldIndex];
-    setEditingCell(null);
 
     if (record && field) {
-      void updateCell(record, field, editingCell.value);
+      const committed = updateCell(record, field, editingCell.value);
+      if (committed) {
+        setEditingCell(null);
+      }
+      return;
     }
+
+    setEditingCell(null);
   };
 
   const clearSelectValue = () => {

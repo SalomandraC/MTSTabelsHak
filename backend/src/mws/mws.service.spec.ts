@@ -57,6 +57,62 @@ describe('MwsService', () => {
     });
   });
 
+  it('omits empty property for checkbox create to rely on MWS defaults', async () => {
+    const requestSpy = jest.spyOn(service as any, 'request') as jest.Mock;
+    requestSpy.mockResolvedValue({
+      data: { id: 'fld-checkbox', name: 'Чекбокс' },
+    });
+
+    await service.createField(
+      'space-1',
+      'dst-1',
+      {
+        name: 'Чекбокс',
+        type: 'Checkbox',
+        property: {},
+      },
+      user,
+    );
+
+    expect(requestSpy).toHaveBeenCalledTimes(1);
+    const [calledUser, method, path, payload] = requestSpy.mock.calls[0] ?? [];
+    expect(calledUser).toEqual(user);
+    expect(method).toBe('POST');
+    expect(path).toBe('/spaces/space-1/datasheets/dst-1/fields');
+    expect(payload).toEqual({
+      name: 'Чекбокс',
+      type: 'Checkbox',
+    });
+  });
+
+  it('omits empty property for phone/email/url field types', async () => {
+    const requestSpy = jest.spyOn(service as any, 'request') as jest.Mock;
+    requestSpy.mockResolvedValue({
+      data: { id: 'fld-phone', name: 'Телефон' },
+    });
+
+    await service.createField(
+      'space-1',
+      'dst-1',
+      {
+        name: 'Телефон',
+        type: 'Phone',
+        property: {},
+      },
+      user,
+    );
+
+    expect(requestSpy).toHaveBeenCalledTimes(1);
+    const [calledUser, method, path, payload] = requestSpy.mock.calls[0] ?? [];
+    expect(calledUser).toEqual(user);
+    expect(method).toBe('POST');
+    expect(path).toBe('/spaces/space-1/datasheets/dst-1/fields');
+    expect(payload).toEqual({
+      name: 'Телефон',
+      type: 'Phone',
+    });
+  });
+
   it('normalizes created records from the YAML response shape', async () => {
     const requestSpy = jest.spyOn(service as any, 'request') as jest.Mock;
     requestSpy.mockResolvedValue({

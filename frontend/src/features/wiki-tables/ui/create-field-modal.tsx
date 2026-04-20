@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 
 import { ModalActionButton } from '../../../shared/ui';
 import {
@@ -44,11 +44,33 @@ export function CreateFieldModal({
   const [dateFormat, setDateFormat] = useState('YYYY-MM-DD');
   const [timeFormat, setTimeFormat] = useState('HH:mm');
   const [includeTime, setIncludeTime] = useState(false);
-  const [checkboxIcon, setCheckboxIcon] = useState('check');
+  const [checkboxIcon, setCheckboxIcon] = useState('');
   const [selectOptions, setSelectOptions] = useState<SelectOptionDraft[]>([
     createEmptyOption(1),
     createEmptyOption(2)
   ]);
+
+  const resetForm = () => {
+    setName('');
+    setType('SingleText');
+    setDefaultValue('');
+    setPrecision(0);
+    setSymbol('₽');
+    setSymbolAlign('Left');
+    setDateFormat('YYYY-MM-DD');
+    setTimeFormat('HH:mm');
+    setIncludeTime(false);
+    setCheckboxIcon('');
+    setSelectOptions([createEmptyOption(1), createEmptyOption(2)]);
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    resetForm();
+  }, [isOpen]);
 
   const isSelectType = type === 'SingleSelect' || type === 'MultiSelect';
   const canSubmit =

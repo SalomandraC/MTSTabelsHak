@@ -272,4 +272,64 @@ describe('useWikiTableEmbed', () => {
       expect(result.current.visibleFields.map((field) => field.id)).toEqual(['fld-title']);
     });
   });
+
+  it('blocks invalid email edits in table cells and does not call update API', async () => {
+    vi.mocked(wikiliveApi.resolveTableEmbed).mockResolvedValueOnce({
+      ...RESOLVE_TABLE_EMBED_MOCK,
+      embed: {
+        ...RESOLVE_TABLE_EMBED_MOCK.embed,
+        fields: [{ id: 'fld-email', name: 'Email', type: 'Email' }],
+        preview: {
+          ...RESOLVE_TABLE_EMBED_MOCK.embed.preview,
+          items: [
+            {
+              recordId: 'rec-1',
+              fields: {
+                'fld-email': 'user@example.com',
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    const attrs = {
+      blockId: 'block-1',
+      title: 'Таблица 2',
+      spaceId: 'space-1',
+      nodeId: 'node-2',
+      datasheetId: 'dst-2',
+      viewId: 'view-1',
+      selectedFieldIds: ['fld-email'],
+      pageSize: 20,
+      allowInlineEdit: true,
+      displayMode: 'table' as const,
+    };
+
+    const { result } = renderHook(() => useWikiTableEmbed(attrs));
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    act(() => {
+      result.current.setEditingCell({
+        rowIndex: 0,
+        fieldIndex: 0,
+        left: 0,
+        top: 0,
+        width: 100,
+        height: 38,
+        value: 'invalid-email',
+      });
+    });
+
+    act(() => {
+      result.current.commitEdit();
+    });
+
+    expect(result.current.staleMessage).toBe('Введите корректный email адрес');
+    expect(result.current.editingCell).not.toBeNull();
+    expect(wikiliveApi.updateMwsRecords).not.toHaveBeenCalled();
+  });
 });

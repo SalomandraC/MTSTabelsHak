@@ -415,18 +415,19 @@ export class MwsService {
   }
 
   async createField(spaceId: string, datasheetId: string, dto: CreateMwsFieldDto, user: UserContext) {
+    const requestPayload = this.normalizeCreateFieldPayload(dto);
     const data = await this.request(
       user,
       'POST',
       `/spaces/${spaceId}/datasheets/${datasheetId}/fields`,
-      dto,
+      requestPayload,
     );
     await this.invalidateDatasheetCache(datasheetId);
     return {
       field: this.normalizeField(this.unwrapPayload(data), {
-        name: dto.name,
-        type: dto.type,
-        property: dto.property,
+        name: requestPayload.name,
+        type: requestPayload.type,
+        property: requestPayload.property,
       }),
     };
   }
@@ -1215,6 +1216,58 @@ export class MwsService {
     } catch {
       return value;
     }
+  }
+
+  private normalizeCreateFieldPayload(dto: CreateMwsFieldDto): CreateMwsFieldDto {
+    const normalizedName = dto.name.trim();
+    const normalizedType = dto.type;
+    const property = this.readObject(dto.property);
+
+    const emptyProperty = !property || Object.keys(property).length === 0;
+    const propertyShouldBeOptional = new Set([
+      'Text',
+      'Attachment',
+      'URL',
+      'Phone',
+      'Email',
+      'WorkDoc',
+      'AutoNumber',
+      'CreatedTime',
+      'LastModifiedTime',
+      'CreatedBy',
+      'LastModifiedBy',
+    ]);
+
+    if (normalizedType === 'Checkbox') {
+      const icon =
+        property && typeof property.icon === 'string' ? property.icon.trim() : '';
+
+      if (!icon) {
+        return {
+          name: normalizedName,
+          type: normalizedType,
+        };
+      }
+
+      return {
+        name: normalizedName,
+        type: normalizedType,
+        property: { ...property, icon },
+      };
+    }
+
+    if (propertyShouldBeOptional.has(normalizedType) && emptyProperty) {
+      return {
+        name: normalizedName,
+        type: normalizedType,
+      };
+    }
+
+    return {
+      name: normalizedName,
+      type: normalizedType,
+      ...(property ? { property } : {}),
+    };
   }
 
   private readPositiveInt(value: unknown, fallback: number) {

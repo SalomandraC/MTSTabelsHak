@@ -1191,13 +1191,18 @@ export const wikiliveApi = {
     });
   },
   createMwsField(datasheetId: string, payload: CreateMwsFieldPayload) {
+    const normalizedProperty =
+      payload.property && Object.keys(payload.property).length > 0
+        ? payload.property
+        : undefined;
+
     return request<{ field: MwsField }>(`/api/v1/mws/datasheets/${datasheetId}/fields`, {
       method: 'POST',
       query: { spaceId: payload.spaceId },
       body: JSON.stringify({
         name: payload.name,
         type: payload.type,
-        property: payload.property,
+        ...(normalizedProperty ? { property: normalizedProperty } : {}),
       }),
     });
   },
