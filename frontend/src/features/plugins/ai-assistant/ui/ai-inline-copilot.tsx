@@ -706,9 +706,19 @@ function normalizeReportMarkdown(reportText: string): string {
   return ensureAiMarkdownBlockSpacing(normalizedLines.join('\n').trim());
 }
 
-function buildReportRootBlock(editor: Editor | null, reportText: string, spaceId: string): JSONContent[] {
-  const sanitizedReportText = normalizeReportMarkdown(reportText);
-  const contentBlocks = parseMarkdownReportWithLiveReferences(sanitizedReportText, { spaceId });
+function buildReportRootBlock(editor: Editor | null, reportText: string, spaceId: string): {
+  sanitizedText: string;
+  rootBlocks: JSONContent[];
+} {
+  const normalizedSource = normalizeReportMarkdown(reportText);
+  const parsedResult = editor
+    ? parseAiMarkdownForInsert(editor, normalizedSource, spaceId)
+    : {
+        sanitizedText: normalizedSource,
+        contentJson: parseMarkdownReportWithLiveReferences(normalizedSource, { spaceId }),
+      };
+
+  const contentBlocks = parsedResult.contentJson ?? parseMarkdownReportWithLiveReferences(parsedResult.sanitizedText, { spaceId });
 
   const rootBlocks: JSONContent[] = [
     {
@@ -730,7 +740,14 @@ function buildReportRootBlock(editor: Editor | null, reportText: string, spaceId
     });
   }
 
-  return rootBlocks;
+  return {
+    sanitizedText: parsedResult.sanitizedText,
+    rootBlocks,
+  };
+}
+
+function shouldFallbackToMarkdownContent(errorMessage: string): boolean {
+  return /There is no mark type bold in this schema/i.test(errorMessage);
 }
 
 function insertAiAnswer(editor: Editor | null, text: string, options: { spaceId: string }): boolean {
@@ -1414,12 +1431,13 @@ export function AiInlineCopilot({
 
     await withBusy(async (signal) => {
       const title = `Анализ от ${new Date().toLocaleDateString('ru-RU')}`;
+      const { rootBlocks, sanitizedText } = buildReportRootBlock(editor, analysisText, spaceId);
       const analysisDoc = {
         type: 'doc',
-        content: buildReportRootBlock(editor, analysisText, spaceId),
+        content: rootBlocks,
       };
 
-      const created = await wikiliveApi.aiExecuteTool({
+      let created = await wikiliveApi.aiExecuteTool({
         toolName: 'create_wiki_page',
         args: {
           workspaceId: spaceId,
@@ -1431,6 +1449,21 @@ export function AiInlineCopilot({
       }, {
         signal,
       });
+
+      if (!created.ok && shouldFallbackToMarkdownContent(created.error?.message ?? '')) {
+        created = await wikiliveApi.aiExecuteTool({
+          toolName: 'create_wiki_page',
+          args: {
+            workspaceId: spaceId,
+            title,
+            content: sanitizedText,
+          },
+          pageId: pageId ?? undefined,
+          workspaceId: spaceId,
+        }, {
+          signal,
+        });
+      }
 
       if (!created.ok) {
         throw new Error(created.error?.message ?? 'Не удалось создать страницу анализа');
@@ -1617,12 +1650,13 @@ export function AiInlineCopilot({
 
     await withBusy(async (signal) => {
       const title = buildReportTitle(pageTitle);
+      const { rootBlocks, sanitizedText } = buildReportRootBlock(editor, reportText, spaceId);
       const reportDoc = {
         type: 'doc',
-        content: buildReportRootBlock(editor, reportText, spaceId),
+        content: rootBlocks,
       };
 
-      const created = await wikiliveApi.aiExecuteTool({
+      let created = await wikiliveApi.aiExecuteTool({
         toolName: 'create_wiki_page',
         args: {
           workspaceId: spaceId,
@@ -1634,6 +1668,21 @@ export function AiInlineCopilot({
       }, {
         signal,
       });
+
+      if (!created.ok && shouldFallbackToMarkdownContent(created.error?.message ?? '')) {
+        created = await wikiliveApi.aiExecuteTool({
+          toolName: 'create_wiki_page',
+          args: {
+            workspaceId: spaceId,
+            title,
+            content: sanitizedText,
+          },
+          pageId: pageId ?? undefined,
+          workspaceId: spaceId,
+        }, {
+          signal,
+        });
+      }
 
       if (!created.ok) {
         throw new Error(created.error?.message ?? 'Не удалось создать страницу отчета');
@@ -1669,12 +1718,13 @@ export function AiInlineCopilot({
       const reportText = await createReportText(signal, reportRequest);
       const sanitizedReportText = normalizeReportMarkdown(reportText);
       const title = buildReportTitle(pageTitle);
+      const { rootBlocks, sanitizedText } = buildReportRootBlock(editor, sanitizedReportText, spaceId);
       const reportDoc = {
         type: 'doc',
-        content: buildReportRootBlock(editor, sanitizedReportText, spaceId),
+        content: rootBlocks,
       };
 
-      const created = await wikiliveApi.aiExecuteTool({
+      let created = await wikiliveApi.aiExecuteTool({
         toolName: 'create_wiki_page',
         args: {
           workspaceId: spaceId,
@@ -1686,6 +1736,21 @@ export function AiInlineCopilot({
       }, {
         signal,
       });
+
+      if (!created.ok && shouldFallbackToMarkdownContent(created.error?.message ?? '')) {
+        created = await wikiliveApi.aiExecuteTool({
+          toolName: 'create_wiki_page',
+          args: {
+            workspaceId: spaceId,
+            title,
+            content: sanitizedText,
+          },
+          pageId: pageId ?? undefined,
+          workspaceId: spaceId,
+        }, {
+          signal,
+        });
+      }
 
       if (!created.ok) {
         throw new Error(created.error?.message ?? 'Не удалось создать страницу отчета');

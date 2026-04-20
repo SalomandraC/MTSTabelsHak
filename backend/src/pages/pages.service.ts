@@ -23,6 +23,7 @@ import { UpdatePageDto } from './dto/update-page.dto';
 const WIKI_NODE_TYPE_MWS_FOLDER = 'mws_folder';
 
 const LIVE_REFERENCE_TOKEN = /^\[Ref:([^:\]\s]+):([^:\]\s]+):([^:\]\s]+)\]$/;
+const SUPPORTED_AI_MARKS = new Set(['bold']);
 
 const aiGeneratedPageSchema = new Schema({
   nodes: {
@@ -134,6 +135,12 @@ const aiGeneratedPageSchema = new Schema({
         },
         0,
       ],
+    },
+  },
+  marks: {
+    bold: {
+      parseDOM: [{ tag: 'strong' }, { tag: 'b', getAttrs: () => null }],
+      toDOM: () => ['strong', 0],
     },
   },
 });
@@ -496,7 +503,8 @@ export class PagesService {
     }
 
     const normalizedDoc = this.normalizeAiContentToDoc(content);
-    const ydoc = prosemirrorJSONToYDoc(aiGeneratedPageSchema, normalizedDoc, 'default');
+    const schemaSafeDoc = this.stripUnsupportedMarks(normalizedDoc) as Record<string, unknown>;
+    const ydoc = prosemirrorJSONToYDoc(aiGeneratedPageSchema, schemaSafeDoc, 'default');
     const encoded = Buffer.from(Y.encodeStateAsUpdate(ydoc)).toString('base64');
     ydoc.destroy();
 
@@ -638,21 +646,47 @@ export class PagesService {
     const value = String(text ?? '');
     const parts: Array<Record<string, unknown>> = [];
     let cursor = 0;
+    let buffer = '';
+    let isBold = false;
+
+    const flushBuffer = () => {
+      if (!buffer) {
+        return;
+      }
+
+      if (isBold) {
+        parts.push({ type: 'text', text: buffer, marks: [{ type: 'bold' }] });
+      } else {
+        parts.push({ type: 'text', text: buffer });
+      }
+
+      buffer = '';
+    };
 
     while (cursor < value.length) {
       const nextRef = value.indexOf('[Ref:', cursor);
       const nextFormula = value.indexOf('[Formula:', cursor);
-      const candidates = [nextRef, nextFormula].filter((idx) => idx >= 0);
+      const nextBold = value.indexOf('**', cursor);
+      const candidates = [nextRef, nextFormula, nextBold].filter((idx) => idx >= 0);
       const nextTokenStart = candidates.length > 0 ? Math.min(...candidates) : -1;
 
       if (nextTokenStart < 0) {
-        parts.push({ type: 'text', text: value.slice(cursor) });
+        buffer += value.slice(cursor);
         break;
       }
 
       if (nextTokenStart > cursor) {
-        parts.push({ type: 'text', text: value.slice(cursor, nextTokenStart) });
+        buffer += value.slice(cursor, nextTokenStart);
       }
+
+      if (value.startsWith('**', nextTokenStart)) {
+        flushBuffer();
+        isBold = !isBold;
+        cursor = nextTokenStart + 2;
+        continue;
+      }
+
+      flushBuffer();
 
       if (value.startsWith('[Ref:', nextTokenStart)) {
         const end = value.indexOf(']', nextTokenStart);
@@ -692,11 +726,46 @@ export class PagesService {
         }
       }
 
-      parts.push({ type: 'text', text: value.slice(nextTokenStart, nextTokenStart + 1) });
+      buffer += value.slice(nextTokenStart, nextTokenStart + 1);
       cursor = nextTokenStart + 1;
     }
 
+    flushBuffer();
+
     return parts.length > 0 ? parts : [{ type: 'text', text: value }];
+  }
+
+  private stripUnsupportedMarks(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.stripUnsupportedMarks(item));
+    }
+
+    if (!value || typeof value !== 'object') {
+      return value;
+    }
+
+    const input = value as Record<string, unknown>;
+    const output: Record<string, unknown> = {};
+
+    for (const [key, raw] of Object.entries(input)) {
+      if (key === 'marks' && Array.isArray(raw)) {
+        output.marks = raw
+          .filter((mark) => {
+            if (!mark || typeof mark !== 'object') {
+              return false;
+            }
+
+            const type = (mark as Record<string, unknown>).type;
+            return typeof type === 'string' && SUPPORTED_AI_MARKS.has(type);
+          })
+          .map((mark) => this.stripUnsupportedMarks(mark));
+        continue;
+      }
+
+      output[key] = this.stripUnsupportedMarks(raw);
+    }
+
+    return output;
   }
 
   private extractFormulaToken(text: string, from: number): { expression: string; end: number } | null {

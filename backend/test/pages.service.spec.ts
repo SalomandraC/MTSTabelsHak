@@ -9,6 +9,9 @@ describe('PagesService', () => {
   let searchService: any;
   let pageAccessService: any;
   let realtimeService: any;
+  let mwsService: any;
+  let contextIndexingService: any;
+  let documentIndexingService: any;
   let service: PagesService;
 
   beforeEach(() => {
@@ -27,6 +30,12 @@ describe('PagesService', () => {
     realtimeService = {
       broadcastPageAccessUpdated: jest.fn(),
     };
+    mwsService = {};
+    contextIndexingService = {};
+    documentIndexingService = {
+      extractPlainTextFromProsemirrorJson: jest.fn(() => ''),
+    };
+    contextIndexingService.deletePage = jest.fn(async () => undefined);
     pageAccessService = {
       assertCanView: jest.fn(async () => ({
         role: 'owner',
@@ -62,7 +71,15 @@ describe('PagesService', () => {
       })),
     };
 
-    service = new PagesService(prisma, searchService, pageAccessService, realtimeService);
+    service = new PagesService(
+      prisma,
+      searchService,
+      pageAccessService,
+      realtimeService,
+      mwsService,
+      contextIndexingService,
+      documentIndexingService,
+    );
   });
 
   it('returns page access through getPageAccess after access guard check', async () => {
@@ -136,5 +153,95 @@ describe('PagesService', () => {
     prisma.wikiNode.findUnique.mockResolvedValue(null);
 
     await expect(service.deletePage('missing-page', user)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('creates AI report pages with bold marks in the initial document', async () => {
+    const createPageSpy = jest.spyOn(service as any, 'createPage').mockResolvedValue({
+      page: {
+        id: 'page-1',
+        title: 'AI report',
+      },
+    });
+
+    const result = await service.createPageForAiReport(
+      {
+        workspaceId: 'space-1',
+        title: 'AI report',
+        content: {
+          type: 'doc',
+          content: [
+            {
+              type: 'rootblock',
+              content: [
+                {
+                  type: 'paragraph',
+                  content: [
+                    { type: 'text', text: 'Жирный ' },
+                    { type: 'text', text: 'текст', marks: [{ type: 'bold' }] },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+      user,
+    );
+
+    expect(createPageSpy).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      status: 'created',
+      pageId: 'page-1',
+      title: 'AI report',
+    });
+  });
+
+  it('converts markdown bold syntax to a bold mark for AI docs', () => {
+    const normalized = (service as any).normalizeAiContentToDoc('Обычный **жирный** текст');
+    const serialized = JSON.stringify(normalized);
+
+    expect(serialized).toContain('"type":"bold"');
+    expect(serialized).not.toContain('**жирный**');
+  });
+
+  it('ignores unsupported marks in AI payload instead of failing schema conversion', async () => {
+    const createPageSpy = jest.spyOn(service as any, 'createPage').mockResolvedValue({
+      page: {
+        id: 'page-2',
+        title: 'AI report safe marks',
+      },
+    });
+
+    await expect(
+      service.createPageForAiReport(
+        {
+          workspaceId: 'space-1',
+          title: 'AI report safe marks',
+          content: {
+            type: 'doc',
+            content: [
+              {
+                type: 'rootblock',
+                content: [
+                  {
+                    type: 'paragraph',
+                    content: [
+                      { type: 'text', text: 'Текст ', marks: [{ type: 'italic' }] },
+                      { type: 'text', text: 'жирный', marks: [{ type: 'bold' }] },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        user,
+      ),
+    ).resolves.toMatchObject({
+      status: 'created',
+      pageId: 'page-2',
+    });
+
+    expect(createPageSpy).toHaveBeenCalledTimes(1);
   });
 });
