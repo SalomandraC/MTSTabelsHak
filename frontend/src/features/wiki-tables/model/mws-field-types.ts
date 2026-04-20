@@ -89,29 +89,41 @@ export function createFieldProperty(
     checkboxIcon?: string;
   },
 ) {
+  const normalizedDefaultValue = options.defaultValue?.trim() ?? '';
+  const normalizedCheckboxIcon = options.checkboxIcon?.trim() ?? '';
+  const safeCheckboxIcon = normalizedCheckboxIcon || 'check';
+
   switch (type) {
     case 'SingleSelect':
     case 'MultiSelect':
       return {
         options: normalizeOptions(options.selectOptions ?? []),
-        ...(options.defaultValue ? { defaultValue: options.defaultValue } : {}),
+        ...(normalizedDefaultValue
+          ? { defaultValue: normalizedDefaultValue }
+          : {}),
       };
     case 'Number':
       return {
         precision: options.precision ?? 0,
-        ...(options.defaultValue ? { defaultValue: options.defaultValue } : {}),
+        ...(normalizedDefaultValue
+          ? { defaultValue: normalizedDefaultValue }
+          : {}),
       };
     case 'Currency':
       return {
         precision: options.precision ?? 2,
         symbol: options.symbol || '₽',
         symbolAlign: options.symbolAlign || 'Left',
-        ...(options.defaultValue ? { defaultValue: options.defaultValue } : {}),
+        ...(normalizedDefaultValue
+          ? { defaultValue: normalizedDefaultValue }
+          : {}),
       };
     case 'Percent':
       return {
         precision: options.precision ?? 0,
-        ...(options.defaultValue ? { defaultValue: options.defaultValue } : {}),
+        ...(normalizedDefaultValue
+          ? { defaultValue: normalizedDefaultValue }
+          : {}),
       };
     case 'DateTime':
       return {
@@ -125,17 +137,19 @@ export function createFieldProperty(
       };
     case 'Checkbox':
       return {
-        icon: options.checkboxIcon || 'check',
+        icon: safeCheckboxIcon,
       };
     case 'Attachment':
     case 'Text':
     case 'URL':
     case 'Email':
     case 'Phone':
-      return {};
+      return undefined;
     case 'SingleText':
-      return options.defaultValue ? { defaultValue: options.defaultValue } : {};
+      return normalizedDefaultValue
+        ? { defaultValue: normalizedDefaultValue }
+        : {};
     default:
-      return {};
+      return undefined;
   }
 }
