@@ -158,6 +158,27 @@ const aiGeneratedPageSchema = new Schema({
         0,
       ],
     },
+    liveChart: {
+      group: 'block',
+      atom: true,
+      attrs: {
+        chartType: { default: 'bar' },
+        datasheetId: { default: '' },
+        xAxisFieldId: { default: '' },
+        yAxisFieldIds: { default: [] },
+      },
+      toDOM: (node) => [
+        'div',
+        {
+          'data-type': 'live-chart',
+          'data-chart-type': String(node.attrs.chartType ?? 'bar'),
+          'data-datasheet-id': String(node.attrs.datasheetId ?? ''),
+          'data-x-axis-field-id': String(node.attrs.xAxisFieldId ?? ''),
+          'data-y-axis-field-ids': JSON.stringify(node.attrs.yAxisFieldIds ?? []),
+        },
+        0,
+      ],
+    },
   },
   marks: {
     bold: {

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'reac
 import { SlashMenu } from '../../slash-menu';
 import { AiInlineCopilot } from '../../plugins/ai-assistant';
 import { WikiTablePickerModal } from '../../wiki-tables';
+import { LiveChartPickerModal } from '../../plugins/charts';
 import { usePlugins } from '../../plugins';
 import type { PageHistoryCheckpoint, WikiPage } from '../../../shared/api/wikilive';
 import type { CommentThreadView } from '../model/use-page-comments';
@@ -1051,6 +1052,7 @@ function LivePageEditor({
           <LiveFormulaModal {...controller.liveFormulaModal} />
           <LiveReferencePickerModal {...controller.liveReferencePicker} />
           <WikiTablePickerModal {...controller.tablePicker} />
+          <LiveChartPickerModal {...controller.liveChartPicker} />
           <CreateBookmarkModal
             isOpen={controller.bookmarkModal.isOpen}
             anchorRect={null}

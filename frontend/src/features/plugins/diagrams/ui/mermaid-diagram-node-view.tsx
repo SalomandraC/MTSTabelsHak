@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import type { NodeViewProps } from '@tiptap/react';
 import { NodeViewWrapper } from '@tiptap/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 
 import { DEFAULT_MERMAID_CODE, MERMAID_PRESETS } from '../model/mermaid-presets';
 import { renderMermaidToSvg, resolveMermaidTheme } from '../model/mermaid-utils';
@@ -42,12 +42,14 @@ function useLiveTheme() {
   return theme;
 }
 
-export function MermaidDiagramNodeView({ node, updateAttributes, selected, editor }: NodeViewProps) {
+export function MermaidDiagramNodeView({ node, updateAttributes, selected, editor, deleteNode }: NodeViewProps) {
   const isEditable = editor.isEditable;
+  const LONG_PRESS_DELETE_MS = 700;
   const currentCode = String(node.attrs.code ?? '').trim() || DEFAULT_MERMAID_CODE;
   const theme = useLiveTheme();
 
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const [draftCode, setDraftCode] = useState(currentCode);
@@ -118,6 +120,19 @@ export function MermaidDiagramNodeView({ node, updateAttributes, selected, edito
       window.removeEventListener('pointerdown', handlePointerDown, true);
     };
   }, [showActions, isEditorOpen]);
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      clearLongPressTimer();
+    };
+  }, []);
 
   const editorModal = isEditorOpen && typeof document !== 'undefined'
     ? createPortal(
@@ -213,17 +228,36 @@ export function MermaidDiagramNodeView({ node, updateAttributes, selected, edito
       data-type="mermaid-diagram"
       ref={containerRef}
       onClick={() => setShowActions(true)}
+      onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => {
+        if (!isEditable || event.button !== 0 || longPressTimerRef.current !== null) {
+          return;
+        }
+
+        longPressTimerRef.current = window.setTimeout(() => {
+          longPressTimerRef.current = null;
+
+          const shouldDelete = window.confirm('Удалить эту диаграмму?');
+          if (shouldDelete) {
+            deleteNode();
+          }
+        }, LONG_PRESS_DELETE_MS);
+      }}
+      onPointerUp={clearLongPressTimer}
+      onPointerLeave={clearLongPressTimer}
+      onPointerCancel={clearLongPressTimer}
       onDoubleClick={() => {
         if (!isEditable) {
           return;
         }
 
+        clearLongPressTimer();
         setShowActions(true);
         setIsEditorOpen(true);
       }}
     >
       <div className="mermaid-diagram-node__header" contentEditable={false}>
         <span className="mermaid-diagram-node__title">Mermaid Diagram</span>
+        {isEditable ? <span className="text-[11px] text-[#6e7582]">dblclick: edit, long press: delete</span> : null}
         {isEditable && showActions ? (
           <button
             type="button"

@@ -42,6 +42,7 @@ import { Markdown } from 'tiptap-markdown';
 
 import { MwsTableEmbed } from '../../wiki-tables';
 import { AIGhostTextExtension } from '../../plugins/ai-assistant';
+import { LiveChart } from '../../plugins/charts';
 import { MermaidNode } from '../../plugins/diagrams';
 import { CanvasBlock } from './canvas-block';
 import { IframeBlock } from './iframe-block';
@@ -159,6 +160,7 @@ type PageEditorExtensionOptions = {
   ydoc?: Y.Doc | null;
   provider?: HocuspocusProvider | null;
   enableGhostText?: boolean;
+  enableLiveCharts?: boolean;
   requestAutocomplete?: (currentText: string) => Promise<string>;
   user?: {
     id?: string;
@@ -199,6 +201,7 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
       onOpenThread: options.onOpenCommentThread,
     }),
     MwsTableEmbed,
+    ...(options.enableLiveCharts ? [LiveChart] : []),
     MermaidNode,
     CanvasBlock,
     IframeBlock,

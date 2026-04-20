@@ -76,6 +76,15 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       total: controller.total,
       updatedAt: Date.now(),
     };
+
+    window.dispatchEvent(
+      new CustomEvent('wikilive:table-snapshot-updated', {
+        detail: {
+          datasheetId,
+          viewId: controller.attrs.viewId ?? null,
+        },
+      }),
+    );
   }, [
     controller.attrs.datasheetId,
     controller.attrs.viewId,
