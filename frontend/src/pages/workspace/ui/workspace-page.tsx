@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
-import type { Editor } from '@tiptap/core';
+import type { Content, Editor } from '@tiptap/core';
 import {
   ChevronLeft,
   ChevronDown,
@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 
 import { useAuthSessionContext } from '../../../features/auth';
+import { useMarkdownImport } from '../../../features/markdown-import';
 import { PageEditor } from '../../../features/page-editor';
 import { usePageComments, type CommentThreadView } from '../../../features/page-editor/model/use-page-comments';
 import { usePageHistory } from '../../../features/page-editor/model/use-page-history';
@@ -30,6 +31,7 @@ import { CommentsPanel } from '../../../features/page-editor/ui/comments-panel';
 import { TimeMachinePanel } from '../../../features/page-editor/ui/time-machine-panel';
 import { AiSidebarChat } from '../../../features/plugins/ai-assistant';
 import { NavigationSidebar, PluginsModal, usePlugins } from '../../../features/plugins';
+import { AttachmentUploadModal } from '../../../features/wiki-tables';
 import { ScrollArea } from '../../../shared/ui';
 import workspaceLogo from '../../../app/images/logo.svg';
 import {
@@ -1042,6 +1044,7 @@ export function WorkspacePage() {
   const [shareStatus, setShareStatus] = useState('');
   const [isPluginsModalOpen, setIsPluginsModalOpen] = useState(false);
   const [activeEditor, setActiveEditor] = useState<Editor | null>(null);
+  const pendingImportContentRef = useRef<{ pageId: string; content: Content } | null>(null);
   const [documentStateEncoder, setDocumentStateEncoder] = useState<(() => string | null) | null>(null);
   const [documentStateRestorer, setDocumentStateRestorer] = useState<((value: string) => boolean) | null>(null);
   const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>('toolbar');
@@ -1370,6 +1373,40 @@ export function WorkspacePage() {
     },
     [refreshGraphLinks],
   );
+
+  const handleImportedPageCreated = useCallback(
+    async (pageId: string, content: Content) => {
+      pendingImportContentRef.current = { pageId, content };
+      setErrorMessage('');
+      setSelectedTableNode(null);
+      setActivePage(null);
+      setIsPageLoading(true);
+      await refreshTree(selectedSpaceId, pageId);
+      writeWorkspaceRoute(selectedSpaceId, pageId, 'push');
+    },
+    [refreshTree, selectedSpaceId],
+  );
+
+  const {
+    isImporting,
+    isModalOpen: isMarkdownImportModalOpen,
+    selectedFiles: markdownImportFiles,
+    modalErrorMessage: markdownImportErrorMessage,
+    triggerImport,
+    closeImportModal,
+    handleFilesSelect,
+    handleRemoveFile,
+    submitImport,
+  } = useMarkdownImport({
+    spaceId: selectedSpaceId,
+    onPageCreated: handleImportedPageCreated,
+    onError: setErrorMessage,
+  });
+  const pendingImportContent = pendingImportContentRef.current;
+  const activeImportSeedContent =
+    pendingImportContent && pendingImportContent.pageId === activePage?.id
+      ? pendingImportContent.content
+      : null;
 
   const moveTreeNode = useCallback(
     async (sourceId: string, targetId: string) => {
@@ -2636,12 +2673,25 @@ export function WorkspacePage() {
           <div className="mt-2 px-3">
             <button
               type="button"
-            onClick={() => openTemplateMarketplace(null)}
+              onClick={() => openTemplateMarketplace(null)}
               disabled={isTemplatesLoading}
               className="flex h-9 w-[calc(100%-10px)] mr-[10px]  items-center justify-center gap-2 rounded-lg border border-editor-border-subtle bg-white px-3 text-sm font-semibold text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa] disabled:cursor-wait disabled:opacity-60"
             >
               <FileDown size={16} strokeWidth={2.2} />
               {isTemplatesLoading ? 'Загружаем шаблоны...' : 'Маркетплейс шаблонов'}
+            </button>
+          </div>
+
+          <div className="mt-2 px-3">
+            <button
+              type="button"
+              onClick={triggerImport}
+              disabled={isImporting}
+              className="mr-[10px] flex h-9 w-[calc(100%-10px)] items-center justify-center gap-2 rounded-lg border border-editor-border-subtle bg-white px-3 text-sm font-semibold text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa] disabled:cursor-wait disabled:opacity-60"
+              aria-label={isImporting ? 'Импортируем Markdown' : 'Импортировать Markdown'}
+            >
+              <FileUp size={16} strokeWidth={2.2} />
+              {isImporting ? 'Импортируем...' : 'Импортировать Markdown'}
             </button>
           </div>
 
@@ -3022,6 +3072,7 @@ export function WorkspacePage() {
             spaceId={selectedSpaceId}
             page={isPageLoading ? null : activePage}
             isLoading={isPageLoading}
+            initialSeedContent={activeImportSeedContent}
             hideCooperationBadge={!leftSidebar.isCollapsed || !rightSidebar.isCollapsed}
             sidebarInsetClassName={[
               leftSidebar.isCollapsed ? 'pl-12 sm:pl-14' : '',
@@ -3480,6 +3531,27 @@ export function WorkspacePage() {
         onOpenMws={handleOpenSelectedMwsTable}
         onDelete={() => void handleDeleteSelectedMwsTable()}
         onClose={() => setSelectedTableNode(null)}
+      />
+      <AttachmentUploadModal
+        isOpen={isMarkdownImportModalOpen}
+        isSubmitting={isImporting}
+        files={markdownImportFiles}
+        errorMessage={markdownImportErrorMessage}
+        dialogLabel="Импортировать Markdown"
+        title="Импортировать Markdown"
+        description="Перетащите один или несколько Markdown-файлов сюда или выберите их с диска."
+        accept=".md"
+        emptyStateText="Пока нет выбранных Markdown-файлов"
+        dropzoneText="Перетащите Markdown-файлы сюда"
+        dropzoneActionText="или нажмите, чтобы выбрать"
+        addMoreLabel="Добавить ещё"
+        submitLabel={isImporting ? 'Импортируем...' : 'Импортировать'}
+        onClose={closeImportModal}
+        onFilesSelect={handleFilesSelect}
+        onRemoveFile={handleRemoveFile}
+        onSubmit={() => {
+          void submitImport();
+        }}
       />
       {isLogoutConfirmOpen ? (
         <LogoutConfirmModal

@@ -64,6 +64,7 @@ type UsePageEditorControllerOptions = {
   spaceId: string;
   page: WikiPage | null;
   canEdit: boolean;
+  initialSeedContent?: Content | null;
   onRenamePage: (title: string) => Promise<void>;
   onToggleHeadingNumbering: (enabled: boolean) => Promise<void>;
   onCheckpoint: () => Promise<void>;
@@ -204,6 +205,7 @@ export function usePageEditorController({
   spaceId,
   page,
   canEdit,
+  initialSeedContent = null,
   onRenamePage,
   onToggleHeadingNumbering,
   onCheckpoint,
@@ -501,7 +503,7 @@ export function usePageEditorController({
   const editor = useEditor(
     {
       extensions,
-      content: collabState ? undefined : initialContent,
+      content: collabState ? undefined : (initialSeedContent ?? initialContent),
       editable: canEdit,
       editorProps: {
         attributes: {
@@ -583,7 +585,7 @@ export function usePageEditorController({
       },
       onCreate: ({ editor: currentEditor }) => {
         if (collabState?.shouldSeedContent && currentEditor.isEmpty) {
-          currentEditor.commands.setContent(initialContent);
+          currentEditor.commands.setContent(initialSeedContent ?? initialContent);
         }
       },
       onUpdate: ({ editor: currentEditor }) => {
@@ -647,7 +649,7 @@ export function usePageEditorController({
         }
       },
     },
-    [extensions, collabState?.pageId],
+    [extensions, collabState?.pageId, initialSeedContent],
   );
 
   useEffect(() => {

@@ -34,6 +34,7 @@ type PageEditorProps = {
   spaceId: string;
   page: WikiPage | null;
   isLoading?: boolean;
+  initialSeedContent?: Content | null;
   sidebarInsetClassName?: string;
   hideCooperationBadge?: boolean;
   isReadOnlyViewLink?: boolean;
@@ -400,6 +401,7 @@ export function PageEditor({
   spaceId,
   page,
   isLoading = false,
+  initialSeedContent = null,
   sidebarInsetClassName = '',
   hideCooperationBadge = false,
   isReadOnlyViewLink = false,
@@ -436,6 +438,7 @@ export function PageEditor({
     <LivePageEditor
       spaceId={spaceId}
       page={page}
+      initialSeedContent={initialSeedContent}
       sidebarInsetClassName={sidebarInsetClassName}
       hideCooperationBadge={hideCooperationBadge}
       isReadOnlyViewLink={isReadOnlyViewLink}
@@ -459,6 +462,7 @@ export function PageEditor({
 function LivePageEditor({
   spaceId,
   page,
+  initialSeedContent = null,
   sidebarInsetClassName = '',
   hideCooperationBadge = false,
   isReadOnlyViewLink = false,
@@ -569,6 +573,7 @@ function LivePageEditor({
     spaceId,
     page,
     canEdit,
+    initialSeedContent,
     onRenamePage,
     onToggleHeadingNumbering,
     onCheckpoint,

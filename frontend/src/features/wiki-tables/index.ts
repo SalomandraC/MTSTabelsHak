@@ -9,3 +9,4 @@ export {
 } from './model/wiki-table-embed';
 export { WikiTablePickerModal } from './ui/table-picker-modal';
 export { MwsTableActionModal } from './ui/mws-table-action-modal';
+export { AttachmentUploadModal } from './ui/attachment-upload-modal';

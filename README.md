@@ -210,6 +210,7 @@ npm run dev
 - OpenAPI контракт: [docs/openapi.yaml](docs/openapi.yaml)
 - Анализ интеграции MWS Tables: [docs/MWS_TABLES_API_ANALYSIS.md](docs/MWS_TABLES_API_ANALYSIS.md)
 - Короткая карта CRUD-синхронизации: [docs/MWS_TABLES_CRUD_SYNC_SHORT.md](docs/MWS_TABLES_CRUD_SYNC_SHORT.md)
+- Документация экспорта документов: [docs/DOCUMENT_EXPORT_MODULE.md](docs/DOCUMENT_EXPORT_MODULE.md)
 - История задач frontend (тикеты): [frontend/docs/tickets](frontend/docs/tickets)
 - Память проекта: [docs/PROJECT_MEMORY.md](docs/PROJECT_MEMORY.md)
 - Postman коллекция: [docs/postman/wikilive-api.postman_collection.json](docs/postman/wikilive-api.postman_collection.json)
