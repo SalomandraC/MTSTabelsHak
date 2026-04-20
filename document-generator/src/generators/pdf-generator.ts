@@ -5,6 +5,7 @@ import Handlebars from 'handlebars';
 import puppeteer from 'puppeteer';
 import type { BlockNode, PdfOptions } from '../types.js';
 import { DEFAULT_PDF_OPTIONS } from '../types.js';
+import { createInlineNodeResolver, type ExportAuthContext } from '../live-inline.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -52,11 +53,7 @@ const API_BASE = process.env.API_BASE_URL ?? 'http://api:8080';
 type MwsField = { id: string; name: string };
 type MwsRecord = { recordId: string; fields: Record<string, unknown> };
 
-type AuthContext = {
-  accessToken?: string;
-  userId?: string;
-  displayName?: string;
-};
+type AuthContext = ExportAuthContext;
 
 type LinkContext = {
   appBaseUrl: string;
@@ -129,16 +126,22 @@ function renderTableHtml(title: string, fields: MwsField[], records: MwsRecord[]
 
 // ─── Block compiler ───────────────────────────────────────────────────────────
 
-async function compileBlock(block: BlockNode, auth?: AuthContext, link?: LinkContext): Promise<string> {
+async function compileBlock(
+  block: BlockNode,
+  resolveInlineNodes: ReturnType<typeof createInlineNodeResolver>['resolveInlineNodes'],
+  auth?: AuthContext,
+  link?: LinkContext,
+): Promise<string> {
   switch (block.type) {
     case 'heading': {
       const level = Math.min(Math.max(block.level ?? 1, 1), 6);
-      return `<h${level}>${block.content ?? ''}</h${level}>`;
+      const content = await compileChildContent(block, resolveInlineNodes, auth, link);
+      return `<h${level}>${content}</h${level}>`;
     }
 
     case 'paragraph':
     case 'text':
-      return `<p>${block.content ?? ''}</p>`;
+      return `<p>${await compileChildContent(block, resolveInlineNodes, auth, link)}</p>`;
 
     case 'image': {
       const src = block.src ?? '';
@@ -180,12 +183,12 @@ async function compileBlock(block: BlockNode, auth?: AuthContext, link?: LinkCon
     }
 
     case 'bullet_list': {
-      const items = await Promise.all((block.children ?? []).map(async (c) => `<li>${await compileChildContent(c, auth, link)}</li>`));
+      const items = await Promise.all((block.children ?? []).map(async (c) => `<li>${await compileChildContent(c, resolveInlineNodes, auth, link)}</li>`));
       return `<ul>${items.join('')}</ul>`;
     }
 
     case 'ordered_list': {
-      const items = await Promise.all((block.children ?? []).map(async (c) => `<li>${await compileChildContent(c, auth, link)}</li>`));
+      const items = await Promise.all((block.children ?? []).map(async (c) => `<li>${await compileChildContent(c, resolveInlineNodes, auth, link)}</li>`));
       return `<ol>${items.join('')}</ol>`;
     }
 
@@ -193,22 +196,22 @@ async function compileBlock(block: BlockNode, auth?: AuthContext, link?: LinkCon
       const items = await Promise.all((block.children ?? []).map(async (c) => {
         if (c.type === 'task_item') {
           const icon = c.checked ? '☑' : '☐';
-          const text = (c.children ?? []).map((ch) => ch.content ?? '').join(' ');
+          const text = await compileChildContent(c, resolveInlineNodes, auth, link);
           return `<li class="task-item"><span>${icon}</span><span>${esc(text)}</span></li>`;
         }
-        return `<li>${await compileChildContent(c, auth, link)}</li>`;
+        return `<li>${await compileChildContent(c, resolveInlineNodes, auth, link)}</li>`;
       }));
       return `<ul style="list-style:none;padding-left:0">${items.join('')}</ul>`;
     }
 
     case 'task_item': {
       const icon = block.checked ? '☑' : '☐';
-      const text = (block.children ?? []).map((ch) => ch.content ?? '').join(' ');
+      const text = await compileChildContent(block, resolveInlineNodes, auth, link);
       return `<div class="task-item"><span>${icon}</span><span>${esc(text)}</span></div>`;
     }
 
     case 'blockquote': {
-      const inner = await Promise.all((block.children ?? []).map((c) => compileBlock(c, auth, link)));
+      const inner = await Promise.all((block.children ?? []).map((c) => compileBlock(c, resolveInlineNodes, auth, link)));
       return `<blockquote>${inner.join('')}</blockquote>`;
     }
 
@@ -220,9 +223,18 @@ async function compileBlock(block: BlockNode, auth?: AuthContext, link?: LinkCon
   }
 }
 
-async function compileChildContent(block: BlockNode, auth?: AuthContext, link?: LinkContext): Promise<string> {
+async function compileChildContent(
+  block: BlockNode,
+  resolveInlineNodes: ReturnType<typeof createInlineNodeResolver>['resolveInlineNodes'],
+  auth?: AuthContext,
+  link?: LinkContext,
+): Promise<string> {
   if (block.inlineNodes && block.inlineNodes.length > 0) {
-    return block.inlineNodes.map((n) => {
+    const resolvedInlineNodes = await resolveInlineNodes(block.inlineNodes);
+    return resolvedInlineNodes.map((n) => {
+      if (n.type === 'hard_break') {
+        return '<br>';
+      }
       if (n.type === 'page_link' && n.href) {
         return `<a href="${escAttr(n.href)}">${esc(n.text ?? n.pageTitle ?? 'Страница')}</a>`;
       }
@@ -239,7 +251,7 @@ async function compileChildContent(block: BlockNode, auth?: AuthContext, link?: 
   }
   if (block.content) return block.content;
   if (block.children) {
-    const parts = await Promise.all(block.children.map((c) => compileBlock(c, auth, link)));
+    const parts = await Promise.all(block.children.map((c) => compileBlock(c, resolveInlineNodes, auth, link)));
     return parts.join('');
   }
   return '';
@@ -255,7 +267,8 @@ export async function generatePdf(
   link?: LinkContext,
 ): Promise<Buffer> {
   const options = { ...DEFAULT_PDF_OPTIONS, ...opts };
-  const parts = await Promise.all(blocks.map((b) => compileBlock(b, auth, link)));
+  const inlineNodeResolver = createInlineNodeResolver(auth);
+  const parts = await Promise.all(blocks.map((b) => compileBlock(b, inlineNodeResolver.resolveInlineNodes, auth, link)));
   const body = parts.join('\n');
   const template = loadTemplate();
   const html = template({ title, body });
