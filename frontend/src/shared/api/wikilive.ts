@@ -532,7 +532,7 @@ export type AiChatPayload = {
   question: string;
   spaceId?: string;
   contextScope?: 'currentFile' | 'documents' | 'folders' | 'space';
-  intent?: 'chat' | 'plan_mutation' | 'write_report' | 'autocomplete';
+  intent?: 'chat' | 'plan_mutation' | 'write_report' | 'autocomplete' | 'analyze';
   pageId?: string;
   datasheetId?: string;
   viewId?: string;

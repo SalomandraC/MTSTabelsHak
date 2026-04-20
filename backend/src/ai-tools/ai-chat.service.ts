@@ -35,7 +35,7 @@ export class AiChatService {
   async askQuestion(input: ChatQuestionInput, user: UserContext): Promise<ChatQuestionResponse> {
     const intent: AiIntent = input.intent ?? 'chat';
     const model = this.aiAssistantService.resolveModelForIntent(intent);
-    const maxTokens = intent === 'write_report' ? 4096 : 512;
+    const maxTokens = intent === 'write_report' ? 4096 : intent === 'analyze' ? 3000 : 512;
 
     const contextMarkdown = this.clampText(this.snapshotToMarkdown(input.pageSnapshot), PAGE_CONTEXT_MAX_CHARS);
     const explicitContextMarkdown = this.buildExplicitContextMarkdown(input.contextDocuments);

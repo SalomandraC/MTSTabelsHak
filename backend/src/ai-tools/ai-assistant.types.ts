@@ -38,4 +38,4 @@ export interface AiChatAnswer {
   references?: Array<Record<string, unknown>>;
 }
 
-export type AiIntent = 'chat' | 'plan_mutation' | 'write_report' | 'autocomplete';
+export type AiIntent = 'chat' | 'plan_mutation' | 'write_report' | 'autocomplete' | 'analyze';

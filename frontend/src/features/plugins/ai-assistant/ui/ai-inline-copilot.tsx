@@ -600,8 +600,14 @@ function buildTableContinuationQuestion(currentAnswer: string): string {
 
 function sanitizeAiResponse(text: string): string {
   return String(text ?? '')
+    // Удаление двойных хешей: # # или ## # → #
     .replace(/^(#+)\s+#+/gm, '$1')
+    // Удаление жирности в заголовках: ## **текст** → ## текст
     .replace(/^(#+)\s*\*\*(.*?)\*\*/gm, '$1 $2')
+    // Удаление горизонтальных разделителей (строки только из дефисов или звездочек)
+    .replace(/^-{3,}$/gm, '')
+    .replace(/^\*{3,}$/gm, '')
+    // Удаление лишних пустых строк (более 2 подряд)
     .replace(/\n{3,}/g, '\n\n');
 }
 
@@ -1245,7 +1251,7 @@ export function AiInlineCopilot({
           pageSnapshot: {
             markdown: getInlineContextMarkdown(editor),
           },
-          intent: 'chat',
+          intent: 'analyze',
           spaceId,
         }, {
           signal,
@@ -1271,7 +1277,7 @@ export function AiInlineCopilot({
           pageId: pageId ?? undefined,
           pageTitle,
           pageSnapshot: { markdown },
-          intent: 'chat',
+          intent: 'analyze',
           spaceId,
         }, {
           signal,
@@ -1291,7 +1297,7 @@ export function AiInlineCopilot({
           pageId: pageId ?? undefined,
           pageTitle,
           pageSnapshot: { markdown },
-          intent: 'chat',
+          intent: 'analyze',
           spaceId,
         }, {
           signal,

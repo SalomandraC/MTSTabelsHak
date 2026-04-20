@@ -66,8 +66,8 @@ export class ChatRequestDto {
   question!: string;
 
   @IsOptional()
-  @IsIn(['chat', 'plan_mutation', 'write_report', 'autocomplete'])
-  intent?: 'chat' | 'plan_mutation' | 'write_report' | 'autocomplete';
+  @IsIn(['chat', 'plan_mutation', 'write_report', 'autocomplete', 'analyze'])
+  intent?: 'chat' | 'plan_mutation' | 'write_report' | 'autocomplete' | 'analyze';
 
   @IsOptional()
   @IsString()
