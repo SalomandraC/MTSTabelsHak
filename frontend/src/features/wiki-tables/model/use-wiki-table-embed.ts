@@ -965,7 +965,7 @@ export function useWikiTableEmbed(
           return;
         }
 
-        if (editingCell || editingSelectCell) {
+        if (editingCell || editingSelectCell || isMutating) {
           schedule();
           return;
         }
@@ -983,7 +983,7 @@ export function useWikiTableEmbed(
         window.clearTimeout(timeoutId);
       }
     };
-  }, [editingCell, editingSelectCell, loadEmbed]);
+  }, [editingCell, editingSelectCell, isMutating, loadEmbed]);
 
   const embed = data?.embed;
   const fields = useMemo(() => embed?.fields ?? [], [embed?.fields]);
@@ -1215,34 +1215,54 @@ export function useWikiTableEmbed(
     setRecords((current) => [...current, optimisticRecord]);
     setTotal((current) => current + 1);
     setStaleMessage('');
+    setIsMutating(true);
 
-    void wikiliveApi
-      .createMwsRecords(attrs.datasheetId, {
+    try {
+      const response = await wikiliveApi.createMwsRecords(attrs.datasheetId, {
         fieldKey: 'id',
         records: [{ fields: initialFields }]
-      })
-      .then((response) => {
-        const createdRecord = response.items[0];
-        if (!createdRecord) {
-          return loadEmbed({ silent: true });
+      });
+
+      const createdRecord = response.items[0];
+      if (!createdRecord) {
+        await loadEmbed({ silent: true });
+        return;
+      }
+
+      // If a background resolve replaced the optimistic row before this response,
+      // append the created record so the new row is not lost in UI.
+      setRecords((current) => {
+        let replaced = false;
+        const next = current.map((item) => {
+          if (item.recordId === optimisticRecord.recordId) {
+            replaced = true;
+            return createdRecord;
+          }
+          return item;
+        });
+
+        if (replaced) {
+          return next;
         }
 
-        setRecords((current) =>
-          current.map((item) =>
-            item.recordId === optimisticRecord.recordId ? createdRecord : item
-          )
-        );
-        setStaleMessage('');
-      })
-      .catch((error) => {
-        setRecords((current) =>
-          current.filter((item) => item.recordId !== optimisticRecord.recordId)
-        );
-        setTotal((current) => Math.max(0, current - 1));
-        setStaleMessage(
-          error instanceof Error ? error.message : 'Не удалось добавить строку'
-        );
+        if (next.some((item) => item.recordId === createdRecord.recordId)) {
+          return next;
+        }
+
+        return [...next, createdRecord];
       });
+      setStaleMessage('');
+    } catch (error) {
+      setRecords((current) =>
+        current.filter((item) => item.recordId !== optimisticRecord.recordId)
+      );
+      setTotal((current) => Math.max(0, current - 1));
+      setStaleMessage(
+        error instanceof Error ? error.message : 'Не удалось добавить строку'
+      );
+    } finally {
+      setIsMutating(false);
+    }
   };
 
   const applyAiRecords = (nextRecords: MwsRecord[]) => {
