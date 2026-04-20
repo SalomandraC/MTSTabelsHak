@@ -131,6 +131,14 @@ function buildReportTitle(pageTitle?: string): string {
   return `AI-отчет ${stamp}`;
 }
 
+function buildAiPageCreationPrompt(tableId?: string): string {
+  if (tableId) {
+    return `Сгенерируй отчет по таблице ${tableId} и сохрани его как новую страницу с заголовком \"Отчет от [Дата]\".`;
+  }
+
+  return 'Сгенерируй отчет и сохрани его как новую страницу с заголовком "Отчет от [Дата]".';
+}
+
 function isAnalysisPrompt(prompt: string): boolean {
   const value = prompt.toLowerCase();
   return /(анализ|обзор|что видно|покажи|сводк|summary|inspect|explain)/i.test(value);
@@ -590,8 +598,40 @@ function buildTableContinuationQuestion(currentAnswer: string): string {
   ].join('\n\n');
 }
 
+function normalizeReportMarkdown(reportText: string): string {
+  const normalizedNewlines = stripAiActionToken(String(reportText ?? '')).replace(/\r\n/g, '\n');
+  const sourceLines = normalizedNewlines.split('\n');
+  const normalizedLines: string[] = [];
+  let previousWasEmpty = false;
+
+  for (const rawLine of sourceLines) {
+    let line = rawLine.replace(/[ \t]+$/g, '').replace(/^\s+/, '');
+
+    // Ensure headings are parsable by markdown parser even if model skipped space after ###
+    line = line.replace(/^(#{1,6})(\S)/, '$1 $2');
+
+    if (/^[-*]\s*$/.test(line) || /^\d+\.\s*$/.test(line)) {
+      line = '- Данные не указаны';
+    }
+
+    const isEmpty = line.trim().length === 0;
+    if (isEmpty) {
+      if (!previousWasEmpty) {
+        normalizedLines.push('');
+      }
+      previousWasEmpty = true;
+      continue;
+    }
+
+    previousWasEmpty = false;
+    normalizedLines.push(line);
+  }
+
+  return normalizedLines.join('\n').trim();
+}
+
 function buildReportRootBlock(editor: Editor | null, reportText: string, spaceId: string): JSONContent[] {
-  const sanitizedReportText = stripAiActionToken(reportText);
+  const sanitizedReportText = normalizeReportMarkdown(reportText);
   const contentBlocks = parseMarkdownReportWithLiveReferences(sanitizedReportText, { spaceId });
 
   const rootBlocks: JSONContent[] = [
@@ -668,7 +708,8 @@ export function AiInlineCopilot({
   const [status, setStatus] = useState('');
   const [isBusy, setIsBusy] = useState(false);
   const [showContextMenu, setShowContextMenu] = useState(false);
-  const [createdPage, setCreatedPage] = useState<{ id: string; title: string } | null>(null);
+  const [showReportActionsMenu, setShowReportActionsMenu] = useState(false);
+  const [createdPage, setCreatedPage] = useState<{ id: string; title: string; href: string; status?: string } | null>(null);
   const [selectedContextId, setSelectedContextId] = useState('detected');
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -681,6 +722,7 @@ export function AiInlineCopilot({
       setStructurePlan([]);
       setStatus('');
       setShowContextMenu(false);
+      setShowReportActionsMenu(false);
       setCreatedPage(null);
       setSelectedContextId('detected');
     }
@@ -701,12 +743,17 @@ export function AiInlineCopilot({
         return;
       }
 
+      if (showReportActionsMenu) {
+        setShowReportActionsMenu(false);
+        return;
+      }
+
       onClose();
     };
 
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [isOpen, onClose, showContextMenu]);
+  }, [isOpen, onClose, showContextMenu, showReportActionsMenu]);
 
   useEffect(() => {
     return () => {
@@ -1269,7 +1316,9 @@ export function AiInlineCopilot({
     });
   };
 
-  const createReportText = async (signal: AbortSignal): Promise<string> => {
+  const createReportText = async (signal: AbortSignal, requestOverride?: string): Promise<string> => {
+    const effectiveRequest = requestOverride?.trim() || prompt.trim();
+
     if (activeContext.kind === 'table' && activeContext.datasheetId) {
       const context = await getTableContext({
         datasheetId: activeContext.datasheetId,
@@ -1282,6 +1331,7 @@ export function AiInlineCopilot({
           `Вот ее данные JSON: ${JSON.stringify({ fields: context.fields, records: context.records.map((record) => ({ recordId: record.recordId, fields: record.fields })), total: context.total })}`,
           'Если данных таблицы недостаточно, первым делом вызови инструмент get_records.',
           'Сгенерируй отчет в markdown формате.',
+          effectiveRequest ? `Запрос пользователя: ${effectiveRequest}` : '',
           'Если данные удобнее показывать в структуре, используй стандартные Markdown-таблицы.',
           LIVE_DATA_BINDING_RULES,
         ].join('\n'),
@@ -1300,7 +1350,7 @@ export function AiInlineCopilot({
         viewId: activeContext.viewId,
       });
 
-      return answer;
+      return normalizeReportMarkdown(answer);
     }
 
     if (activeContext.kind === 'all') {
@@ -1311,7 +1361,7 @@ export function AiInlineCopilot({
           'Сформируй общий отчет по документу и всем таблицам на странице.',
           `Содержание документа: ${markdown}`,
           `Таблицы JSON: ${JSON.stringify(tables)}`,
-          `Дополнительный запрос: ${prompt.trim() || 'Сформируй общий аналитический отчет.'}`,
+          `Дополнительный запрос: ${effectiveRequest || 'Сформируй общий аналитический отчет.'}`,
           LIVE_DATA_BINDING_RULES,
         ].join('\n'),
         pageId: pageId ?? undefined,
@@ -1321,7 +1371,7 @@ export function AiInlineCopilot({
       }, signal);
 
       handleAiChatResponse(response);
-      return answer;
+      return normalizeReportMarkdown(answer);
     }
 
     const markdown = getInlineContextMarkdown(editor);
@@ -1329,7 +1379,7 @@ export function AiInlineCopilot({
       question: [
         'Ты помощник по тексту.',
         `Вот содержание документа: ${markdown}`,
-        `Запрос пользователя: ${prompt.trim() || 'Сформируй отчет по текущему документу.'}`,
+        `Запрос пользователя: ${effectiveRequest || 'Сформируй отчет по текущему документу.'}`,
         LIVE_DATA_BINDING_RULES,
       ].join('\n'),
       pageId: pageId ?? undefined,
@@ -1340,10 +1390,11 @@ export function AiInlineCopilot({
 
     handleAiChatResponse(response);
 
-    return answer;
+    return normalizeReportMarkdown(answer);
   };
 
   const reportToCurrentFile = async () => {
+    setShowReportActionsMenu(false);
     await withBusy(async (signal) => {
       const reportText = await createReportText(signal);
       if (editor) {
@@ -1364,14 +1415,22 @@ export function AiInlineCopilot({
   };
 
   const reportToNewFile = async () => {
+    setShowReportActionsMenu(false);
     await withBusy(async (signal) => {
-      const reportText = await createReportText(signal);
+      const reportRequest = buildAiPageCreationPrompt(activeContext.kind === 'table' ? activeContext.datasheetId : undefined);
+      const reportText = await createReportText(signal, reportRequest);
       const title = buildReportTitle(pageTitle);
+      const reportDoc = {
+        type: 'doc',
+        content: buildReportRootBlock(editor, reportText, spaceId),
+      };
+
       const created = await wikiliveApi.aiExecuteTool({
         toolName: 'create_wiki_page',
         args: {
-          spaceId,
+          workspaceId: spaceId,
           title,
+          content: reportDoc,
         },
         pageId: pageId ?? undefined,
         workspaceId: spaceId,
@@ -1383,14 +1442,26 @@ export function AiInlineCopilot({
         throw new Error(created.error?.message ?? 'Не удалось создать страницу отчета');
       }
 
-      const page = created.data?.page as { id?: string; title?: string } | undefined;
-      const createdId = String(page?.id ?? '');
+      const payload = (created.data ?? {}) as {
+        pageId?: string;
+        title?: string;
+        pageLink?: string;
+        pageUrl?: string;
+        status?: string;
+      };
+      const createdId = String(payload.pageId ?? '');
       if (!createdId) {
         throw new Error('Сервис не вернул id новой страницы');
       }
 
-      setCreatedPage({ id: createdId, title: String(page?.title ?? title) });
+      setCreatedPage({
+        id: createdId,
+        title: String(payload.title ?? title),
+        href: String(payload.pageUrl ?? `/spaces/${spaceId}/pages/${createdId}`),
+        status: String(payload.status ?? 'created'),
+      });
       setOutput(reportText);
+      setStatus('✅ Отчет успешно создан!');
     });
   };
 
@@ -1654,14 +1725,37 @@ export function AiInlineCopilot({
           </button>
         ) : null}
 
-        <button
-          type="button"
-          className="rounded-md border border-[#ffd9e1] bg-white px-2 py-1 text-xs text-[#5a6170] transition-colors hover:bg-[#fff1f3] disabled:opacity-50"
-          onClick={() => applyPromptSuggestion('Сделай отчет по этому документу:')}
-          disabled={isBusy}
-        >
-          Отчет
-        </button>
+        <div className="relative">
+          <button
+            type="button"
+            className="rounded-md border border-[#ffd9e1] bg-white px-2 py-1 text-xs text-[#5a6170] transition-colors hover:bg-[#fff1f3] disabled:opacity-50"
+            onClick={() => setShowReportActionsMenu((value) => !value)}
+            disabled={isBusy}
+          >
+            Отчет
+          </button>
+
+          {showReportActionsMenu ? (
+            <div className="absolute left-0 z-[95] mt-1 w-44 rounded-md border border-[#ffd9e1] bg-white p-1 shadow-[0_8px_20px_rgba(215,0,50,0.08)]">
+              <button
+                type="button"
+                className="block w-full rounded px-2 py-1 text-left text-xs text-[#5a6170] hover:bg-[#fff1f3]"
+                onClick={() => void reportToCurrentFile()}
+                disabled={isBusy}
+              >
+                Вставить здесь
+              </button>
+              <button
+                type="button"
+                className="block w-full rounded px-2 py-1 text-left text-xs text-[#5a6170] hover:bg-[#fff1f3]"
+                onClick={() => void reportToNewFile()}
+                disabled={isBusy}
+              >
+                В новый файл
+              </button>
+            </div>
+          ) : null}
+        </div>
 
         <button
           type="button"
@@ -1717,12 +1811,15 @@ export function AiInlineCopilot({
           </button>
         ) : null}
         {createdPage ? (
-          <p className="mt-2">
-            Создана страница:{' '}
-            <a className="text-[#1f3fff] underline" href={`/spaces/${spaceId}/pages/${createdPage.id}`}>
-              {createdPage.title}
+          <div className="mt-2 rounded border border-[#cdeccf] bg-[#f3fff4] p-2 text-[#1d5e2a]">
+            <p className="text-xs font-semibold">✅ Отчет успешно создан!</p>
+            <a
+              className="mt-1 inline-flex rounded border border-[#1d5e2a] px-2 py-1 text-xs font-semibold text-[#1d5e2a] transition-colors hover:bg-[#e4f8e7]"
+              href={createdPage.href}
+            >
+              Открыть отчет
             </a>
-          </p>
+          </div>
         ) : null}
       </div>
     </section>

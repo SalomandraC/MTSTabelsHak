@@ -117,12 +117,17 @@ const analyzeTableDataSchema: JsonSchema = {
 const createWikiPageSchema: JsonSchema = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   type: 'object',
-  required: ['spaceId', 'title'],
+  required: ['title'],
+  anyOf: [{ required: ['workspaceId'] }, { required: ['spaceId'] }],
   properties: {
+    workspaceId: { type: 'string', minLength: 1 },
     spaceId: { type: 'string', minLength: 1 },
     title: { type: 'string', minLength: 1, maxLength: 255 },
     parentNodeId: { type: 'string' },
     icon: { type: 'string' },
+    content: {
+      oneOf: [{ type: 'string' }, { type: 'object', additionalProperties: true }],
+    },
   },
   additionalProperties: false,
 };
@@ -253,7 +258,7 @@ export const AI_TOOL_DEFINITIONS: FunctionToolDefinition[] = [
     type: 'function',
     function: {
       name: 'create_wiki_page',
-      description: 'Create a new WikiLive page in the workspace',
+      description: 'Create a new WikiLive page in the workspace with optional markdown or ProseMirror JSON content',
       parameters: createWikiPageSchema,
     },
   },

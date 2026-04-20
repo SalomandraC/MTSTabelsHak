@@ -266,12 +266,7 @@ export class AiChatService {
         ? 'STRICT MWS TABLE MODE: for table operations use tools first, produce deterministic tool arguments, and do not ask clarifying questions.'
         : null,
       intent === 'write_report'
-        ? [
-            'Напиши подробный отчет объемом на одну полную страницу А4.',
-            'Всегда используй [Ref:tableId:rowId:colId] для живых ссылок на данные.',
-            'Если в отчете есть вычисляемые метрики (итоги, средние, KPI, маржа, КПД, дельты, проценты), обязательно добавляй формулу в формате [Formula: expression].',
-            'Внутри [Formula: ...] используй [Ref:tableId:rowId:colId] токены для всех доступных операндов из таблиц.',
-          ].join(' ')
+        ? this.aiAssistantService.getWriteReportSystemPrompt()
         : null,
     ]
       .filter(Boolean)

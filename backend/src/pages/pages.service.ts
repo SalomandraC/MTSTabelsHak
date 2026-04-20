@@ -4,7 +4,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, WikiNodeType } from '@prisma/client';
-import { yDocToProsemirrorJSON } from 'y-prosemirror';
+import { Schema } from 'prosemirror-model';
+import { prosemirrorJSONToYDoc, yDocToProsemirrorJSON } from 'y-prosemirror';
 import * as Y from 'yjs';
 import { UserContext } from 'src/auth/user-context';
 import { decodeBase64ToBuffer } from 'src/common/utils';
@@ -20,6 +21,122 @@ import { CreatePageDto } from './dto/create-page.dto';
 import { UpdatePageDto } from './dto/update-page.dto';
 
 const WIKI_NODE_TYPE_MWS_FOLDER = 'mws_folder';
+
+const LIVE_REFERENCE_TOKEN = /^\[Ref:([^:\]\s]+):([^:\]\s]+):([^:\]\s]+)\]$/;
+
+const aiGeneratedPageSchema = new Schema({
+  nodes: {
+    doc: {
+      content: 'rootblock+',
+    },
+    rootblock: {
+      group: 'rootblock',
+      content: 'block',
+      toDOM: () => ['div', { 'data-type': 'rootblock' }, 0],
+    },
+    paragraph: {
+      group: 'block',
+      content: 'inline*',
+      toDOM: () => ['p', 0],
+    },
+    heading: {
+      group: 'block',
+      content: 'inline*',
+      attrs: {
+        level: { default: 1 },
+      },
+      toDOM: (node) => [`h${node.attrs.level}`, 0],
+    },
+    bulletList: {
+      group: 'block',
+      content: 'listItem+',
+      toDOM: () => ['ul', 0],
+    },
+    orderedList: {
+      group: 'block',
+      content: 'listItem+',
+      toDOM: () => ['ol', 0],
+    },
+    listItem: {
+      group: 'block',
+      content: 'paragraph+',
+      toDOM: () => ['li', 0],
+    },
+    blockquote: {
+      group: 'block',
+      content: 'block+',
+      toDOM: () => ['blockquote', 0],
+    },
+    table: {
+      group: 'block',
+      content: 'tableRow+',
+      toDOM: () => ['table', ['tbody', 0]],
+    },
+    tableRow: {
+      content: '(tableCell|tableHeader)+',
+      toDOM: () => ['tr', 0],
+    },
+    tableCell: {
+      content: 'paragraph+',
+      toDOM: () => ['td', 0],
+    },
+    tableHeader: {
+      content: 'paragraph+',
+      toDOM: () => ['th', 0],
+    },
+    text: {
+      group: 'inline',
+    },
+    hardBreak: {
+      group: 'inline',
+      inline: true,
+      selectable: false,
+      toDOM: () => ['br'],
+    },
+    liveReference: {
+      group: 'inline',
+      inline: true,
+      atom: true,
+      attrs: {
+        spaceId: { default: '' },
+        datasheetId: { default: '' },
+        recordId: { default: '' },
+        fieldId: { default: '' },
+        label: { default: '' },
+      },
+      toDOM: (node) => [
+        'span',
+        {
+          'data-type': 'live-reference',
+          'data-space-id': String(node.attrs.spaceId ?? ''),
+          'data-datasheet-id': String(node.attrs.datasheetId ?? ''),
+          'data-record-id': String(node.attrs.recordId ?? ''),
+          'data-field-id': String(node.attrs.fieldId ?? ''),
+          'data-label': String(node.attrs.label ?? ''),
+        },
+        0,
+      ],
+    },
+    liveFormula: {
+      group: 'inline',
+      inline: true,
+      atom: true,
+      attrs: {
+        spaceId: { default: '' },
+        expression: { default: '' },
+      },
+      toDOM: (node) => [
+        'span',
+        {
+          'data-type': 'live-formula',
+          'data-space-id': String(node.attrs.spaceId ?? ''),
+          'data-expression': String(node.attrs.expression ?? ''),
+        },
+        0,
+      ],
+    },
+  },
+});
 
 @Injectable()
 export class PagesService {
@@ -109,6 +226,40 @@ export class PagesService {
         backlinksCount: 0,
         access: await this.pageAccessService.resolvePageAccess(node.id, user, db),
       },
+    };
+  }
+
+  async createPageForAiReport(
+    input: {
+      workspaceId: string;
+      title: string;
+      content?: Record<string, unknown> | string;
+      parentNodeId?: string;
+      icon?: string;
+    },
+    user: UserContext,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    const initialContent = this.buildInitialContentFromAiPayload(input.content);
+
+    const created = await this.createPage(
+      {
+        spaceId: input.workspaceId,
+        title: input.title,
+        parentNodeId: input.parentNodeId,
+        icon: input.icon ?? 'doc',
+        initialContent,
+      },
+      user,
+      db,
+    );
+
+    return {
+      status: 'created' as const,
+      pageId: created.page.id,
+      title: created.page.title,
+      pageLink: `/pages/${created.page.id}`,
+      pageUrl: `/spaces/${input.workspaceId}/pages/${created.page.id}`,
     };
   }
 
@@ -337,6 +488,268 @@ export class PagesService {
     });
 
     return sibling ? sibling.position + 1 : 0;
+  }
+
+  private buildInitialContentFromAiPayload(content?: Record<string, unknown> | string) {
+    if (!content) {
+      return undefined;
+    }
+
+    const normalizedDoc = this.normalizeAiContentToDoc(content);
+    const ydoc = prosemirrorJSONToYDoc(aiGeneratedPageSchema, normalizedDoc, 'default');
+    const encoded = Buffer.from(Y.encodeStateAsUpdate(ydoc)).toString('base64');
+    ydoc.destroy();
+
+    return {
+      encoding: 'base64-yjs-update-v2',
+      value: encoded,
+    };
+  }
+
+  private normalizeAiContentToDoc(content: Record<string, unknown> | string): Record<string, unknown> {
+    if (typeof content === 'string') {
+      return this.markdownToAiDoc(content);
+    }
+
+    const asRecord = content as Record<string, unknown>;
+    if (asRecord.type === 'doc' && Array.isArray(asRecord.content)) {
+      return this.wrapInRootBlocks(asRecord);
+    }
+
+    if (Array.isArray(asRecord.content)) {
+      return this.wrapInRootBlocks({
+        type: 'doc',
+        content: asRecord.content,
+      });
+    }
+
+    return this.markdownToAiDoc(JSON.stringify(content));
+  }
+
+  private markdownToAiDoc(markdown: string): Record<string, unknown> {
+    const normalized = String(markdown ?? '').replace(/\r\n/g, '\n');
+    const lines = normalized.split('\n');
+    const blocks: Array<Record<string, unknown>> = [];
+    const paragraphBuffer: string[] = [];
+
+    const flushParagraph = () => {
+      const text = paragraphBuffer.join(' ').trim();
+      paragraphBuffer.length = 0;
+      if (!text) {
+        return;
+      }
+
+      blocks.push({
+        type: 'paragraph',
+        content: this.parseInlineAiTokens(text),
+      });
+    };
+
+    let index = 0;
+    while (index < lines.length) {
+      const rawLine = lines[index];
+      const line = rawLine.trim();
+
+      if (!line) {
+        flushParagraph();
+        index += 1;
+        continue;
+      }
+
+      const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+      if (headingMatch) {
+        flushParagraph();
+        blocks.push({
+          type: 'heading',
+          attrs: { level: headingMatch[1].length },
+          content: this.parseInlineAiTokens(headingMatch[2].trim()),
+        });
+        index += 1;
+        continue;
+      }
+
+      const bulletMatch = line.match(/^[-*]\s+(.+)$/);
+      if (bulletMatch) {
+        flushParagraph();
+        const items: Array<Record<string, unknown>> = [];
+        while (index < lines.length) {
+          const current = lines[index].trim();
+          const match = current.match(/^[-*]\s+(.+)$/);
+          if (!match) {
+            break;
+          }
+          const itemText = match[1].trim() || 'Данные не указаны';
+          items.push({
+            type: 'listItem',
+            content: [{
+              type: 'paragraph',
+              content: this.parseInlineAiTokens(itemText),
+            }],
+          });
+          index += 1;
+        }
+
+        if (items.length > 0) {
+          blocks.push({ type: 'bulletList', content: items });
+          continue;
+        }
+      }
+
+      const orderedMatch = line.match(/^\d+\.\s+(.+)$/);
+      if (orderedMatch) {
+        flushParagraph();
+        const items: Array<Record<string, unknown>> = [];
+        while (index < lines.length) {
+          const current = lines[index].trim();
+          const match = current.match(/^\d+\.\s+(.+)$/);
+          if (!match) {
+            break;
+          }
+          const itemText = match[1].trim() || 'Данные не указаны';
+          items.push({
+            type: 'listItem',
+            content: [{
+              type: 'paragraph',
+              content: this.parseInlineAiTokens(itemText),
+            }],
+          });
+          index += 1;
+        }
+
+        if (items.length > 0) {
+          blocks.push({ type: 'orderedList', content: items });
+          continue;
+        }
+      }
+
+      paragraphBuffer.push(line);
+      index += 1;
+    }
+
+    flushParagraph();
+
+    return this.wrapInRootBlocks({
+      type: 'doc',
+      content: blocks,
+    });
+  }
+
+  private parseInlineAiTokens(text: string): Array<Record<string, unknown>> {
+    const value = String(text ?? '');
+    const parts: Array<Record<string, unknown>> = [];
+    let cursor = 0;
+
+    while (cursor < value.length) {
+      const nextRef = value.indexOf('[Ref:', cursor);
+      const nextFormula = value.indexOf('[Formula:', cursor);
+      const candidates = [nextRef, nextFormula].filter((idx) => idx >= 0);
+      const nextTokenStart = candidates.length > 0 ? Math.min(...candidates) : -1;
+
+      if (nextTokenStart < 0) {
+        parts.push({ type: 'text', text: value.slice(cursor) });
+        break;
+      }
+
+      if (nextTokenStart > cursor) {
+        parts.push({ type: 'text', text: value.slice(cursor, nextTokenStart) });
+      }
+
+      if (value.startsWith('[Ref:', nextTokenStart)) {
+        const end = value.indexOf(']', nextTokenStart);
+        if (end > nextTokenStart) {
+          const token = value.slice(nextTokenStart, end + 1);
+          const match = token.match(LIVE_REFERENCE_TOKEN);
+          if (match) {
+            const [, datasheetId, recordId, fieldId] = match;
+            parts.push({
+              type: 'liveReference',
+              attrs: {
+                spaceId: '',
+                datasheetId,
+                recordId,
+                fieldId,
+                label: `${recordId} / ${fieldId}`,
+              },
+            });
+            cursor = end + 1;
+            continue;
+          }
+        }
+      }
+
+      if (value.startsWith('[Formula:', nextTokenStart)) {
+        const token = this.extractFormulaToken(value, nextTokenStart);
+        if (token) {
+          parts.push({
+            type: 'liveFormula',
+            attrs: {
+              spaceId: '',
+              expression: token.expression,
+            },
+          });
+          cursor = token.end;
+          continue;
+        }
+      }
+
+      parts.push({ type: 'text', text: value.slice(nextTokenStart, nextTokenStart + 1) });
+      cursor = nextTokenStart + 1;
+    }
+
+    return parts.length > 0 ? parts : [{ type: 'text', text: value }];
+  }
+
+  private extractFormulaToken(text: string, from: number): { expression: string; end: number } | null {
+    const prefix = '[Formula:';
+    if (!text.startsWith(prefix, from)) {
+      return null;
+    }
+
+    let depth = 1;
+    let index = from + 1;
+
+    while (index < text.length) {
+      const char = text[index];
+      if (char === '[') {
+        depth += 1;
+      } else if (char === ']') {
+        depth -= 1;
+        if (depth === 0) {
+          return {
+            expression: text.slice(from + prefix.length, index).trim(),
+            end: index + 1,
+          };
+        }
+      }
+      index += 1;
+    }
+
+    return null;
+  }
+
+  private wrapInRootBlocks(document: Record<string, unknown>): Record<string, unknown> {
+    const content = Array.isArray(document.content) ? document.content : [];
+    const wrapped = content
+      .filter((node) => node && typeof node === 'object')
+      .map((node) => {
+        const typedNode = node as Record<string, unknown>;
+        if (typedNode.type === 'rootblock') {
+          return typedNode;
+        }
+
+        return {
+          type: 'rootblock',
+          content: [typedNode],
+        };
+      });
+
+    return {
+      type: 'doc',
+      content:
+        wrapped.length > 0
+          ? wrapped
+          : [{ type: 'rootblock', content: [{ type: 'paragraph', content: [] }] }],
+    };
   }
 
   private async resolveParentId(

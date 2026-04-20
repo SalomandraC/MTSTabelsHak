@@ -239,12 +239,19 @@ export class AiToolRegistryService {
     user: UserContext,
     _context: ToolExecutionContext,
   ): Promise<ToolExecutionSuccess> {
-    const created = await this.pagesService.createPage(
+    const workspaceId = String(args.workspaceId ?? args.spaceId ?? '');
+    const created = await this.pagesService.createPageForAiReport(
       {
-        spaceId: String(args.spaceId),
+        workspaceId,
         title: String(args.title),
         parentNodeId: typeof args.parentNodeId === 'string' ? args.parentNodeId : undefined,
         icon: typeof args.icon === 'string' ? args.icon : 'doc',
+        content:
+          typeof args.content === 'string'
+            ? args.content
+            : isPlainObject(args.content)
+              ? args.content
+              : undefined,
       },
       user,
     );
@@ -253,7 +260,11 @@ export class AiToolRegistryService {
       ok: true,
       toolName: 'create_wiki_page',
       data: {
-        page: created.page,
+        status: created.status,
+        pageId: created.pageId,
+        title: created.title,
+        pageLink: created.pageLink,
+        pageUrl: created.pageUrl,
       },
     };
   }
