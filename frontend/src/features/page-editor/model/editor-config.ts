@@ -170,7 +170,10 @@ type PageEditorExtensionOptions = {
 
 export function createPageEditorExtensions(options: PageEditorExtensionOptions = {}) {
   return [
-    Markdown,
+    Markdown.configure({
+      html: true,
+      tightLists: true,
+    }),
     TextStyle,
     Highlight.configure({
       multicolor: true,
@@ -233,7 +236,10 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
       link: false,
       underline: false,
       horizontalRule: false,
+      bold: {},
+      italic: {},
       heading: {
+        levels: [1, 2, 3],
         HTMLAttributes: {
           class: 'page-editor-heading',
         },

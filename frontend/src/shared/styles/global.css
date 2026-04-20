@@ -1193,6 +1193,12 @@
   font-weight: bold;
 }
 
+.ProseMirror strong,
+.tiptap strong {
+  font-weight: 900 !important;
+  color: #000;
+}
+
 .time-machine-panel,
 .time-machine-panel * {
   font-family: 'MTSWide', var(--editor-font-sans);

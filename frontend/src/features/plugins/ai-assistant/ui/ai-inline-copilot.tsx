@@ -599,16 +599,70 @@ function buildTableContinuationQuestion(currentAnswer: string): string {
 }
 
 function sanitizeAiResponse(text: string): string {
-  return String(text ?? '')
-    // Удаление двойных хешей: # # или ## # → #
-    .replace(/^(#+)\s+#+/gm, '$1')
-    // Удаление жирности в заголовках: ## **текст** → ## текст
-    .replace(/^(#+)\s*\*\*(.*?)\*\*/gm, '$1 $2')
-    // Удаление горизонтальных разделителей (строки только из дефисов или звездочек)
-    .replace(/^-{3,}$/gm, '')
-    .replace(/^\*{3,}$/gm, '')
-    // Удаление лишних пустых строк (более 2 подряд)
-    .replace(/\n{3,}/g, '\n\n');
+  const rawText = String(text ?? '').replace(/\r\n/g, '\n');
+  const lines = rawText.split('\n');
+  const cleanedLines: string[] = [];
+
+  for (const rawLine of lines) {
+    let line = rawLine.replace(/[ \t]+$/g, '');
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      cleanedLines.push('');
+      continue;
+    }
+
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      continue;
+    }
+
+    if (/^#+/.test(trimmed)) {
+      // Железная нормализация «каши» из #/*/пробелов сразу после маркера заголовка.
+      line = line.replace(/^(#+)\s*[\s#\*]+(?=\S)/g, '$1 ');
+      // Удаляем ** только если они оборачивают весь заголовок, не трогая inline-разметку в абзацах.
+      line = line.replace(/^(#+)\s*\*\*(.*?)\*\*$/g, '$1 $2');
+    }
+
+    cleanedLines.push(line);
+  }
+
+  return cleanedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function ensureAiMarkdownBlockSpacing(text: string): string {
+  const lines = String(text ?? '').replace(/\r\n/g, '\n').split('\n');
+  const normalizedLines: string[] = [];
+  let previousWasBlank = true;
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/[ \t]+$/g, '');
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      if (!previousWasBlank) {
+        normalizedLines.push('');
+      }
+      previousWasBlank = true;
+      continue;
+    }
+
+    const startsMarkdownBlock = /^(#{1,6})\s+\S/.test(trimmed) || /^-\s+\S/.test(trimmed);
+    if (startsMarkdownBlock && !previousWasBlank) {
+      normalizedLines.push('');
+    }
+
+    normalizedLines.push(line);
+    previousWasBlank = false;
+  }
+
+  return normalizedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function parseAiMarkdownForInsert(editor: Editor, rawText: string): { sanitizedText: string; contentJson: Content | null } {
+  const sanitizedText = ensureAiMarkdownBlockSpacing(sanitizeAiResponse(rawText));
+  const markdownStorage = (editor.storage as { markdown?: { parse?: (value: string) => Content | null } }).markdown;
+  const contentJson = markdownStorage?.parse?.(sanitizedText) ?? null;
+  return { sanitizedText, contentJson };
 }
 
 function normalizeReportMarkdown(reportText: string): string {
@@ -640,7 +694,7 @@ function normalizeReportMarkdown(reportText: string): string {
     normalizedLines.push(line);
   }
 
-  return normalizedLines.join('\n').trim();
+  return ensureAiMarkdownBlockSpacing(normalizedLines.join('\n').trim());
 }
 
 function buildReportRootBlock(editor: Editor | null, reportText: string, spaceId: string): JSONContent[] {
@@ -1320,11 +1374,9 @@ export function AiInlineCopilot({
     }
 
     editor.commands.focus();
-    const insertPos = editor.state.selection.from;
     const beforeDocument = JSON.stringify(editor.getJSON());
-    const analysisBlocks = parseMarkdownReportWithLiveReferences(pendingAnalysisText, { spaceId });
-
-    const inserted = editor.chain().insertContentAt(insertPos, analysisBlocks).run();
+    const { sanitizedText, contentJson } = parseAiMarkdownForInsert(editor, pendingAnalysisText);
+    const inserted = editor.chain().focus().insertContent(contentJson ?? sanitizedText).run();
     const afterDocument = JSON.stringify(editor.getJSON());
 
     if (inserted && afterDocument !== beforeDocument) {
@@ -1334,7 +1386,7 @@ export function AiInlineCopilot({
     }
 
     console.error('Analysis insertion did not change the document, falling back to plain text.');
-    const fallbackInserted = editor.chain().focus().insertContentAt(insertPos, pendingAnalysisText).run();
+    const fallbackInserted = editor.chain().focus().insertContent(sanitizedText).run();
     if (fallbackInserted && JSON.stringify(editor.getJSON()) !== beforeDocument) {
       setStatus('⚠️ Анализ вставлен как обычный текст');
       setPendingAnalysisText(null);
@@ -1525,11 +1577,9 @@ export function AiInlineCopilot({
     }
 
     editor.commands.focus();
-    const insertPos = editor.state.selection.from;
     const beforeDocument = JSON.stringify(editor.getJSON());
-    const reportRootBlock = buildReportRootBlock(editor, pendingReportText, spaceId);
-
-    const inserted = editor.chain().insertContentAt(insertPos, reportRootBlock).run();
+    const { sanitizedText, contentJson } = parseAiMarkdownForInsert(editor, pendingReportText);
+    const inserted = editor.chain().focus().insertContent(contentJson ?? sanitizedText).run();
     const afterDocument = JSON.stringify(editor.getJSON());
 
     if (inserted && afterDocument !== beforeDocument) {
@@ -1539,7 +1589,7 @@ export function AiInlineCopilot({
     }
 
     console.error('AI report insertion did not change the document, falling back to plain text.');
-    const fallbackInserted = editor.chain().focus().insertContentAt(insertPos, pendingReportText).run();
+    const fallbackInserted = editor.chain().focus().insertContent(sanitizedText).run();
     if (fallbackInserted && JSON.stringify(editor.getJSON()) !== beforeDocument) {
       setStatus('⚠️ Отчет вставлен как обычный текст');
       setPendingReportText(null);
