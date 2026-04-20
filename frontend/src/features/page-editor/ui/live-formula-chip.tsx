@@ -18,7 +18,7 @@ function buildTokenKey(expression: string): string {
     .join('|');
 }
 
-export function LiveFormulaChip({ node, updateAttributes }: NodeViewProps) {
+export function LiveFormulaChip({ node, updateAttributes, getPos }: NodeViewProps) {
   const expression = String(node.attrs.expression ?? '').trim();
   const currentResult = String(node.attrs.result ?? '').trim();
   const currentStatus = (String(node.attrs.status ?? 'idle') as FormulaStatus) || 'idle';
@@ -146,6 +146,20 @@ export function LiveFormulaChip({ node, updateAttributes }: NodeViewProps) {
       data-status={currentStatus}
       data-expression={expression}
       title={tooltip}
+      contentEditable={false}
+      onDoubleClick={() => {
+        const customEvent = new CustomEvent('wikilive:edit-live-formula', {
+          detail: {
+            pos: typeof getPos === 'function' ? getPos() : null,
+            attrs: {
+              spaceId: String(node.attrs.spaceId ?? ''),
+              expression,
+            },
+          },
+        });
+
+        window.dispatchEvent(customEvent);
+      }}
     >
       <span className="live-formula-chip__prefix">ƒx</span>
       <span className="live-formula-chip__value">{display}</span>

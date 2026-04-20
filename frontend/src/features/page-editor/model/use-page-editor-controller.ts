@@ -44,6 +44,13 @@ type LiveReferenceEditTarget = {
   selection: LiveReferenceSelection;
 };
 
+type LiveFormulaEditTarget = {
+  pos: number;
+  nodeSize: number;
+  expression: string;
+  spaceId: string;
+};
+
 type CollabState = {
   pageId: string;
   ydoc: Y.Doc;
@@ -196,6 +203,7 @@ export function usePageEditorController({
   const [liveFormulaExpression, setLiveFormulaExpression] = useState('');
   const [isSelectingFormulaReference, setIsSelectingFormulaReference] = useState(false);
   const [liveReferenceEditTarget, setLiveReferenceEditTarget] = useState<LiveReferenceEditTarget | null>(null);
+  const [liveFormulaEditTarget, setLiveFormulaEditTarget] = useState<LiveFormulaEditTarget | null>(null);
   const [isTemplateVariableModalOpen, setIsTemplateVariableModalOpen] = useState(false);
   const [templateVariableLabel, setTemplateVariableLabel] = useState('');
   const [templateVariableDescription, setTemplateVariableDescription] = useState('');
@@ -858,14 +866,16 @@ export function usePageEditorController({
     setIsTemplateVariableModalOpen(false);
   };
 
-  const openLiveFormulaModal = () => {
-    setLiveFormulaExpression('');
+  const openLiveFormulaModal = (options?: { expression?: string; editTarget?: LiveFormulaEditTarget | null }) => {
+    setLiveFormulaExpression(options?.expression ?? '');
+    setLiveFormulaEditTarget(options?.editTarget ?? null);
     setIsLiveFormulaModalOpen(true);
   };
 
   const closeLiveFormulaModal = () => {
     setIsLiveFormulaModalOpen(false);
     setIsSelectingFormulaReference(false);
+    setLiveFormulaEditTarget(null);
   };
 
   const openBookmarkModal = () => {
@@ -951,7 +961,7 @@ export function usePageEditorController({
 
     if (item.id === 'live-formula') {
       setSlashState(baseSlashState);
-      openLiveFormulaModal();
+      openLiveFormulaModal({ expression: '', editTarget: null });
       return;
     }
 
@@ -1225,6 +1235,56 @@ export function usePageEditorController({
   }, [canEdit, editor, spaceId]);
 
   useEffect(() => {
+    const handleEditLiveFormula = (event: Event) => {
+      if (!editor || !canEdit) {
+        return;
+      }
+
+      const customEvent = event as CustomEvent<{
+        pos?: number | null;
+        attrs?: {
+          expression?: string;
+          spaceId?: string;
+        };
+      }>;
+
+      const pos = customEvent.detail?.pos;
+      if (typeof pos !== 'number' || pos < 0) {
+        return;
+      }
+
+      const node = editor.state.doc.nodeAt(pos);
+      const nodeSize = node?.nodeSize ?? 0;
+      if (!node || node.type.name !== 'liveFormula' || nodeSize <= 0) {
+        return;
+      }
+
+      const attrs = node.attrs as {
+        expression?: string;
+        spaceId?: string;
+      };
+
+      const expression = String(attrs.expression ?? customEvent.detail?.attrs?.expression ?? '').trim();
+      const resolvedSpaceId = String(attrs.spaceId ?? customEvent.detail?.attrs?.spaceId ?? spaceId);
+
+      openLiveFormulaModal({
+        expression,
+        editTarget: {
+          pos,
+          nodeSize,
+          expression,
+          spaceId: resolvedSpaceId,
+        },
+      });
+    };
+
+    window.addEventListener('wikilive:edit-live-formula', handleEditLiveFormula);
+    return () => {
+      window.removeEventListener('wikilive:edit-live-formula', handleEditLiveFormula);
+    };
+  }, [canEdit, editor, spaceId]);
+
+  useEffect(() => {
     const globalFlags = window as unknown as { __wikiliveSlashMenuOpen?: boolean };
     globalFlags.__wikiliveSlashMenuOpen = slashState.isOpen;
 
@@ -1385,6 +1445,7 @@ export function usePageEditorController({
       isOpen: isLiveFormulaModalOpen,
       expression: liveFormulaExpression,
       isSubmitDisabled: !liveFormulaExpression.trim(),
+      submitLabel: liveFormulaEditTarget ? 'Сохранить' : 'Вставить',
       onExpressionChange: setLiveFormulaExpression,
       onPickReference: () => {
         setIsSelectingFormulaReference(true);
@@ -1395,10 +1456,32 @@ export function usePageEditorController({
           return;
         }
 
-        editor.chain().focus().insertLiveFormula({
-          spaceId,
-          expression: liveFormulaExpression.trim(),
-        }).run();
+        const nextExpression = liveFormulaExpression.trim();
+        const targetSpaceId = liveFormulaEditTarget?.spaceId || spaceId;
+
+        if (liveFormulaEditTarget) {
+          editor
+            .chain()
+            .focus()
+            .deleteRange({
+              from: liveFormulaEditTarget.pos,
+              to: liveFormulaEditTarget.pos + liveFormulaEditTarget.nodeSize,
+            })
+            .insertLiveFormula({
+              spaceId: targetSpaceId,
+              expression: nextExpression,
+            })
+            .run();
+        } else {
+          editor
+            .chain()
+            .focus()
+            .insertLiveFormula({
+              spaceId: targetSpaceId,
+              expression: nextExpression,
+            })
+            .run();
+        }
 
         closeLiveFormulaModal();
       },

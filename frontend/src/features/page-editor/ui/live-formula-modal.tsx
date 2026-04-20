@@ -6,6 +6,7 @@ type LiveFormulaModalProps = {
   isOpen: boolean;
   expression: string;
   isSubmitDisabled: boolean;
+  submitLabel?: string;
   onExpressionChange: (value: string) => void;
   onPickReference: () => void;
   onSubmit: () => void;
@@ -16,6 +17,7 @@ export function LiveFormulaModal({
   isOpen,
   expression,
   isSubmitDisabled,
+  submitLabel = 'Вставить',
   onExpressionChange,
   onPickReference,
   onSubmit,
@@ -91,7 +93,7 @@ export function LiveFormulaModal({
                 variant="primary"
                 className="w-full"
               >
-                Вставить
+                {submitLabel}
               </ModalActionButton>
             </div>
           </div>
