@@ -362,9 +362,13 @@ export class MwsService {
     };
   }
 
-  async listFields(datasheetId: string, viewId: string | undefined, user: UserContext) {
-    const cacheKey = this.userScopedCacheKey(user, `fields:${datasheetId}:${viewId ?? 'default'}`);
-    return this.withCache(cacheKey, 300, async () => {
+  async listFields(
+    datasheetId: string,
+    viewId: string | undefined,
+    user: UserContext,
+    options?: { bypassCache?: boolean },
+  ) {
+    const fetchFields = async () => {
       let data: any;
 
       try {
@@ -400,7 +404,14 @@ export class MwsService {
           .map((field: unknown) => this.normalizeField(field))
           .filter((field): field is NormalizedMwsField => Boolean(field.id)),
       };
-    });
+    };
+
+    if (options?.bypassCache) {
+      return fetchFields();
+    }
+
+    const cacheKey = this.userScopedCacheKey(user, `fields:${datasheetId}:${viewId ?? 'default'}`);
+    return this.withCache(cacheKey, 300, fetchFields);
   }
 
   async createField(spaceId: string, datasheetId: string, dto: CreateMwsFieldDto, user: UserContext) {
@@ -667,7 +678,9 @@ export class MwsService {
     return this.withCache(cacheKey, 10, async () => {
       const [node, fields, views, preview] = await Promise.all([
         this.getNode(dto.nodeId, user),
-        this.listFields(dto.datasheetId, dto.viewId, user),
+        // Resolve should reflect external schema changes quickly (for example,
+        // columns deleted directly in MWS Tables), so fields are fetched fresh.
+        this.listFields(dto.datasheetId, dto.viewId, user, { bypassCache: true }),
         this.listViews(dto.datasheetId, user),
         this.listRecords(
           dto.datasheetId,

@@ -162,4 +162,95 @@ describe('MwsService', () => {
       'fld-status',
     ]);
   });
+
+  it('resolveTableEmbed bypasses stale fields cache to reflect externally deleted columns', async () => {
+    const staleCachedFields = {
+      items: [
+        { id: 'fld-title', name: 'Название', type: 'SingleText' },
+        { id: 'fld-removed', name: 'Удаленный столбец', type: 'SingleText' },
+      ],
+    };
+    redisService.getJson.mockImplementation((key: string) => {
+      if (typeof key === 'string' && key.includes('fields:dst-1:view-1')) {
+        return Promise.resolve(staleCachedFields);
+      }
+
+      return Promise.resolve(null);
+    });
+
+    const requestSpy = jest.spyOn(service as any, 'request') as jest.Mock;
+    requestSpy.mockImplementation((_user: unknown, method: string, path: string) => {
+      if (method === 'GET' && path === '/nodes/node-1') {
+        return Promise.resolve({
+          data: {
+            id: 'node-1',
+            name: 'Таблица',
+            type: 'Datasheet',
+            spaceId: 'space-1',
+            datasheetId: 'dst-1',
+          },
+        });
+      }
+
+      if (method === 'GET' && path === '/datasheets/dst-1/fields') {
+        return Promise.resolve({
+          data: {
+            fields: [
+              { id: 'fld-title', name: 'Название', type: 'SingleText' },
+            ],
+          },
+        });
+      }
+
+      if (method === 'GET' && path === '/datasheets/dst-1/views') {
+        return Promise.resolve({
+          data: {
+            views: [{ id: 'view-1', name: 'Все', type: 'Grid' }],
+          },
+        });
+      }
+
+      if (method === 'GET' && path === '/datasheets/dst-1/records') {
+        return Promise.resolve({
+          data: {
+            pageNum: 1,
+            pageSize: 20,
+            total: 1,
+            records: [
+              {
+                recordId: 'rec-1',
+                fields: {
+                  'fld-title': 'Запуск MVP',
+                  'fld-removed': '',
+                },
+              },
+            ],
+          },
+        });
+      }
+
+      return Promise.reject(new Error(`Unexpected request: ${method} ${path}`));
+    });
+
+    const result = await service.resolveTableEmbed(
+      {
+        spaceId: 'space-1',
+        nodeId: 'node-1',
+        datasheetId: 'dst-1',
+        viewId: 'view-1',
+        pageSize: 20,
+        allowInlineEdit: true,
+      },
+      user,
+    );
+
+    expect(result.embed.fields.map((field) => field.id)).toEqual(['fld-title']);
+    expect(requestSpy).toHaveBeenCalledWith(
+      user,
+      'GET',
+      '/datasheets/dst-1/fields',
+      undefined,
+      { viewId: 'view-1' },
+    );
+  });
 });

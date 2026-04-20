@@ -220,4 +220,56 @@ describe('useWikiTableEmbed', () => {
       expect(result.current.isMutating).toBe(false);
     });
   });
+
+  it('removes column from controller when it is deleted in external MWS and reflected by resolve', async () => {
+    const attrs = {
+      blockId: 'block-1',
+      title: 'Таблица 2',
+      spaceId: 'space-1',
+      nodeId: 'node-2',
+      datasheetId: 'dst-2',
+      viewId: 'view-1',
+      selectedFieldIds: ['fld-title', 'fld-owner'],
+      pageSize: 20,
+      allowInlineEdit: true,
+      displayMode: 'table' as const,
+    };
+
+    const { result } = renderHook(() => useWikiTableEmbed(attrs));
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.fields.map((field) => field.id)).toEqual(['fld-title', 'fld-owner']);
+
+    vi.mocked(wikiliveApi.resolveTableEmbed).mockResolvedValueOnce({
+      ...RESOLVE_TABLE_EMBED_MOCK,
+      embed: {
+        ...RESOLVE_TABLE_EMBED_MOCK.embed,
+        fields: [{ id: 'fld-title', name: 'Название', type: 'SingleText' }],
+        preview: {
+          ...RESOLVE_TABLE_EMBED_MOCK.embed.preview,
+          items: [
+            {
+              recordId: 'rec-1',
+              fields: {
+                'fld-title': 'Запуск MVP',
+                'fld-owner': '',
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    await act(async () => {
+      await result.current.loadEmbed({ silent: true });
+    });
+
+    await waitFor(() => {
+      expect(result.current.fields.map((field) => field.id)).toEqual(['fld-title']);
+      expect(result.current.visibleFields.map((field) => field.id)).toEqual(['fld-title']);
+    });
+  });
 });
