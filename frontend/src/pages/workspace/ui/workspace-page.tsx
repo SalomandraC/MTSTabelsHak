@@ -1809,6 +1809,11 @@ export function WorkspacePage() {
 
         if (event.type === 'page_updated') {
           void applyPageUpdate(event.pageId);
+
+          try {
+            void refreshDocumentGraphRef.current?.();
+          } catch {
+          }
         }
       },
     });

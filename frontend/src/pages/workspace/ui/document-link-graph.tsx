@@ -453,23 +453,15 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
     });
   }, [elements, edgesKey, pages.length, isCollapsed]);
 
+  // Graph refresh is now driven by external events (websocket) via the
+  // `onRefreshGraph` prop. Previously this component polled every 3s; remove
+  // polling to avoid duplicated requests and let the parent push updates.
   useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      const cy = cytoscapeRef.current;
-      if (!cy || pages.length === 0 || isCollapsed) {
-        return;
-      }
-
-      if (onRefreshGraphRef.current) {
-        void onRefreshGraphRef.current();
-      } else {
-        void handleRefreshGraph();
-      }
-    }, 3000);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
+    // No-op effect kept to preserve dependency edge cases where callers expect
+    // the component to re-evaluate when pages/edges/isCollapsed change.
+    // Refreshes should be invoked by the parent through the `onRefreshGraph`
+    // callback when realtime events arrive.
+    return () => undefined;
   }, [pages.length, pagesKey, edgesKey, isCollapsed]);
 
   const handleRefreshGraph = async () => {
