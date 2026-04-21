@@ -100,6 +100,26 @@ function flattenNode(node: ProseMirrorNode, blocks: BlockNode[], link?: ParserLi
       break;
     }
 
+    case 'liveChart': {
+      const yAxisFieldIds = node.attrs?.yAxisFieldIds;
+      blocks.push({
+        type: 'live_chart',
+        chartType: normalizeChartType(node.attrs?.chartType),
+        datasheetId: (node.attrs?.datasheetId as string) ?? null,
+        xAxisFieldId: (node.attrs?.xAxisFieldId as string) ?? '',
+        yAxisFieldIds: Array.isArray(yAxisFieldIds) ? yAxisFieldIds.map(String) : [],
+      });
+      break;
+    }
+
+    case 'mermaidDiagram': {
+      blocks.push({
+        type: 'mermaid_diagram',
+        mermaidCode: (node.attrs?.code as string) ?? '',
+      });
+      break;
+    }
+
     case 'codeBlock': {
       blocks.push({
         type: 'code_block',
@@ -175,6 +195,14 @@ function flattenNode(node: ProseMirrorNode, blocks: BlockNode[], link?: ParserLi
       break;
     }
   }
+}
+
+function normalizeChartType(value: unknown): 'bar' | 'line' | 'pie' {
+  const normalized = String(value ?? '').toLowerCase();
+  if (normalized === 'line' || normalized === 'pie') {
+    return normalized;
+  }
+  return 'bar';
 }
 
 function flattenListItem(node: ProseMirrorNode, blocks: BlockNode[], link?: ParserLinkContext): void {

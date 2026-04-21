@@ -14,6 +14,7 @@ Frontend (workspace-page.tsx)
                  └─ document-generator (отдельный Docker-сервис)
                       ├─ document-parser.ts   — ProseMirror JSON → BlockNode[]
                       ├─ live-inline.ts       — resolve live inline nodes during export
+                      ├─ chart-export.ts      — live chart snapshots and data representation
                       ├─ pdf-generator.ts     — BlockNode[] → PDF (Puppeteer)
                       ├─ docx-generator.ts    — BlockNode[] → DOCX (docx library)
                       └─ md-generator.ts      — BlockNode[] → Markdown
@@ -106,6 +107,8 @@ GET /health
 | Цитаты | ✅ | ✅ | ✅ |
 | Горизонтальный разделитель | ✅ | ✅ | ✅ |
 | Таблицы MWS (данные через API) | ✅ | ✅ | placeholder |
+| Live charts | SVG snapshot | SVG snapshot + data table | metadata + Markdown table |
+| Mermaid diagrams | SVG source snapshot | SVG source snapshot + source block | fenced `mermaid` block |
 | iframe | placeholder | placeholder | HTML-комментарий |
 
 ## Живые inline-сущности
@@ -172,6 +175,57 @@ GET /api/v1/mws/datasheets/{datasheetId}/records?pageSize=100
 
 Тот же пользовательский токен используется и для export-resolve живых переменных, потому что без него `document-generator` не сможет достучаться до значений ячеек пользователя.
 
+## Графики и диаграммы
+
+### Live charts
+
+`liveChart` хранится в документе как block-node с атрибутами:
+
+- `chartType`: `bar`, `line` или `pie`;
+- `datasheetId`: таблица-источник;
+- `xAxisFieldId`: поле для оси X;
+- `yAxisFieldIds`: числовые серии.
+
+Во время экспорта `document-generator` загружает поля и записи MWS таблицы с пользовательским токеном и строит export-представление графика:
+
+- PDF: статичный SVG-снапшот графика;
+- DOCX: SVG-снапшот графика + таблица данных под ним;
+- MD: текстовое описание графика + Markdown-таблица с данными.
+
+Для Markdown график не может быть “живым” сам по себе: обычный Markdown viewer не умеет рендерить кастомный WikiLive chart-node. Поэтому MD-экспорт сохраняет данные и конфигурационный контекст в читаемом виде.
+
+### Mermaid diagrams
+
+`mermaidDiagram` хранит исходный Mermaid-код.
+
+- В редакторе Mermaid-код рендерится на фронте через `mermaid.render(...)`.
+- Перед рендером flowchart/graph код нормализуется: подписи узлов и стрелок оборачиваются в кавычки, чтобы русскоязычные label-ы не ломали Mermaid parser.
+- PDF/DOCX получают export-friendly snapshot диаграммы.
+- MD получает fenced block:
+
+````md
+```mermaid
+flowchart TD
+  A --> B
+```
+````
+
+Такой Markdown будет рендериться как диаграмма в viewer-ах, которые поддерживают Mermaid, например в Obsidian или GitLab.
+
+Пример нормализации:
+
+```text
+Start[Начало] --> Action[Действие]
+```
+
+перед рендером становится:
+
+```text
+Start["Начало"] --> Action["Действие"]
+```
+
+Это нужно только для стабильного отображения диаграммы. В документе по-прежнему хранится Mermaid-код.
+
 ## Ссылки на страницы
 
 `pageLink` ноды внутри параграфов и standalone `pageLink` блоки рендерятся как кликабельные ссылки вида:
@@ -216,6 +270,7 @@ docgen:
 - HTTP-сервис: `document-generator/src/index.ts`
 - Парсер ProseMirror: `document-generator/src/document-parser.ts`
 - Resolver живых inline-узлов: `document-generator/src/live-inline.ts`
+- Export-представление графиков: `document-generator/src/chart-export.ts`
 - Генераторы форматов: `document-generator/src/generators/*`
 
 Для локальной диагностики можно проверить доступность сервиса:

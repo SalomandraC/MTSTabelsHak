@@ -80,3 +80,34 @@ test('flattenDocument preserves hard breaks inside inline content', () => {
   assert.equal(blocks[0]?.inlineNodes?.[1]?.type, 'hard_break');
   assert.equal(blocks[0]?.content, 'Первая строка<br>Вторая строка');
 });
+
+test('flattenDocument preserves live chart and mermaid diagram blocks', () => {
+  const blocks = flattenDocument({
+    type: 'doc',
+    content: [
+      {
+        type: 'liveChart',
+        attrs: {
+          chartType: 'line',
+          datasheetId: 'ds-1',
+          xAxisFieldId: 'date',
+          yAxisFieldIds: ['amount', 'tax'],
+        },
+      },
+      {
+        type: 'mermaidDiagram',
+        attrs: {
+          code: 'flowchart TD\nA --> B',
+        },
+      },
+    ],
+  });
+
+  assert.equal(blocks.length, 2);
+  assert.equal(blocks[0]?.type, 'live_chart');
+  assert.equal(blocks[0]?.chartType, 'line');
+  assert.equal(blocks[0]?.datasheetId, 'ds-1');
+  assert.deepEqual(blocks[0]?.yAxisFieldIds, ['amount', 'tax']);
+  assert.equal(blocks[1]?.type, 'mermaid_diagram');
+  assert.equal(blocks[1]?.mermaidCode, 'flowchart TD\nA --> B');
+});
