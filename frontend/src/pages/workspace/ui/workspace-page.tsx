@@ -248,13 +248,13 @@ function BlankAreaMenuItem({
       onClick={onClick}
       disabled={disabled}
       className={[
-        'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[15px] transition-colors',
+        'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-normal transition-colors',
         toneClass,
       ].join(' ')}
     >
-      <span className="flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span>
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[#6b7280]">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {shortcut ? <span className="shrink-0 text-[13px] text-[#9aa3af]">{shortcut}</span> : null}
+      {shortcut ? <span className="shrink-0 text-xs text-[#9aa3af]">{shortcut}</span> : null}
     </button>
   );
 }
@@ -2891,7 +2891,7 @@ export function WorkspacePage() {
                       {blankAreaCreateMode ? (
                         <div className="space-y-2 p-1">
                           <p className="px-2 pt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b94a3]">
-                            {blankAreaCreateMode === 'folder' ? 'Новая папка' : 'Новая страница'}
+                            {blankAreaCreateMode === 'folder' ? 'Новая папка' : 'Создать страницу'}
                           </p>
                           <input
                             ref={blankAreaCreateInputRef}
@@ -2947,19 +2947,19 @@ export function WorkspacePage() {
                       ) : (
                         <div className="space-y-1">
                           <BlankAreaMenuItem
-                            icon={<Pencil size={15} strokeWidth={2.1} />}
-                            label="Новая страница"
-                            onClick={() => openBlankAreaCreateMode('page')}
+                            icon={<FileDown size={14} strokeWidth={2.2} />}
+                            label="Создать из шаблона"
+                            onClick={() => openTemplateMarketplace(null)}
                           />
                           <BlankAreaMenuItem
-                            icon={<FolderPlus size={16} strokeWidth={2.1} />}
+                            icon={<FolderPlus size={14} strokeWidth={2.2} />}
                             label="Создать папку"
                             onClick={() => openBlankAreaCreateMode('folder')}
                           />
                           <BlankAreaMenuItem
-                            icon={<FileDown size={16} strokeWidth={2.2} />}
-                            label="Создать из шаблона"
-                            onClick={() => openTemplateMarketplace(null)}
+                            icon={<Pencil size={14} strokeWidth={2.2} />}
+                            label="Создать страницу"
+                            onClick={() => openBlankAreaCreateMode('page')}
                           />
                         </div>
                       )}

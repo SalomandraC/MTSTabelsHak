@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { RefObject } from 'react';
-import { ChevronRight, FileDown } from 'lucide-react';
+import { ChevronRight, FileDown, FolderPlus, Pin, PinOff, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import type { ExportFormat } from '../../../shared/lib/export-document';
 
 type WorkspacePageActionsMenuProps = {
@@ -104,7 +104,7 @@ export function WorkspacePageActionsMenu({
       {createMode ? (
         <div className="space-y-2 px-2 py-2">
           <label className="block text-xs font-semibold uppercase tracking-wide text-[#6b7280]">
-            {isFolderCreateMode ? 'Новая папка' : 'Новая страница'}
+            {isFolderCreateMode ? 'Новая папка' : 'Создать страницу'}
           </label>
           <input
             ref={createInputRef}
@@ -160,22 +160,12 @@ export function WorkspacePageActionsMenu({
                 onCloseActionsMenu();
                 onTogglePinned();
               }}
-              className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-normal text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa]"
             >
-              {isPinned ? 'Открепить' : 'Закрепить'}
+              {isPinned ? <PinOff size={14} strokeWidth={2.2} className="shrink-0 text-[#6b7280]" /> : <Pin size={14} strokeWidth={2.2} className="shrink-0 text-[#6b7280]" />}
+              <span>{isPinned ? 'Открепить' : 'Закрепить'}</span>
             </button>
           ) : null}
-          <button
-            type="button"
-            role="menuitem"
-            onClick={(event) => {
-              event.stopPropagation();
-              onOpenCreatePageMode();
-            }}
-            className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
-          >
-            Создать страницу
-          </button>
           {isFolder ? (
             <>
               <button
@@ -183,24 +173,38 @@ export function WorkspacePageActionsMenu({
                 role="menuitem"
                 onClick={(event) => {
                   event.stopPropagation();
-                  onOpenCreateFolderMode?.();
+                  onOpenTemplateMarketplace?.();
                 }}
-                className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-normal text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa]"
               >
-                Создать папку
+                <Sparkles size={14} strokeWidth={2.2} className="shrink-0 text-[#6b7280]" />
+                <span>Создать из шаблона</span>
               </button>
               <button
                 type="button"
                 role="menuitem"
                 onClick={(event) => {
                   event.stopPropagation();
-                  onOpenTemplateMarketplace?.();
+                  onOpenCreateFolderMode?.();
                 }}
-                className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-normal text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa]"
               >
-                Создать из шаблона
+                <FolderPlus size={14} strokeWidth={2.2} className="shrink-0 text-[#6b7280]" />
+                <span>Создать папку</span>
               </button>
-              
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onOpenCreatePageMode();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-normal text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa]"
+              >
+                <Plus size={14} strokeWidth={2.2} className="shrink-0 text-[#6b7280]" />
+                <span>Создать страницу</span>
+              </button>
+
               {canRenameFolder ? (
                 <button
                   type="button"
@@ -210,9 +214,10 @@ export function WorkspacePageActionsMenu({
                     onCloseActionsMenu();
                     onRenameFolder?.();
                   }}
-                  className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-normal text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa]"
                 >
-                  Переименовать папку
+                  <Pencil size={14} strokeWidth={2.2} className="shrink-0 text-[#6b7280]" />
+                  <span>Переименовать папку</span>
                 </button>
               ) : null}
               {canDeleteFolder ? (
@@ -224,12 +229,43 @@ export function WorkspacePageActionsMenu({
                     onCloseActionsMenu();
                     onDeleteFolder?.();
                   }}
-                  className="flex w-full items-center px-3 py-2 text-left text-sm text-[#d70032] hover:bg-[#fff1f3]"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-normal text-[#d70032] transition-colors hover:bg-[#fff1f3]"
                 >
-                  Удалить папку
+                  <Trash2 size={14} strokeWidth={2.2} className="shrink-0 text-[#d70032]" />
+                  <span>Удалить папку</span>
                 </button>
               ) : null}
             </>
+          ) : null}
+
+          {!isFolder ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpenCreatePageMode();
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-normal text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa]"
+            >
+              <Plus size={14} strokeWidth={2.2} className="shrink-0 text-[#6b7280]" />
+              <span>Создать страницу</span>
+            </button>
+          ) : null}
+
+          {nodeKind === 'wikiPage' && canDeletePage ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(event) => {
+                event.stopPropagation();
+                setIsConfirmDeleteOpen(true);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-normal text-[#d70032] transition-colors hover:bg-[#fff1f3]"
+            >
+              <Trash2 size={14} strokeWidth={2.2} className="shrink-0 text-[#d70032]" />
+              <span>Удалить</span>
+            </button>
           ) : null}
 
           {nodeKind === 'wikiPage' && onExport ? (
@@ -241,13 +277,13 @@ export function WorkspacePageActionsMenu({
               <button
                 type="button"
                 role="menuitem"
-                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
+                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm font-normal text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa]"
               >
                 <span className="flex items-center gap-2">
-                  <FileDown size={13} strokeWidth={2} className="text-[#6b7280]" />
+                  <FileDown size={14} strokeWidth={2.2} className="shrink-0 text-[#6b7280]" />
                   Экспортировать
                 </span>
-                <ChevronRight size={13} strokeWidth={2} className="text-[#9ca3af]" />
+                <ChevronRight size={14} strokeWidth={2.2} className="text-[#9ca3af]" />
               </button>
               {exportSubmenuOpen && (
                 <div className="absolute left-full top-0 z-50 w-32 overflow-hidden rounded-xl border border-editor-border-subtle bg-white py-1 shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
@@ -261,7 +297,7 @@ export function WorkspacePageActionsMenu({
                         onCloseActionsMenu();
                         onExport(format);
                       }}
-                      className="flex w-full items-center px-3 py-2 text-left text-sm text-[#1f1f1f] hover:bg-[#f7f8fa]"
+                      className="flex w-full items-center px-3 py-2 text-left text-sm font-normal text-[#1f1f1f] transition-colors hover:bg-[#f7f8fa]"
                     >
                       {label}
                     </button>
@@ -271,19 +307,6 @@ export function WorkspacePageActionsMenu({
             </div>
           ) : null}
 
-          {nodeKind === 'wikiPage' && canDeletePage ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={(event) => {
-                event.stopPropagation();
-                setIsConfirmDeleteOpen(true);
-              }}
-              className="flex w-full items-center px-3 py-2 text-left text-sm text-[#d70032] hover:bg-[#fff1f3]"
-            >
-              Удалить
-            </button>
-          ) : null}
           {isConfirmDeleteOpen && createPortal(
             <div
               className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/30 p-4"
