@@ -35,12 +35,27 @@ type Anchor = {
 
 type TableSnapshot = {
   datasheetId?: string;
+  title?: string | null;
   viewId?: string | null;
   fields?: Array<Record<string, unknown>>;
   records?: Array<Record<string, unknown>>;
   total?: number;
   updatedAt?: number;
 };
+
+type PlannedVisualization =
+  | {
+      kind: 'chart';
+      config: LiveChartAttrs;
+      reason: string;
+      caption: string;
+    }
+  | {
+      kind: 'diagram';
+      mermaidCode: string;
+      reason: string;
+      caption: string;
+    };
 
 type ContextOption = {
   id: string;
@@ -159,6 +174,91 @@ function isLiveChartPrompt(prompt: string): boolean {
   return /(визуализ|график|диаграмм|chart|graph|plot|сравни.*на.*диаграмм)/i.test(value);
 }
 
+function isNumericFieldType(type: string | undefined): boolean {
+  const normalized = String(type ?? '').toLowerCase();
+  return (
+    normalized.includes('number')
+    || normalized.includes('currency')
+    || normalized.includes('percent')
+    || normalized.includes('rating')
+    || normalized.includes('formula')
+  );
+}
+
+function isTimeLikeField(field: MwsField): boolean {
+  const type = field.type.toLowerCase();
+  const name = field.name.toLowerCase();
+  return type.includes('date')
+    || type.includes('time')
+    || /дата|месяц|недел|квартал|год|date|time|month|week|quarter|year/.test(name);
+}
+
+function shouldUsePieChart(promptText: string): boolean {
+  return /(дол[яеи]|структур|распределен|share|portion|composition|part\s*of\s*whole)/i.test(promptText);
+}
+
+function shouldSuggestDiagram(promptText: string): boolean {
+  return /(процесс|этап|workflow|flow|pipeline|архитектур|схем|sequence|uml|диаграмм)/i.test(promptText);
+}
+
+function getRecordFieldValue(record: MwsRecord, fieldId: string): unknown {
+  return (record.fields as Record<string, unknown> | undefined)?.[fieldId];
+}
+
+function normalizeCategoryValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '—';
+  }
+
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeCategoryValue(item)).join(',');
+  }
+
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    if (typeof record.name === 'string') {
+      return record.name;
+    }
+    if (typeof record.title === 'string') {
+      return record.title;
+    }
+    if (typeof record.value === 'string' || typeof record.value === 'number') {
+      return String(record.value);
+    }
+  }
+
+  return String(value);
+}
+
+function resolveFieldIdByNameOrId(value: string, fields: MwsField[]): string | null {
+  const normalizedValue = value.trim();
+  if (!normalizedValue) {
+    return null;
+  }
+
+  const directById = fields.find((field) => field.id === normalizedValue);
+  if (directById) {
+    return directById.id;
+  }
+
+  const folded = normalizeText(normalizedValue);
+  const directByName = fields.find((field) => normalizeText(field.name) === folded);
+  if (directByName) {
+    return directByName.id;
+  }
+
+  const partialByName = fields.find((field) => normalizeText(field.name).includes(folded) || folded.includes(normalizeText(field.name)));
+  if (partialByName) {
+    return partialByName.id;
+  }
+
+  return null;
+}
+
 function shouldCreateNewReportDocument(prompt: string): boolean {
   const value = prompt.toLowerCase();
   const patterns = [
@@ -223,13 +323,18 @@ function collectTableOptions(editor: Editor | null): ContextOption[] {
 
     seen.add(datasheetId);
     const viewId = typeof node.attrs?.viewId === 'string' ? String(node.attrs.viewId) : undefined;
+    const snapshot = getStoredTableSnapshot(datasheetId);
+    const tableTitle = snapshot?.title?.trim();
+    const displayName = tableTitle && tableTitle.length > 0
+      ? tableTitle
+      : `Таблица ${datasheetId.slice(0, 8)}`;
 
     options.push({
       id: `table:${datasheetId}`,
       kind: 'table',
       datasheetId,
       viewId,
-      label: `Таблица ${datasheetId.slice(0, 8)}${viewId ? ` · view ${viewId.slice(0, 6)}` : ''}`,
+      label: `${displayName}${viewId ? ` · view ${viewId.slice(0, 6)}` : ''}`,
     });
 
     return true;
@@ -847,6 +952,7 @@ export function AiInlineCopilot({
   const [pendingInlineAnswerText, setPendingInlineAnswerText] = useState<string | null>(null);
   const [pendingReportText, setPendingReportText] = useState<string | null>(null);
   const [pendingAnalysisText, setPendingAnalysisText] = useState<string | null>(null);
+  const [pendingVisualization, setPendingVisualization] = useState<PlannedVisualization | null>(null);
   const [structurePlan, setStructurePlan] = useState<StructureInstruction[]>([]);
   const [status, setStatus] = useState('');
   const [isBusy, setIsBusy] = useState(false);
@@ -865,6 +971,7 @@ export function AiInlineCopilot({
       setPendingInlineAnswerText(null);
       setPendingReportText(null);
       setPendingAnalysisText(null);
+      setPendingVisualization(null);
       setStructurePlan([]);
       setStatus('');
       setShowContextMenu(false);
@@ -907,6 +1014,12 @@ export function AiInlineCopilot({
       setPendingReportText(null);
     }
   }, [output, pendingReportText]);
+
+  useEffect(() => {
+    if (!pendingReportText && !pendingAnalysisText) {
+      setPendingVisualization(null);
+    }
+  }, [pendingAnalysisText, pendingReportText]);
 
   useEffect(() => {
     return () => {
@@ -1136,6 +1249,221 @@ export function AiInlineCopilot({
       records: recordsResponse.items,
       total: recordsResponse.total,
     };
+  };
+
+  const normalizeChartConfigFieldIds = async (
+    config: LiveChartAttrs,
+    input: {
+      datasheetId: string;
+      viewId?: string;
+      tableSnapshot?: TableSnapshot | null;
+    },
+  ): Promise<LiveChartAttrs> => {
+    const context = await getTableContext(input);
+    const fields = context.fields;
+
+    const resolvedX = resolveFieldIdByNameOrId(config.xAxisFieldId, fields)
+      ?? fields[0]?.id
+      ?? '';
+
+    const resolvedY = config.yAxisFieldIds
+      .map((fieldId) => resolveFieldIdByNameOrId(fieldId, fields))
+      .filter((fieldId): fieldId is string => Boolean(fieldId));
+
+    const fallbackY = fields.find((field) => isNumericFieldType(field.type) && field.id !== resolvedX)?.id
+      ?? fields.find((field) => field.id !== resolvedX)?.id
+      ?? fields[0]?.id
+      ?? '';
+
+    const yAxisFieldIds = Array.from(new Set(resolvedY.length > 0 ? resolvedY : (fallbackY ? [fallbackY] : [])));
+
+    return {
+      ...config,
+      xAxisFieldId: resolvedX,
+      yAxisFieldIds,
+    };
+  };
+
+  const buildChartVisualization = (
+    context: TableContext,
+    datasheetId: string,
+    promptText: string,
+  ): PlannedVisualization | null => {
+    if (context.records.length < 2 || context.fields.length < 2) {
+      return null;
+    }
+
+    const numericFields = context.fields.filter((field) => isNumericFieldType(field.type));
+    if (numericFields.length === 0) {
+      return null;
+    }
+
+    const xField = context.fields.find((field) => isTimeLikeField(field))
+      ?? context.fields.find((field) => isTextLikeField(field) && !isNumericFieldType(field.type))
+      ?? context.fields[0];
+
+    const yField = numericFields.find((field) => field.id !== xField.id) ?? numericFields[0];
+
+    if (!xField?.id || !yField?.id) {
+      return null;
+    }
+
+    const uniqueCategories = new Set(
+      context.records.map((record) => normalizeCategoryValue(getRecordFieldValue(record, xField.id))),
+    ).size;
+
+    const usePie = shouldUsePieChart(promptText) && uniqueCategories >= 2 && uniqueCategories <= 6;
+    const chartType: LiveChartAttrs['chartType'] = usePie
+      ? 'pie'
+      : isTimeLikeField(xField) && context.records.length >= 3
+        ? 'line'
+        : 'bar';
+
+    return {
+      kind: 'chart',
+      config: {
+        chartType,
+        datasheetId,
+        xAxisFieldId: xField.id,
+        yAxisFieldIds: [yField.id],
+      },
+      reason: `Нашли подходящую числовую метрику (${yField.name}) и ось сравнения (${xField.name}).`,
+      caption: `Визуализация: ${yField.name} по ${xField.name}.`,
+    };
+  };
+
+  const buildVisualizationForNarrative = async (
+    narrativeText: string,
+    intent: 'analyze' | 'write_report',
+    signal: AbortSignal,
+  ): Promise<PlannedVisualization | null> => {
+    const promptText = prompt.trim();
+
+    if (activeContext.kind === 'table' && activeContext.datasheetId) {
+      const context = await getTableContext({
+        datasheetId: activeContext.datasheetId,
+        viewId: activeContext.viewId,
+        tableSnapshot: activeContext.tableSnapshot,
+      });
+
+      const chartPlan = buildChartVisualization(context, activeContext.datasheetId, promptText);
+      if (chartPlan) {
+        return chartPlan;
+      }
+    }
+
+    if (activeContext.kind === 'all') {
+      const tableOptions = contextOptions.filter((option) => option.kind === 'table');
+      for (const option of tableOptions) {
+        if (!option.datasheetId) {
+          continue;
+        }
+
+        const context = await getTableContext({
+          datasheetId: option.datasheetId,
+          viewId: option.viewId,
+          tableSnapshot: getStoredTableSnapshot(option.datasheetId),
+        });
+
+        const chartPlan = buildChartVisualization(context, option.datasheetId, promptText);
+        if (chartPlan) {
+          return chartPlan;
+        }
+      }
+    }
+
+    if (!isDiagramFeatureEnabled || !shouldSuggestDiagram(`${promptText}\n${narrativeText}`)) {
+      return null;
+    }
+
+    const { answer } = await fetchAiAnswerWithTableRecovery({
+      question: [
+        DIAGRAM_ARCHITECT_PROMPT,
+        'Сделай диаграмму по итоговому анализу/отчету ниже.',
+        `Контекст: ${narrativeText.slice(0, 6000)}`,
+      ].join('\n'),
+      pageId: pageId ?? undefined,
+      spaceId,
+      pageTitle,
+      pageSnapshot: {
+        markdown: getInlineContextMarkdown(editor),
+      },
+      intent,
+    }, signal);
+
+    const mermaidCode = sanitizeMermaidAnswer(answer) || DEFAULT_MERMAID_CODE;
+    return {
+      kind: 'diagram',
+      mermaidCode,
+      reason: 'В тексте описан процесс/связи, диаграмма ускоряет понимание.',
+      caption: 'Автодиаграмма по тексту анализа.',
+    };
+  };
+
+  const insertPlannedVisualization = (plan: PlannedVisualization): boolean => {
+    if (!editor) {
+      return false;
+    }
+
+    const countNodesByType = (typeName: string) => {
+      let total = 0;
+      editor.state.doc.descendants((node) => {
+        if (node.type.name === typeName) {
+          total += 1;
+        }
+        return true;
+      });
+      return total;
+    };
+
+    if (plan.kind === 'chart') {
+      const before = countNodesByType('liveChart');
+      editor.commands.enter();
+      const inserted = editor.commands.insertContent({
+        type: 'liveChart',
+        attrs: {
+          chartType: plan.config.chartType,
+          datasheetId: plan.config.datasheetId,
+          xAxisFieldId: plan.config.xAxisFieldId,
+          yAxisFieldIds: plan.config.yAxisFieldIds,
+        },
+      });
+      const after = countNodesByType('liveChart');
+
+      if (!inserted || after <= before) {
+        return false;
+      }
+
+      editor.commands.enter();
+      editor.commands.insertContent({
+        type: 'paragraph',
+        content: [{ type: 'text', text: plan.caption }],
+      });
+      editor.commands.enter();
+      return true;
+    }
+
+    const before = countNodesByType('mermaidDiagram');
+    editor.commands.enter();
+    const inserted = editor.commands.insertContent({
+      type: 'mermaidDiagram',
+      attrs: {
+        code: plan.mermaidCode,
+      },
+    });
+    const after = countNodesByType('mermaidDiagram');
+
+    if (!inserted || after <= before) {
+      return false;
+    }
+
+    editor.commands.enter();
+    editor.commands.insertContent({
+      type: 'paragraph',
+      content: [{ type: 'text', text: plan.caption }],
+    });
+    editor.commands.enter();
+    return true;
   };
 
   const createRecords = async (datasheetId: string, records: Array<{ fields: Record<string, unknown> }>) => {
@@ -1408,18 +1736,45 @@ export function AiInlineCopilot({
                 ? 'pie'
                 : 'bar',
             datasheetId: String(args.datasheetId ?? activeContext.datasheetId ?? ''),
-            xAxisFieldId: String(args.xAxisFieldId ?? ''),
-            yAxisFieldIds,
+            xAxisFieldId: String(args.xAxisFieldId ?? args.xAxisField ?? ''),
+            yAxisFieldIds: yAxisFieldIds.length > 0
+              ? yAxisFieldIds
+              : (args?.yAxisFieldId ? [String(args.yAxisFieldId)] : (args?.yAxisField ? [String(args.yAxisField)] : [])),
           }
         : null;
 
-      if (!editor || !chartConfig?.datasheetId || !chartConfig.xAxisFieldId || chartConfig.yAxisFieldIds.length === 0) {
+      const normalizedChartConfig = chartConfig
+        ? await normalizeChartConfigFieldIds(chartConfig, {
+            datasheetId: chartConfig.datasheetId,
+            viewId: activeContext.viewId,
+            tableSnapshot: activeContext.tableSnapshot,
+          })
+        : null;
+
+      if (!editor || !normalizedChartConfig?.datasheetId || !normalizedChartConfig.xAxisFieldId || normalizedChartConfig.yAxisFieldIds.length === 0) {
         setOutput(response.answer);
         setStatus('Не удалось автоматически построить конфигурацию графика. Уточните поля осей.');
         return;
       }
 
-      editor.chain().focus().insertLiveChart(chartConfig).run();
+      editor.commands.enter();
+      const inserted = editor.commands.insertContent({
+        type: 'liveChart',
+        attrs: {
+          chartType: normalizedChartConfig.chartType,
+          datasheetId: normalizedChartConfig.datasheetId,
+          xAxisFieldId: normalizedChartConfig.xAxisFieldId,
+          yAxisFieldIds: normalizedChartConfig.yAxisFieldIds,
+        },
+      });
+      editor.commands.enter();
+
+      if (!inserted) {
+        setOutput(response.answer);
+        setStatus('Не удалось вставить блок liveChart в документ. Проверьте регистрацию расширения.');
+        return;
+      }
+
       requestAnimationFrame(() => {
         editor.commands.focus();
       });
@@ -1511,9 +1866,15 @@ export function AiInlineCopilot({
       }
 
       const sanitizedAnalysisText = normalizeReportMarkdown(analysisText);
+      const visualizationPlan = await buildVisualizationForNarrative(sanitizedAnalysisText, 'analyze', signal);
       setPendingAnalysisText(sanitizedAnalysisText);
+      setPendingVisualization(visualizationPlan);
       setOutput(sanitizedAnalysisText);
-      setStatus('⚡️ Анализ готов. Нажмите кнопку вставки, чтобы добавить его в документ.');
+      setStatus(
+        visualizationPlan
+          ? `⚡️ Анализ готов. Подготовлена визуализация: ${visualizationPlan.kind === 'chart' ? 'график' : 'диаграмма'}.`
+          : '⚡️ Анализ готов. Нажмите кнопку вставки, чтобы добавить его в документ.',
+      );
     });
   };
 
@@ -1529,22 +1890,38 @@ export function AiInlineCopilot({
     const afterDocument = JSON.stringify(editor.getJSON());
 
     if (inserted && afterDocument !== beforeDocument) {
+      const insertedVisualization = pendingVisualization ? insertPlannedVisualization(pendingVisualization) : false;
       requestAnimationFrame(() => {
         editor.commands.focus();
       });
-      setStatus('✅ Анализ вставлен в документ');
+      setStatus(
+        pendingVisualization
+          ? insertedVisualization
+            ? '✅ Анализ и визуализация вставлены в документ'
+            : '⚠️ Анализ вставлен, но визуализацию добавить не удалось (проверьте, что модуль графиков/диаграмм активен).'
+          : '✅ Анализ вставлен в документ',
+      );
       setPendingAnalysisText(null);
+      setPendingVisualization(null);
       return;
     }
 
     console.error('Analysis insertion did not change the document, falling back to plain text.');
     const fallbackInserted = editor.chain().focus().insertContent(sanitizedText).run();
     if (fallbackInserted && JSON.stringify(editor.getJSON()) !== beforeDocument) {
+      const insertedVisualization = pendingVisualization ? insertPlannedVisualization(pendingVisualization) : false;
       requestAnimationFrame(() => {
         editor.commands.focus();
       });
-      setStatus('⚠️ Анализ вставлен как обычный текст');
+      setStatus(
+        pendingVisualization
+          ? insertedVisualization
+            ? '⚠️ Анализ (текст) и визуализация вставлены'
+            : '⚠️ Анализ вставлен как текст, но визуализацию добавить не удалось.'
+          : '⚠️ Анализ вставлен как обычный текст',
+      );
       setPendingAnalysisText(null);
+      setPendingVisualization(null);
       return;
     }
 
@@ -1651,6 +2028,7 @@ export function AiInlineCopilot({
         status: String(payload.status ?? 'created'),
       });
       setPendingAnalysisText(null);
+      setPendingVisualization(null);
       setOutput(analysisText);
       setStatus('✅ Анализ успешно создан!');
     });
@@ -1770,9 +2148,15 @@ export function AiInlineCopilot({
     await withBusy(async (signal) => {
       const reportText = await createReportText(signal);
       const sanitizedReportText = normalizeReportMarkdown(reportText);
+      const visualizationPlan = await buildVisualizationForNarrative(sanitizedReportText, 'write_report', signal);
       setPendingReportText(sanitizedReportText);
+      setPendingVisualization(visualizationPlan);
       setOutput(sanitizedReportText);
-      setStatus('⚡️ Отчет готов. Нажмите кнопку вставки, чтобы добавить его в документ.');
+      setStatus(
+        visualizationPlan
+          ? `⚡️ Отчет готов. Подготовлена визуализация: ${visualizationPlan.kind === 'chart' ? 'график' : 'диаграмма'}.`
+          : '⚡️ Отчет готов. Нажмите кнопку вставки, чтобы добавить его в документ.',
+      );
     });
   };
 
@@ -1788,22 +2172,38 @@ export function AiInlineCopilot({
     const afterDocument = JSON.stringify(editor.getJSON());
 
     if (inserted && afterDocument !== beforeDocument) {
+      const insertedVisualization = pendingVisualization ? insertPlannedVisualization(pendingVisualization) : false;
       requestAnimationFrame(() => {
         editor.commands.focus();
       });
-      setStatus('✅ Отчет вставлен в документ');
+      setStatus(
+        pendingVisualization
+          ? insertedVisualization
+            ? '✅ Отчет и визуализация вставлены в документ'
+            : '⚠️ Отчет вставлен, но визуализацию добавить не удалось (проверьте, что модуль графиков/диаграмм активен).'
+          : '✅ Отчет вставлен в документ',
+      );
       setPendingReportText(null);
+      setPendingVisualization(null);
       return;
     }
 
     console.error('AI report insertion did not change the document, falling back to plain text.');
     const fallbackInserted = editor.chain().focus().insertContent(sanitizedText).run();
     if (fallbackInserted && JSON.stringify(editor.getJSON()) !== beforeDocument) {
+      const insertedVisualization = pendingVisualization ? insertPlannedVisualization(pendingVisualization) : false;
       requestAnimationFrame(() => {
         editor.commands.focus();
       });
-      setStatus('⚠️ Отчет вставлен как обычный текст');
+      setStatus(
+        pendingVisualization
+          ? insertedVisualization
+            ? '⚠️ Отчет (текст) и визуализация вставлены'
+            : '⚠️ Отчет вставлен как текст, но визуализацию добавить не удалось.'
+          : '⚠️ Отчет вставлен как обычный текст',
+      );
       setPendingReportText(null);
+      setPendingVisualization(null);
       return;
     }
 
@@ -1876,6 +2276,7 @@ export function AiInlineCopilot({
         status: String(payload.status ?? 'created'),
       });
       setPendingReportText(null);
+      setPendingVisualization(null);
       setOutput(reportText);
       setStatus('✅ Отчет успешно создан!');
     });
@@ -1944,6 +2345,7 @@ export function AiInlineCopilot({
         status: String(payload.status ?? 'created'),
       });
       setPendingReportText(null);
+      setPendingVisualization(null);
       setOutput(sanitizedReportText);
       setStatus('✅ Отчет успешно создан!');
     });

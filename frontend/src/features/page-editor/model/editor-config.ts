@@ -201,7 +201,7 @@ export function createPageEditorExtensions(options: PageEditorExtensionOptions =
       onOpenThread: options.onOpenCommentThread,
     }),
     MwsTableEmbed,
-    ...(options.enableLiveCharts ? [LiveChart] : []),
+    LiveChart,
     MermaidNode,
     CanvasBlock,
     IframeBlock,
