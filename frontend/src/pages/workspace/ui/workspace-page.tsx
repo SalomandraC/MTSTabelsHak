@@ -259,7 +259,7 @@ function BlankAreaMenuItem({
   );
 }
 
-const ACCESS_SCOPE_OPTIONS: Array<{
+const ACCESS_VIEW_SCOPE_OPTIONS: Array<{
   value: DocumentAccessPolicy['viewAccess'];
   label: string;
 }> = [
@@ -268,20 +268,30 @@ const ACCESS_SCOPE_OPTIONS: Array<{
   { value: 'link_holders', label: 'Все, у кого есть ссылка' },
 ];
 
+const ACCESS_SCOPE_OPTIONS: Array<{
+  value: DocumentAccessPolicy['viewAccess'];
+  label: string;
+}> = [
+  { value: 'owner_only', label: 'Только владелец' },
+  { value: 'space_members', label: 'Участники пространства' },
+];
+
 function AccessScopeSelect({
   label,
   value,
   isOpen,
   onToggle,
   onChange,
+  options = ACCESS_SCOPE_OPTIONS,
 }: {
   label: string;
   value: DocumentAccessPolicy['viewAccess'];
   isOpen: boolean;
   onToggle: () => void;
   onChange: (nextValue: DocumentAccessPolicy['viewAccess']) => void;
+  options?: Array<{ value: DocumentAccessPolicy['viewAccess']; label: string }>;
 }) {
-  const selectedOption = ACCESS_SCOPE_OPTIONS.find((option) => option.value === value);
+  const selectedOption = options.find((option) => option.value === value);
 
   return (
     <div className="block text-xs text-[#5f7189]">
@@ -301,7 +311,7 @@ function AccessScopeSelect({
         </button>
         {isOpen ? (
           <div className="absolute left-0 top-11 z-[130] w-full rounded-lg border border-[#d4deec] bg-white p-1 shadow-[0_10px_24px_rgba(15,23,42,0.12)]">
-            {ACCESS_SCOPE_OPTIONS.map((option) => {
+            {options.map((option) => {
               const isSelected = option.value === value;
               return (
                 <button
@@ -1056,6 +1066,8 @@ export function WorkspacePage() {
   const [isEditingDisplayName, setIsEditingDisplayName] = useState(false);
   const [isSpaceMenuOpen, setIsSpaceMenuOpen] = useState(false);
   const [isShareMenuOpen, setIsShareMenuOpen] = useState(false);
+  const [isShareCopyFeedbackVisible, setIsShareCopyFeedbackVisible] = useState(false);
+  const shareCopyFeedbackTimerRef = useRef<number | null>(null);
   const [openAccessSelect, setOpenAccessSelect] = useState<'view' | 'comment' | 'edit' | null>(null);
   const [displayNameDraft, setDisplayNameDraft] = useState(displayName);
   const [isAccessPanelOpen, setIsAccessPanelOpen] = useState(false);
@@ -1236,6 +1248,14 @@ export function WorkspacePage() {
       window.removeEventListener('mousedown', handlePointerDown);
     };
   }, [isShareMenuOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (shareCopyFeedbackTimerRef.current) {
+        window.clearTimeout(shareCopyFeedbackTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!openAccessSelect) {
@@ -1900,18 +1920,30 @@ export function WorkspacePage() {
     writeWorkspaceRoute(spaceId, null, 'push');
   };
 
+  const triggerShareCopyFeedback = useCallback((statusText: string) => {
+    if (shareCopyFeedbackTimerRef.current) {
+      window.clearTimeout(shareCopyFeedbackTimerRef.current);
+    }
+
+    setIsShareCopyFeedbackVisible(true);
+    setShareStatus(statusText);
+    shareCopyFeedbackTimerRef.current = window.setTimeout(() => {
+      setShareStatus('');
+      setIsShareCopyFeedbackVisible(false);
+      shareCopyFeedbackTimerRef.current = null;
+    }, 1150);
+  }, []);
+
   const handleCopyShareLink = async () => {
     const shareUrl = getShareUrl(selectedSpaceId, activePageId);
 
     try {
       await navigator.clipboard.writeText(shareUrl);
-      setShareStatus('Ссылка скопирована');
+      triggerShareCopyFeedback('Ссылка скопирована');
     } catch {
       window.prompt('Ссылка на текущую страницу', shareUrl);
       setShareStatus('Ссылка готова');
     }
-
-    window.setTimeout(() => setShareStatus(''), 2200);
   };
 
   const handleCopyReadOnlyShareLink = async () => {
@@ -1919,13 +1951,11 @@ export function WorkspacePage() {
 
     try {
       await navigator.clipboard.writeText(shareUrl);
-      setShareStatus('Ссылка для просмотра скопирована');
+      triggerShareCopyFeedback('Ссылка для просмотра скопирована');
     } catch {
       window.prompt('Ссылка на текущую страницу в режиме только чтения', shareUrl);
       setShareStatus('Ссылка готова');
     }
-
-    window.setTimeout(() => setShareStatus(''), 2200);
   };
 
   const handleCopyLinkClick = () => {
@@ -3254,9 +3284,32 @@ export function WorkspacePage() {
                       type="button"
                       onClick={handleCopyLinkClick}
                       disabled={!activePageId}
-                      className="w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm font-semibold text-editor-text-secondary transition-colors hover:bg-editor-bg-control disabled:cursor-not-allowed disabled:opacity-50"
+                      className={[
+                        'w-full rounded-lg border border-editor-border-subtle bg-white px-3 py-2 text-sm font-semibold text-editor-text-secondary transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50',
+                        isShareCopyFeedbackVisible ? 'scale-[1.01] border-[#d70032] bg-[#fff1f3] text-[#b00025] shadow-[0_0_0_3px_rgba(215,0,50,0.12)]' : 'hover:bg-editor-bg-control',
+                      ].join(' ')}
                     >
-                      {shareStatus || 'Скопировать ссылку'}
+                      <span className="relative flex min-h-[1.25rem] w-full items-center justify-center overflow-hidden">
+                        <span
+                          className={[
+                            'absolute inset-0 flex items-center justify-center transition-all duration-150 ease-out',
+                            isShareCopyFeedbackVisible ? 'translate-y-1 scale-95 opacity-0' : 'translate-y-0 scale-100 opacity-100',
+                          ].join(' ')}
+                          aria-hidden="true"
+                        >
+                          {shareStatus || 'Скопировать ссылку'}
+                        </span>
+                        <span
+                          className={[
+                            'absolute inset-0 flex items-center justify-center transition-all duration-150 ease-out',
+                            isShareCopyFeedbackVisible ? 'translate-y-0 scale-100 opacity-100' : 'translate-y-[-2px] scale-95 opacity-0',
+                          ].join(' ')}
+                          aria-hidden="true"
+                        >
+                          <Check size={17} strokeWidth={2.6} />
+                        </span>
+                        <span className="sr-only">Скопировать ссылку</span>
+                      </span>
                     </button>
                     {isShareMenuOpen && canChooseShareMode ? (
                       <div className="absolute left-0 top-11 z-[120] w-full rounded-lg border border-[#ffd9e1] bg-white p-1 shadow-[0_10px_30px_rgba(215,0,50,0.15)]" role="menu">
@@ -3410,6 +3463,7 @@ export function WorkspacePage() {
                             isOpen={openAccessSelect === 'view'}
                             onToggle={() => setOpenAccessSelect((current) => (current === 'view' ? null : 'view'))}
                             onChange={(nextValue) => handleAccessScopeChange('viewAccess', nextValue)}
+                            options={ACCESS_VIEW_SCOPE_OPTIONS}
                           />
                           <AccessScopeSelect
                             label="Кто может комментировать"
@@ -3424,6 +3478,7 @@ export function WorkspacePage() {
                             isOpen={openAccessSelect === 'edit'}
                             onToggle={() => setOpenAccessSelect((current) => (current === 'edit' ? null : 'edit'))}
                             onChange={(nextValue) => handleAccessScopeChange('editAccess', nextValue)}
+                            options={ACCESS_SCOPE_OPTIONS}
                           />
                           <button
                             type="button"
