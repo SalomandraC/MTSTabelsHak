@@ -11,6 +11,7 @@ import { getEditorMarkdown } from '../model/editor-markdown';
 import { AiOutputView } from '../model/ai-output-renderer';
 import { useAiTableContext } from '../model/use-ai-table-context';
 import { DEFAULT_MERMAID_CODE } from '../../diagrams';
+import { renderMermaidToSvg, resolveMermaidTheme } from '../../diagrams/model/mermaid-utils';
 import type { LiveChartAttrs } from '../../charts';
 
 type CopilotTarget = 'table' | 'text';
@@ -55,7 +56,21 @@ type PlannedVisualization =
       mermaidCode: string;
       reason: string;
       caption: string;
+    }
+  | {
+      kind: 'both';
+      chart: {
+        config: LiveChartAttrs;
+        caption: string;
+      };
+      diagram: {
+        mermaidCode: string;
+        caption: string;
+      };
+      reason: string;
     };
+
+type VisualizationPreference = 'auto' | 'chart' | 'diagram' | 'both';
 
 type ContextOption = {
   id: string;
@@ -119,8 +134,24 @@ const DIAGRAM_ARCHITECT_PROMPT = [
   'Если в тексте много сущностей — строй Class Diagram.',
   'Если описан процесс — строй Flowchart или Sequence Diagram.',
   'Всегда используй русский язык для названий блоков.',
+  'Код Mermaid должен быть строго валидным: экранируй кавычки внутри подписей, не используй двоеточие в неэкранированных label, не добавляй лишний текст вокруг диаграммы.',
+  'Перед ответом мысленно проверь синтаксис Mermaid; если сомневаешься, упрости диаграмму до валидного flowchart.',
   'Верни ТОЛЬКО код Mermaid без пояснений.',
 ].join('\n');
+
+const INPUT_IDLE_HINTS = [
+  'Добавь в анализ диаграмму с графиком',
+  'Напиши отчет с живыми переменными',
+  'Сравни метрики по таблице и покажи тренд',
+  'Сделай краткий анализ с визуализацией',
+];
+
+const BUSY_PROGRESS_HINTS = [
+  'Ищу информацию в документе и таблицах...',
+  'Сверяем поля и подбираем лучший тип визуализации...',
+  'Завариваем чай и собираем выводы...',
+  'Формируем аккуратный ответ для вставки...',
+];
 
 function dispatchTableMutation(detail: {
   datasheetId: string;
@@ -171,7 +202,7 @@ function isReportPrompt(prompt: string): boolean {
 
 function isLiveChartPrompt(prompt: string): boolean {
   const value = prompt.toLowerCase();
-  return /(визуализ|график|диаграмм|chart|graph|plot|сравни.*на.*диаграмм)/i.test(value);
+  return /(визуализ|график|chart|graph|plot|сравни.*на.*график)/i.test(value);
 }
 
 function isNumericFieldType(type: string | undefined): boolean {
@@ -612,10 +643,76 @@ function extractAiActionToken(value: string): string | null {
   return match?.[1]?.trim().toLowerCase() ?? null;
 }
 
+function detectVisualizationPreference(promptText: string): VisualizationPreference {
+  const value = promptText.toLowerCase();
+
+  if (/(и\s+график\s+и\s+диаграм|график.+диаграм|диаграм.+график|both)/i.test(value)) {
+    return 'both';
+  }
+
+  if (/(график|chart|plot)/i.test(value) && !/(диаграм|mermaid|uml|flowchart|sequence)/i.test(value)) {
+    return 'chart';
+  }
+
+  if (/(диаграм|mermaid|uml|flowchart|sequence)/i.test(value) && !/(график|chart|plot)/i.test(value)) {
+    return 'diagram';
+  }
+
+  return 'auto';
+}
+
+function getVisualizationLabel(plan: PlannedVisualization): string {
+  if (plan.kind === 'chart') {
+    return 'график';
+  }
+
+  if (plan.kind === 'diagram') {
+    return 'диаграмма';
+  }
+
+  return 'график + диаграмма';
+}
+
+function isLikelyMermaidStart(line: string): boolean {
+  return /^(flowchart|graph|sequencediagram|classdiagram|statediagram|erdiagram|journey|gantt|pie|mindmap|timeline|gitgraph|quadrantchart|requirementdiagram)\b/i.test(line.trim());
+}
+
+function isLikelyMermaidLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return true;
+  }
+
+  if (isLikelyMermaidStart(trimmed)) {
+    return true;
+  }
+
+  return /(-->|---|==>|:::|subgraph\b|end\b|classDef\b|class\b|style\b|linkStyle\b|click\b|accTitle\b|accDescr\b|%%|\[.*\]|\{.*\}|\(.*\)|\|.*\|)/i.test(trimmed);
+}
+
 function sanitizeMermaidAnswer(value: string): string {
   const withoutAction = stripAiActionToken(value);
-  const fenced = withoutAction.match(/^```(?:mermaid)?\s*([\s\S]*?)\s*```$/i);
-  return (fenced?.[1] ?? withoutAction).trim();
+  const fencedBlocks = [...withoutAction.matchAll(/```(?:mermaid)?\s*([\s\S]*?)\s*```/gi)];
+  if (fencedBlocks.length > 0) {
+    return (fencedBlocks[0]?.[1] ?? '').trim();
+  }
+
+  const lines = withoutAction.replace(/\r\n/g, '\n').split('\n');
+  const startIndex = lines.findIndex((line) => isLikelyMermaidStart(line));
+  if (startIndex === -1) {
+    return withoutAction.trim();
+  }
+
+  const collected: string[] = [];
+  for (let i = startIndex; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (collected.length > 0 && !isLikelyMermaidLine(line)) {
+      break;
+    }
+    collected.push(line);
+  }
+
+  return collected.join('\n').trim();
 }
 
 function capContextMarkdown(value: string, maxLength = MAX_INLINE_CONTEXT_MARKDOWN): string {
@@ -956,6 +1053,10 @@ export function AiInlineCopilot({
   const [structurePlan, setStructurePlan] = useState<StructureInstruction[]>([]);
   const [status, setStatus] = useState('');
   const [isBusy, setIsBusy] = useState(false);
+  const [idleHintIndex, setIdleHintIndex] = useState(0);
+  const [busyHintIndex, setBusyHintIndex] = useState(0);
+  const [isIdleHintVisible, setIsIdleHintVisible] = useState(true);
+  const [isBusyHintVisible, setIsBusyHintVisible] = useState(true);
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [createdPage, setCreatedPage] = useState<{ id: string; title: string; href: string; status?: string } | null>(null);
   const [createdAnalysisPage, setCreatedAnalysisPage] = useState<{ id: string; title: string; href: string; status?: string } | null>(null);
@@ -1014,6 +1115,53 @@ export function AiInlineCopilot({
       setPendingReportText(null);
     }
   }, [output, pendingReportText]);
+
+  useEffect(() => {
+    if (!isOpen || isBusy || prompt.trim().length > 0) {
+      setIsIdleHintVisible(true);
+      return;
+    }
+
+    let fadeTimeout: ReturnType<typeof setTimeout> | null = null;
+    const interval = setInterval(() => {
+      setIsIdleHintVisible(false);
+      fadeTimeout = setTimeout(() => {
+        setIdleHintIndex((index) => (index + 1) % INPUT_IDLE_HINTS.length);
+        setIsIdleHintVisible(true);
+      }, 220);
+    }, 3200);
+
+    return () => {
+      clearInterval(interval);
+      if (fadeTimeout) {
+        clearTimeout(fadeTimeout);
+      }
+    };
+  }, [isBusy, isOpen, prompt]);
+
+  useEffect(() => {
+    if (!isBusy) {
+      setBusyHintIndex(0);
+      setIsBusyHintVisible(true);
+      return;
+    }
+
+    let fadeTimeout: ReturnType<typeof setTimeout> | null = null;
+    const interval = setInterval(() => {
+      setIsBusyHintVisible(false);
+      fadeTimeout = setTimeout(() => {
+        setBusyHintIndex((index) => (index + 1) % BUSY_PROGRESS_HINTS.length);
+        setIsBusyHintVisible(true);
+      }, 200);
+    }, 2200);
+
+    return () => {
+      clearInterval(interval);
+      if (fadeTimeout) {
+        clearTimeout(fadeTimeout);
+      }
+    };
+  }, [isBusy]);
 
   useEffect(() => {
     if (!pendingReportText && !pendingAnalysisText) {
@@ -1093,6 +1241,11 @@ export function AiInlineCopilot({
   }, [activeContext]);
 
   const hasManualContext = selectedContextId !== 'detected';
+  const activeIdleHint = INPUT_IDLE_HINTS[idleHintIndex] ?? INPUT_IDLE_HINTS[0];
+  const activeBusyHint = BUSY_PROGRESS_HINTS[busyHintIndex] ?? BUSY_PROGRESS_HINTS[0];
+  const displayedStatus = isBusy
+    ? activeBusyHint
+    : status;
 
   const position = useMemo(() => {
     if (!anchor) {
@@ -1215,6 +1368,45 @@ export function AiInlineCopilot({
     return { response, answer: merged };
   };
 
+  const ensureValidMermaidCode = async (
+    rawAnswer: string,
+    signal: AbortSignal,
+    contextText: string,
+    intent: 'chat' | 'analyze' | 'write_report',
+  ): Promise<string> => {
+    const initialCode = sanitizeMermaidAnswer(rawAnswer) || DEFAULT_MERMAID_CODE;
+    const firstCheck = await renderMermaidToSvg(initialCode, resolveMermaidTheme());
+    if (!firstCheck.error) {
+      return initialCode;
+    }
+
+    const repairResponse = await wikiliveApi.aiChat({
+      question: [
+        'Исправь Mermaid-код так, чтобы он был валидным.',
+        'Верни только Mermaid-код без объяснений и markdown-блоков.',
+        `Ошибка парсинга: ${firstCheck.error}`,
+        'Текущий код:',
+        initialCode,
+        contextText ? `Контекст диаграммы: ${contextText.slice(0, 2000)}` : '',
+      ].filter(Boolean).join('\n'),
+      pageId: pageId ?? undefined,
+      spaceId,
+      pageTitle,
+      pageSnapshot: {
+        markdown: getInlineContextMarkdown(editor),
+      },
+      intent,
+    }, { signal });
+
+    const repairedCode = sanitizeMermaidAnswer(repairResponse.answer) || DEFAULT_MERMAID_CODE;
+    const secondCheck = await renderMermaidToSvg(repairedCode, resolveMermaidTheme());
+    if (!secondCheck.error) {
+      return repairedCode;
+    }
+
+    return DEFAULT_MERMAID_CODE;
+  };
+
   const getTableContext = async (input: {
     datasheetId: string;
     viewId?: string;
@@ -1288,7 +1480,7 @@ export function AiInlineCopilot({
     context: TableContext,
     datasheetId: string,
     promptText: string,
-  ): PlannedVisualization | null => {
+  ): Extract<PlannedVisualization, { kind: 'chart' }> | null => {
     if (context.records.length < 2 || context.fields.length < 2) {
       return null;
     }
@@ -1336,23 +1528,24 @@ export function AiInlineCopilot({
     narrativeText: string,
     intent: 'analyze' | 'write_report',
     signal: AbortSignal,
+    forcedPreference?: VisualizationPreference,
   ): Promise<PlannedVisualization | null> => {
     const promptText = prompt.trim();
+    const preference = forcedPreference || detectVisualizationPreference(promptText);
+    let chartPlan: Extract<PlannedVisualization, { kind: 'chart' }> | null = null;
+    let diagramPlan: Extract<PlannedVisualization, { kind: 'diagram' }> | null = null;
 
-    if (activeContext.kind === 'table' && activeContext.datasheetId) {
+    if (preference !== 'diagram' && activeContext.kind === 'table' && activeContext.datasheetId) {
       const context = await getTableContext({
         datasheetId: activeContext.datasheetId,
         viewId: activeContext.viewId,
         tableSnapshot: activeContext.tableSnapshot,
       });
 
-      const chartPlan = buildChartVisualization(context, activeContext.datasheetId, promptText);
-      if (chartPlan) {
-        return chartPlan;
-      }
+      chartPlan = buildChartVisualization(context, activeContext.datasheetId, promptText);
     }
 
-    if (activeContext.kind === 'all') {
+    if (!chartPlan && preference !== 'diagram' && activeContext.kind === 'all') {
       const tableOptions = contextOptions.filter((option) => option.kind === 'table');
       for (const option of tableOptions) {
         if (!option.datasheetId) {
@@ -1365,39 +1558,71 @@ export function AiInlineCopilot({
           tableSnapshot: getStoredTableSnapshot(option.datasheetId),
         });
 
-        const chartPlan = buildChartVisualization(context, option.datasheetId, promptText);
-        if (chartPlan) {
-          return chartPlan;
+        const candidate = buildChartVisualization(context, option.datasheetId, promptText);
+        if (candidate) {
+          chartPlan = candidate;
+          break;
         }
       }
     }
 
-    if (!isDiagramFeatureEnabled || !shouldSuggestDiagram(`${promptText}\n${narrativeText}`)) {
-      return null;
+    const wantsDiagram = preference === 'diagram'
+      || preference === 'both'
+      || (preference === 'auto' && !chartPlan && shouldSuggestDiagram(`${promptText}\n${narrativeText}`));
+
+    if (wantsDiagram && isDiagramFeatureEnabled) {
+      const { answer } = await fetchAiAnswerWithTableRecovery({
+        question: [
+          DIAGRAM_ARCHITECT_PROMPT,
+          'Сделай диаграмму по итоговому анализу/отчету ниже.',
+          `Контекст: ${narrativeText.slice(0, 6000)}`,
+        ].join('\n'),
+        pageId: pageId ?? undefined,
+        spaceId,
+        pageTitle,
+        pageSnapshot: {
+          markdown: getInlineContextMarkdown(editor),
+        },
+        intent,
+      }, signal);
+
+      const mermaidCode = await ensureValidMermaidCode(answer, signal, narrativeText, intent);
+      diagramPlan = {
+        kind: 'diagram',
+        mermaidCode,
+        reason: 'В тексте описан процесс/связи, диаграмма ускоряет понимание.',
+        caption: 'Автодиаграмма по тексту анализа.',
+      };
     }
 
-    const { answer } = await fetchAiAnswerWithTableRecovery({
-      question: [
-        DIAGRAM_ARCHITECT_PROMPT,
-        'Сделай диаграмму по итоговому анализу/отчету ниже.',
-        `Контекст: ${narrativeText.slice(0, 6000)}`,
-      ].join('\n'),
-      pageId: pageId ?? undefined,
-      spaceId,
-      pageTitle,
-      pageSnapshot: {
-        markdown: getInlineContextMarkdown(editor),
-      },
-      intent,
-    }, signal);
+    if (preference === 'chart') {
+      return chartPlan;
+    }
 
-    const mermaidCode = sanitizeMermaidAnswer(answer) || DEFAULT_MERMAID_CODE;
-    return {
-      kind: 'diagram',
-      mermaidCode,
-      reason: 'В тексте описан процесс/связи, диаграмма ускоряет понимание.',
-      caption: 'Автодиаграмма по тексту анализа.',
-    };
+    if (preference === 'diagram') {
+      return diagramPlan;
+    }
+
+    if (preference === 'both') {
+      if (chartPlan && diagramPlan) {
+        return {
+          kind: 'both',
+          chart: {
+            config: chartPlan.config,
+            caption: chartPlan.caption,
+          },
+          diagram: {
+            mermaidCode: diagramPlan.mermaidCode,
+            caption: diagramPlan.caption,
+          },
+          reason: `${chartPlan.reason} ${diagramPlan.reason}`,
+        };
+      }
+
+      return chartPlan ?? diagramPlan;
+    }
+
+    return chartPlan ?? diagramPlan;
   };
 
   const insertPlannedVisualization = (plan: PlannedVisualization): boolean => {
@@ -1441,6 +1666,23 @@ export function AiInlineCopilot({
       });
       editor.commands.enter();
       return true;
+    }
+
+    if (plan.kind === 'both') {
+      const chartInserted = insertPlannedVisualization({
+        kind: 'chart',
+        config: plan.chart.config,
+        caption: plan.chart.caption,
+        reason: plan.reason,
+      });
+      const diagramInserted = insertPlannedVisualization({
+        kind: 'diagram',
+        mermaidCode: plan.diagram.mermaidCode,
+        caption: plan.diagram.caption,
+        reason: plan.reason,
+      });
+
+      return chartInserted || diagramInserted;
     }
 
     const before = countNodesByType('mermaidDiagram');
@@ -1685,8 +1927,8 @@ export function AiInlineCopilot({
     return payload;
   };
 
-  const runAnalyze = async () => {
-    await prepareAnalysisForCurrentFile();
+  const runAnalyze = async (forcedVisualizationPreference?: VisualizationPreference) => {
+    await prepareAnalysisForCurrentFile(forcedVisualizationPreference);
   };
 
   const runLiveChartInsert = async () => {
@@ -1784,7 +2026,7 @@ export function AiInlineCopilot({
     });
   };
 
-  const prepareAnalysisForCurrentFile = async () => {
+  const prepareAnalysisForCurrentFile = async (forcedVisualizationPreference?: VisualizationPreference) => {
     await withBusy(async (signal) => {
       let analysisText = '';
 
@@ -1866,13 +2108,29 @@ export function AiInlineCopilot({
       }
 
       const sanitizedAnalysisText = normalizeReportMarkdown(analysisText);
-      const visualizationPlan = await buildVisualizationForNarrative(sanitizedAnalysisText, 'analyze', signal);
+      
+      // Если пользователь явно просил визуализацию, используем её; иначе автоматическое определение
+      let visualizationPlan: PlannedVisualization | null = null;
+      
+      if (forcedVisualizationPreference && forcedVisualizationPreference !== 'auto') {
+        // Пользователь явно просил график/диаграмму, строим её независимо от контекста
+        visualizationPlan = await buildVisualizationForNarrative(
+          sanitizedAnalysisText, 
+          'analyze', 
+          signal,
+          forcedVisualizationPreference,
+        );
+      } else {
+        // Автоматическое определение
+        visualizationPlan = await buildVisualizationForNarrative(sanitizedAnalysisText, 'analyze', signal);
+      }
+      
       setPendingAnalysisText(sanitizedAnalysisText);
       setPendingVisualization(visualizationPlan);
       setOutput(sanitizedAnalysisText);
       setStatus(
         visualizationPlan
-          ? `⚡️ Анализ готов. Подготовлена визуализация: ${visualizationPlan.kind === 'chart' ? 'график' : 'диаграмма'}.`
+          ? `⚡️ Анализ готов. Подготовлена визуализация: ${getVisualizationLabel(visualizationPlan)}.`
           : '⚡️ Анализ готов. Нажмите кнопку вставки, чтобы добавить его в документ.',
       );
     });
@@ -2053,7 +2311,7 @@ export function AiInlineCopilot({
         intent: 'chat',
       }, signal);
 
-      const mermaidCode = sanitizeMermaidAnswer(answer) || DEFAULT_MERMAID_CODE;
+      const mermaidCode = await ensureValidMermaidCode(answer, signal, userPrompt || markdown, 'chat');
 
       if (editor) {
         editor.chain().focus().insertMermaidDiagram({ code: mermaidCode }).run();
@@ -2144,17 +2402,33 @@ export function AiInlineCopilot({
     return normalizeReportMarkdown(answer);
   };
 
-  const prepareReportForCurrentFile = async () => {
+  const prepareReportForCurrentFile = async (forcedVisualizationPreference?: VisualizationPreference) => {
     await withBusy(async (signal) => {
       const reportText = await createReportText(signal);
       const sanitizedReportText = normalizeReportMarkdown(reportText);
-      const visualizationPlan = await buildVisualizationForNarrative(sanitizedReportText, 'write_report', signal);
+      
+      // Если пользователь явно просил визуализацию, используем её; иначе автоматическое определение
+      let visualizationPlan: PlannedVisualization | null = null;
+      
+      if (forcedVisualizationPreference && forcedVisualizationPreference !== 'auto') {
+        // Пользователь явно просил график/диаграмму, строим её независимо от контекста
+        visualizationPlan = await buildVisualizationForNarrative(
+          sanitizedReportText, 
+          'write_report', 
+          signal,
+          forcedVisualizationPreference,
+        );
+      } else {
+        // Автоматическое определение
+        visualizationPlan = await buildVisualizationForNarrative(sanitizedReportText, 'write_report', signal);
+      }
+      
       setPendingReportText(sanitizedReportText);
       setPendingVisualization(visualizationPlan);
       setOutput(sanitizedReportText);
       setStatus(
         visualizationPlan
-          ? `⚡️ Отчет готов. Подготовлена визуализация: ${visualizationPlan.kind === 'chart' ? 'график' : 'диаграмма'}.`
+          ? `⚡️ Отчет готов. Подготовлена визуализация: ${getVisualizationLabel(visualizationPlan)}.`
           : '⚡️ Отчет готов. Нажмите кнопку вставки, чтобы добавить его в документ.',
       );
     });
@@ -2367,23 +2641,38 @@ export function AiInlineCopilot({
       return;
     }
 
+    const visualizationPreference = detectVisualizationPreference(trimmed);
+
     if (isStructurePrompt(trimmed)) {
       await handleStructureDocument();
       return;
     }
 
+    // Если пользователь явно просит графику/диаграмму, то пускай даже в отчёте
     if (isReportPrompt(trimmed)) {
       if (shouldCreateNewReportDocument(trimmed)) {
         await reportToNewFile();
       } else {
-        await prepareReportForCurrentFile();
+        await prepareReportForCurrentFile(visualizationPreference);
       }
 
       return;
     }
 
+    // Если пользователь явно просит графику/диаграмму, то пускай даже в анализе
     if (isAnalysisPrompt(trimmed)) {
-      await runAnalyze();
+      await runAnalyze(visualizationPreference);
+      return;
+    }
+
+    if (visualizationPreference === 'diagram' && isDiagramFeatureEnabled) {
+      await runDiagramGeneration();
+      return;
+    }
+
+    if (visualizationPreference === 'both' && activeContext.kind === 'table' && activeContext.datasheetId && isDiagramFeatureEnabled) {
+      await runLiveChartInsert();
+      await runDiagramGeneration();
       return;
     }
 
@@ -2575,7 +2864,7 @@ export function AiInlineCopilot({
               void handleSend();
             }
           }}
-          placeholder="Опишите, что нужно сделать с таблицей или текстом"
+          placeholder={activeIdleHint}
           className="min-h-[72px] w-full resize-y rounded-md border border-editor-border-subtle bg-white px-3 py-2 text-sm outline-none focus:border-[#d70032]"
           disabled={isBusy}
         />
@@ -2653,7 +2942,16 @@ export function AiInlineCopilot({
 
       </div>
 
-      {status ? <p className="mb-2 text-xs text-editor-text-tertiary">{status}</p> : null}
+      {displayedStatus ? (
+        <p
+          className={[
+            'mb-2 text-xs text-editor-text-tertiary transition-opacity duration-200',
+            isBusy && !isBusyHintVisible ? 'opacity-0' : 'opacity-100',
+          ].join(' ')}
+        >
+          {isBusy ? `⏳ ${displayedStatus}` : displayedStatus}
+        </p>
+      ) : null}
 
       <div className="max-h-44 overflow-auto rounded-md border border-editor-border-subtle bg-[#fafbfd] p-2 text-xs text-editor-text-primary">
         {createdPage ? (

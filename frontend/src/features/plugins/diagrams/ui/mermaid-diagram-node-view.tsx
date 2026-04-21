@@ -161,8 +161,6 @@ export function MermaidDiagramNodeView({ node, updateAttributes, selected, edito
         {previewSvg ? (
           <div className="mermaid-diagram-node__svg" dangerouslySetInnerHTML={{ __html: previewSvg }} />
         ) : null}
-
-        {previewError ? <p className="mermaid-diagram-node__error">{previewError}</p> : null}
       </div>
 
       {isEditorOpen && typeof document !== 'undefined'

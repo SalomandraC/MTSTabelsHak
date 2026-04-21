@@ -73,7 +73,18 @@ export function LiveChartNodeView({ node, selected, editor, updateAttributes }: 
     () => buildLiveChartData(attrs, snapshot),
     [attrs, snapshot],
   );
+  const hasInvalidConfig = !attrs.datasheetId || !attrs.xAxisFieldId || !Array.isArray(attrs.yAxisFieldIds) || attrs.yAxisFieldIds.length === 0;
   const tableDisplayName = snapshot?.title?.trim() || attrs.datasheetId;
+
+  if (hasInvalidConfig) {
+    return (
+      <NodeViewWrapper
+        className="hidden"
+        data-type="live-chart"
+        data-render-error="true"
+      />
+    );
+  }
 
   const panelStyle = isDark
     ? {
