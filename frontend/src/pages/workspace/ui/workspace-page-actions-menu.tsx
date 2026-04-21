@@ -127,7 +127,7 @@ export function WorkspacePageActionsMenu({
               }
             }}
             placeholder={isFolderCreateMode ? 'Название папки' : 'Название страницы'}
-            className="h-8 w-full rounded-md border border-editor-border-subtle bg-white px-2 text-sm outline-none focus:border-[#5586ff]"
+            className="h-8 w-full rounded-md border border-editor-border-subtle bg-white px-2 text-sm outline-none focus:border-[#fff7f8] focus:ring-1 focus:ring-[#d70032]"
           />
           {createError ? <p className="text-xs text-[#d70032]">{createError}</p> : null}
           <div className="flex items-center gap-2">

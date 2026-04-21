@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 
 import { ModalActionButton } from '../../../shared/ui';
 import type { TemplateAccessLevel, TemplateCategorySummary } from '../../../shared/api/wikilive';
@@ -75,15 +76,28 @@ export function CreateTemplateFromPageModal({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="border-b border-editor-border-subtle px-5 py-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#d70032]">{isEditing ? 'Редактирование шаблона' : 'Шаблон из страницы'}</p>
-          <h3 className="mt-2 font-wide text-xl font-semibold text-[#1f1f1f]">
-            {isEditing ? 'Обновить шаблон' : 'Сохранить страницу в маркетплейс'}
-          </h3>
-          <p className="mt-2 text-sm text-editor-text-tertiary">
-            {isEditing
-              ? 'Измените метаданные шаблона и сохраните обновления.'
-              : 'Текущий документ будет сохранён как шаблон и появится в каталоге.'}
-          </p>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#d70032]">{isEditing ? 'Редактирование шаблона' : 'Шаблон из страницы'}</p>
+              <h3 className="mt-2 font-wide text-xl font-semibold text-[#1f1f1f]">
+                {isEditing ? 'Обновить шаблон' : 'Сохранить страницу в маркетплейс'}
+              </h3>
+              <p className="mt-2 text-sm text-editor-text-tertiary">
+                {isEditing
+                  ? 'Измените метаданные шаблона и сохраните обновления.'
+                  : 'Текущий документ будет сохранён как шаблон и появится в каталоге.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#f2f3f5] text-[#8d8d8d] transition-colors hover:bg-[#e7eaef] hover:text-[#1f1f1f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d70032]/25"
+              aria-label="Закрыть"
+              title="Закрыть"
+            >
+              <X size={18} strokeWidth={2.2} />
+            </button>
+          </div>
         </div>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
