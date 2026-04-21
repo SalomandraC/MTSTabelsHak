@@ -1,5 +1,6 @@
 import { Paperclip, UploadCloud, X } from 'lucide-react';
 import { useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 import { ModalActionButton } from '../../../shared/ui';
 
@@ -63,7 +64,11 @@ export function AttachmentUploadModal({
     return null;
   }
 
-  return (
+  if (typeof document === 'undefined') {
+    return null;
+  }
+
+  return createPortal(
     <div className="fixed inset-0 z-[101] bg-black/45" onMouseDown={isSubmitting ? undefined : onClose}>
       <div
         className="fixed left-1/2 top-1/2 flex w-[min(44rem,calc(100vw-1.5rem))] max-w-[calc(100%-24px)] -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-[14px] border border-[#e8edf5] bg-white p-6 shadow-[0px_4px_24px_rgba(0,0,0,0.12),0px_8px_16px_rgba(0,0,0,0.08)]"
@@ -198,6 +203,7 @@ export function AttachmentUploadModal({
           </ModalActionButton>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

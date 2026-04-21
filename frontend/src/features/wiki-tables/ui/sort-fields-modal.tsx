@@ -1,5 +1,6 @@
 import { ArrowUpDown, PlusCircle, Search, Trash2 } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import type { MwsField } from '../../../shared/api/wikilive';
 import { ModalActionButton } from '../../../shared/ui';
@@ -71,11 +72,15 @@ export function SortFieldsModal({
     return null;
   }
 
+  if (typeof document === 'undefined') {
+    return null;
+  }
+
   const selectedFieldIds = new Set(
     draftRules.map((rule) => rule.fieldId).filter(Boolean)
   );
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[101] bg-black/35" onMouseDown={onClose}>
       <section
         className="fixed left-1/2 top-1/2 flex max-h-[calc(100vh-2rem)] w-[min(38rem,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-[#e8edf5] bg-white shadow-[0_24px_70px_rgba(17,25,40,0.18)]"
@@ -235,6 +240,7 @@ export function SortFieldsModal({
           </div>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body
   );
 }
