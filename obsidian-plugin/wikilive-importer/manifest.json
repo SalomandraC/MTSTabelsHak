@@ -1,0 +1,9 @@
+{
+  "id": "wikilive-importer",
+  "name": "WikiLive Importer",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Imports Markdown notes, folders, or a whole Obsidian vault into WikiLive.",
+  "author": "Hardcode",
+  "isDesktopOnly": false
+}

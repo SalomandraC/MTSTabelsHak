@@ -18,6 +18,7 @@ import { TemplatesModule } from './templates/templates.module';
 import { WikiTreeModule } from './wiki-tree/wiki-tree.module';
 import { WorkspaceTreeModule } from './workspace/workspace-tree.module';
 import { RealtimeModule } from './realtime/realtime.module';
+import { ObsidianModule } from './obsidian/obsidian.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { RealtimeModule } from './realtime/realtime.module';
     TemplatesModule,
     WorkspaceTreeModule,
     AiToolsModule,
+    ObsidianModule,
   ],
   controllers: [AppController],
 })

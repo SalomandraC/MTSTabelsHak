@@ -281,6 +281,34 @@ export class AuthService {
     return updated;
   }
 
+  async authorizeApiKey(apiKey: string, fallbackDisplayName = 'Obsidian Import'): Promise<UserContext> {
+    const normalizedApiKey = apiKey.trim();
+    const profile = await this.validateApiKey(normalizedApiKey);
+    const existingUser = await this.getUserByIdCached(profile.userId);
+
+    let user =
+      existingUser ??
+      (await this.createUser({
+        userId: profile.userId,
+        clientId: profile.clientId ?? null,
+        displayName: profile.suggestedDisplayName?.trim() || fallbackDisplayName,
+      }));
+
+    if (user.clientId !== profile.clientId && profile.clientId) {
+      user = await this.updateCachedUser({
+        ...user,
+        clientId: profile.clientId,
+      });
+    }
+
+    return {
+      userId: user.userId,
+      clientId: user.clientId ?? null,
+      displayName: user.displayName,
+      mwsToken: normalizedApiKey,
+    };
+  }
+
   private issueAccessToken(payload: AccessTokenPayload): string {
     return this.jwtService.sign(payload, {
       secret: this.jwtSecret,

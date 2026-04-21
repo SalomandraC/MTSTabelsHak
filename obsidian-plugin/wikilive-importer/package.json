@@ -1,0 +1,16 @@
+{
+  "name": "wikilive-importer",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "builtin-modules": "^4.0.0",
+    "esbuild": "^0.25.3",
+    "obsidian": "^1.8.10",
+    "typescript": "^5.9.3"
+  }
+}

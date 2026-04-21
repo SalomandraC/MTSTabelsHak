@@ -1,0 +1,8 @@
+.wikilive-importer-help {
+  color: var(--text-muted);
+  margin-top: 0.75rem;
+}
+
+.wikilive-importer-paths textarea {
+  min-height: 120px;
+}
