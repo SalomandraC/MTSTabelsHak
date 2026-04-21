@@ -1,6 +1,6 @@
 import type { NodeViewProps } from '@tiptap/react';
 import { NodeViewWrapper } from '@tiptap/react';
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Bar,
   BarChart,
@@ -23,7 +23,6 @@ import {
   type LiveChartAttrs,
 } from '../model/live-chart-types';
 import { LiveChartPickerModal } from './live-chart-picker-modal';
-import { RemoveBlockMenu } from '../../../../shared/ui/remove-block-menu';
 
 const MTS_SERIES_COLORS = ['#d70032', '#ff5c7a', '#ff9a3c', '#5f8dff', '#38b6a3', '#9867ff'];
 
@@ -46,16 +45,11 @@ function useIsDarkTheme() {
   return isDark;
 }
 
-const LONG_PRESS_DELETE_MS = 700;
-
-export function LiveChartNodeView({ node, selected, editor, updateAttributes, deleteNode }: NodeViewProps) {
+export function LiveChartNodeView({ node, selected, editor, updateAttributes }: NodeViewProps) {
   const attrs = node.attrs as LiveChartAttrs;
   const [tick, setTick] = useState(0);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
-  const [deletePopoverPosition, setDeletePopoverPosition] = useState<{ x: number; y: number } | null>(null);
   const isDark = useIsDarkTheme();
-  const longPressTimerRef = useRef<number | null>(null);
-  const pressPositionRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   useEffect(() => {
     const onSnapshotUpdated = (event: Event) => {
@@ -107,50 +101,6 @@ export function LiveChartNodeView({ node, selected, editor, updateAttributes, de
 
   const isEditable = editor.isEditable;
 
-  const clearLongPressTimer = () => {
-    if (longPressTimerRef.current !== null) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      clearLongPressTimer();
-    };
-  }, []);
-
-  const handleLongPressStart = () => {
-    if (!isEditable || isPickerOpen || deletePopoverPosition || longPressTimerRef.current !== null) {
-      return;
-    }
-
-    longPressTimerRef.current = window.setTimeout(() => {
-      longPressTimerRef.current = null;
-      setDeletePopoverPosition({
-        x: pressPositionRef.current.x + 8,
-        y: pressPositionRef.current.y + 10,
-      });
-    }, LONG_PRESS_DELETE_MS);
-  };
-
-  useEffect(() => {
-    if (!deletePopoverPosition) {
-      return;
-    }
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setDeletePopoverPosition(null);
-      }
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [deletePopoverPosition]);
-
   return (
     <NodeViewWrapper
       className={[
@@ -160,27 +110,11 @@ export function LiveChartNodeView({ node, selected, editor, updateAttributes, de
       style={panelStyle}
       data-mws-stop-event="true"
       data-type="live-chart"
-      onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => {
-        if (event.button !== 0) {
-          return;
-        }
-
-        pressPositionRef.current = {
-          x: event.clientX,
-          y: event.clientY,
-        };
-        handleLongPressStart();
-      }}
-      onPointerUp={clearLongPressTimer}
-      onPointerLeave={clearLongPressTimer}
-      onPointerCancel={clearLongPressTimer}
       onDoubleClick={() => {
         if (!isEditable) {
           return;
         }
 
-        clearLongPressTimer();
-        setDeletePopoverPosition(null);
         setIsPickerOpen(true);
       }}
     >
@@ -189,7 +123,7 @@ export function LiveChartNodeView({ node, selected, editor, updateAttributes, de
           <span className="mermaid-diagram-node__title">Живой график</span>
           {isEditable ? (
             <p className="mt-1 text-[11px] text-[#6e7582]">
-              Двойной клик: редактировать график. Долгое нажатие: удалить из документа.
+              Двойной клик: редактировать график. Удаление: долгое нажатие по блоку.
             </p>
           ) : null}
         </div>
@@ -296,17 +230,6 @@ export function LiveChartNodeView({ node, selected, editor, updateAttributes, de
         initialConfig={attrs}
         title="Редактирование графика"
         submitLabel="Сохранить"
-      />
-
-      <RemoveBlockMenu
-        isOpen={Boolean(deletePopoverPosition)}
-        position={deletePopoverPosition}
-        label="Удалить график из документа"
-        onClose={() => setDeletePopoverPosition(null)}
-        onConfirm={() => {
-          setDeletePopoverPosition(null);
-          deleteNode();
-        }}
       />
     </NodeViewWrapper>
   );

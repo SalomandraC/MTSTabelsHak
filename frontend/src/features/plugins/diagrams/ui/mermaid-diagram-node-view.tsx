@@ -1,11 +1,10 @@
 import { createPortal } from 'react-dom';
 import type { NodeViewProps } from '@tiptap/react';
 import { NodeViewWrapper } from '@tiptap/react';
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { DEFAULT_MERMAID_CODE, MERMAID_PRESETS } from '../model/mermaid-presets';
 import { renderMermaidToSvg, resolveMermaidTheme } from '../model/mermaid-utils';
-import { RemoveBlockMenu } from '../../../../shared/ui/remove-block-menu';
 
 function useLiveTheme() {
   const [theme, setTheme] = useState<'default' | 'dark'>(resolveMermaidTheme());
@@ -43,14 +42,12 @@ function useLiveTheme() {
   return theme;
 }
 
-export function MermaidDiagramNodeView({ node, updateAttributes, selected, editor, deleteNode }: NodeViewProps) {
+export function MermaidDiagramNodeView({ node, updateAttributes, selected, editor }: NodeViewProps) {
   const isEditable = editor.isEditable;
-  const LONG_PRESS_DELETE_MS = 700;
   const currentCode = String(node.attrs.code ?? '').trim() || DEFAULT_MERMAID_CODE;
   const theme = useLiveTheme();
 
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const longPressTimerRef = useRef<number | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const [draftCode, setDraftCode] = useState(currentCode);
@@ -58,7 +55,6 @@ export function MermaidDiagramNodeView({ node, updateAttributes, selected, edito
   const [previewError, setPreviewError] = useState('');
   const [draftSvg, setDraftSvg] = useState('');
   const [draftError, setDraftError] = useState('');
-  const [deletePopoverPosition, setDeletePopoverPosition] = useState<{ x: number; y: number } | null>(null);
 
   const canSave = useMemo(() => {
     return draftCode.trim().length > 0 && !draftError;
@@ -123,19 +119,6 @@ export function MermaidDiagramNodeView({ node, updateAttributes, selected, edito
     };
   }, [showActions, isEditorOpen]);
 
-  const clearLongPressTimer = () => {
-    if (longPressTimerRef.current !== null) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      clearLongPressTimer();
-    };
-  }, []);
-
   return (
     <NodeViewWrapper
       className={[
@@ -145,29 +128,11 @@ export function MermaidDiagramNodeView({ node, updateAttributes, selected, edito
       data-type="mermaid-diagram"
       ref={containerRef}
       onClick={() => setShowActions(true)}
-      onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => {
-        if (!isEditable || event.button !== 0 || longPressTimerRef.current !== null) {
-          return;
-        }
-
-        setDeletePopoverPosition(null);
-        longPressTimerRef.current = window.setTimeout(() => {
-          longPressTimerRef.current = null;
-          setDeletePopoverPosition({
-            x: event.clientX + 8,
-            y: event.clientY + 10,
-          });
-        }, LONG_PRESS_DELETE_MS);
-      }}
-      onPointerUp={clearLongPressTimer}
-      onPointerLeave={clearLongPressTimer}
-      onPointerCancel={clearLongPressTimer}
       onDoubleClick={() => {
         if (!isEditable) {
           return;
         }
 
-        clearLongPressTimer();
         setShowActions(true);
         setIsEditorOpen(true);
       }}
@@ -177,7 +142,7 @@ export function MermaidDiagramNodeView({ node, updateAttributes, selected, edito
           <span className="mermaid-diagram-node__title">Mermaid Diagram</span>
           {isEditable ? (
             <p className="mt-1 text-[11px] text-[#6e7582]">
-              Двойной клик: редактировать диаграмму. Долгое нажатие: удалить из документа.
+              Двойной клик: редактировать диаграмму. Удаление: долгое нажатие по блоку.
             </p>
           ) : null}
         </div>
@@ -199,17 +164,6 @@ export function MermaidDiagramNodeView({ node, updateAttributes, selected, edito
 
         {previewError ? <p className="mermaid-diagram-node__error">{previewError}</p> : null}
       </div>
-
-      <RemoveBlockMenu
-        isOpen={Boolean(deletePopoverPosition)}
-        position={deletePopoverPosition}
-        label="Удалить диаграмму из документа"
-        onClose={() => setDeletePopoverPosition(null)}
-        onConfirm={() => {
-          setDeletePopoverPosition(null);
-          deleteNode();
-        }}
-      />
 
       {isEditorOpen && typeof document !== 'undefined'
         ? createPortal(

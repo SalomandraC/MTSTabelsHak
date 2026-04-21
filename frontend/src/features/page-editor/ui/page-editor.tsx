@@ -1,6 +1,7 @@
 import type { Content, Editor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { createPortal } from 'react-dom';
 
 import { SlashMenu } from '../../slash-menu';
 import { AiInlineCopilot } from '../../plugins/ai-assistant';
@@ -30,6 +31,7 @@ import {
   type PageEditorViewMode,
   writePageEditorViewPreferences,
 } from '../model/editor-view-preferences';
+import { usePortalAnchorPosition } from '../../../shared/lib/use-portal-anchor-position';
 
 type PageEditorProps = {
   spaceId: string;
@@ -76,7 +78,7 @@ type RemoveBlockMenuState = {
   x: number;
   y: number;
   pos: number;
-  kind: 'iframe' | 'markdown-table' | 'canvas' | 'live-table' | 'diagram';
+  kind: 'iframe' | 'markdown-table' | 'canvas' | 'live-table' | 'diagram' | 'live-chart';
 };
 
 type LongPressStartState = {
@@ -99,6 +101,7 @@ function resolveRemoveBlockTarget(
     canvasBlock: 'canvas',
     mwsTableEmbed: 'live-table',
     mermaidDiagram: 'diagram',
+    liveChart: 'live-chart',
   };
 
   // For atom blocks (iframe/canvas), DOM coordinates may resolve to a node boundary.
@@ -500,6 +503,7 @@ function LivePageEditor({
   const [copilotAnchor, setCopilotAnchor] = useState<CopilotAnchor | null>(null);
   const isCopilotOpen = Boolean(copilotAnchor);
   const [removeBlockMenu, setRemoveBlockMenu] = useState<RemoveBlockMenuState | null>(null);
+  const [isRemoveMenuActive, setIsRemoveMenuActive] = useState(false);
   const editorSurfaceRef = useRef<HTMLDivElement | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressStartRef = useRef<LongPressStartState | null>(null);
@@ -570,6 +574,29 @@ function LivePageEditor({
     [],
   );
 
+  const getRemoveMenuAnchor = useCallback((clientX: number, clientY: number) => {
+    const surfaceRect = editorSurfaceRef.current?.getBoundingClientRect();
+
+    return {
+      x: clientX - (surfaceRect?.left ?? 0),
+      y: clientY - (surfaceRect?.top ?? 0),
+    };
+  }, []);
+
+  const removeBlockMenuPosition = usePortalAnchorPosition(
+    removeBlockMenu
+      ? {
+          x: removeBlockMenu.x,
+          y: removeBlockMenu.y,
+        }
+      : null,
+    editorSurfaceRef,
+    {
+      panelWidth: 220,
+      panelHeight: 56,
+    },
+  );
+
   const controller = usePageEditorController({
     spaceId,
     page,
@@ -595,6 +622,7 @@ function LivePageEditor({
     const nextSurfaceRect = editorSurfaceRef.current?.getBoundingClientRect();
 
     setRemoveBlockMenu(null);
+    setIsRemoveMenuActive(false);
     setCopilotAnchor({
       x: clientX - (nextSurfaceRect?.left ?? 0),
       y: clientY - (nextSurfaceRect?.top ?? 0),
@@ -613,18 +641,24 @@ function LivePageEditor({
     }
 
     const element = target as HTMLElement | null;
+    const nativeRemoveMenuNode = element?.closest('[data-native-remove-menu="true"]') as HTMLElement | null;
+    if (nativeRemoveMenuNode) {
+      return null;
+    }
+
     const iframeNode = element?.closest('[data-type="iframeBlock"]') as HTMLElement | null;
     const canvasNode = element?.closest('[data-type="canvasBlock"]') as HTMLElement | null;
     const liveTableNode = element?.closest('[data-type="mws-table-embed"]') as HTMLElement | null;
     const diagramNode = element?.closest('[data-type="mermaid-diagram"]') as HTMLElement | null;
+    const liveChartNode = element?.closest('[data-type="live-chart"]') as HTMLElement | null;
     const markdownTableNode = element?.closest('table') as HTMLTableElement | null;
     const isInsideMwsTable = Boolean(element?.closest('[data-type="mws-table-embed"]'));
 
-    if (!iframeNode && !canvasNode && !liveTableNode && !diagramNode && !(markdownTableNode && !isInsideMwsTable)) {
+    if (!iframeNode && !canvasNode && !liveTableNode && !diagramNode && !liveChartNode && !(markdownTableNode && !isInsideMwsTable)) {
       return null;
     }
 
-    const menuTarget = iframeNode ?? canvasNode ?? liveTableNode ?? diagramNode ?? markdownTableNode;
+    const menuTarget = iframeNode ?? canvasNode ?? liveTableNode ?? diagramNode ?? liveChartNode ?? markdownTableNode;
     if (!menuTarget) {
       return null;
     }
@@ -634,6 +668,7 @@ function LivePageEditor({
       ...(canvasNode ? ['canvas' as const] : []),
       ...(liveTableNode ? ['live-table' as const] : []),
       ...(diagramNode ? ['diagram' as const] : []),
+      ...(liveChartNode ? ['live-chart' as const] : []),
       ...(markdownTableNode && !isInsideMwsTable ? ['markdown-table' as const] : []),
     ];
 
@@ -670,6 +705,8 @@ function LivePageEditor({
   }, [isCopilotOpen]);
 
   useEffect(() => {
+    setIsRemoveMenuActive(Boolean(removeBlockMenu));
+
     if (!removeBlockMenu) {
       return;
     }
@@ -681,11 +718,13 @@ function LivePageEditor({
       }
 
       setRemoveBlockMenu(null);
+      setIsRemoveMenuActive(false);
     };
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setRemoveBlockMenu(null);
+        setIsRemoveMenuActive(false);
       }
     };
 
@@ -717,6 +756,7 @@ function LivePageEditor({
     const node = editor.state.doc.nodeAt(removeBlockMenu.pos);
     if (!node) {
       setRemoveBlockMenu(null);
+      setIsRemoveMenuActive(false);
       return;
     }
 
@@ -728,15 +768,19 @@ function LivePageEditor({
           ? 'mwsTableEmbed'
           : removeBlockMenu.kind === 'diagram'
             ? 'mermaidDiagram'
-        : 'table';
+            : removeBlockMenu.kind === 'live-chart'
+              ? 'liveChart'
+          : 'table';
     if (node.type.name !== expectedType) {
       setRemoveBlockMenu(null);
+      setIsRemoveMenuActive(false);
       return;
     }
 
     const tr = editor.state.tr.delete(removeBlockMenu.pos, removeBlockMenu.pos + node.nodeSize);
     editor.view.dispatch(tr);
     setRemoveBlockMenu(null);
+    setIsRemoveMenuActive(false);
   }, [controller.editor, removeBlockMenu]);
 
   useEffect(() => {
@@ -899,6 +943,11 @@ function LivePageEditor({
               return;
             }
 
+            if (isRemoveMenuActive) {
+              setRemoveBlockMenu(null);
+              setIsRemoveMenuActive(false);
+            }
+
             longPressStartRef.current = {
               x: event.clientX,
               y: event.clientY,
@@ -912,13 +961,19 @@ function LivePageEditor({
                 return;
               }
 
+              if (isRemoveMenuActive) {
+                setRemoveBlockMenu(null);
+              }
+
+              const anchor = getRemoveMenuAnchor(start.x, start.y);
               setCopilotAnchor(null);
               setRemoveBlockMenu({
-                x: start.x,
-                y: start.y,
+                x: anchor.x,
+                y: anchor.y,
                 pos: start.removeTarget.pos,
                 kind: start.removeTarget.kind,
               });
+              setIsRemoveMenuActive(true);
               clearLongPressTimer();
             }, 450);
           }}
@@ -952,35 +1007,40 @@ function LivePageEditor({
             openInlineCopilotAtPoint(event.clientX, event.clientY, event.target);
           }}
         >
-          {removeBlockMenu ? (
-            <div
-              data-remove-block-menu="true"
-              className="fixed z-[90] min-w-[220px] rounded-xl border border-editor-border-subtle bg-white p-1.5 shadow-[0_14px_32px_rgba(17,25,40,0.2)]"
-              style={{
-                left: removeBlockMenu.x,
-                top: removeBlockMenu.y,
-              }}
-              onContextMenu={(event) => event.preventDefault()}
-            >
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-[#c62828] transition-colors hover:bg-[#fff1f1]"
-                onClick={handleRemoveBlockFromContextMenu}
-              >
-                <span>
-                  {removeBlockMenu.kind === 'iframe'
-                    ? 'Удалить iframe из документа'
-                    : removeBlockMenu.kind === 'canvas'
-                      ? 'Удалить холст из документа'
-                      : removeBlockMenu.kind === 'live-table'
-                        ? 'Удалить live-таблицу из документа'
-                        : removeBlockMenu.kind === 'diagram'
-                          ? 'Удалить диаграмму из документа'
-                      : 'Удалить таблицу из документа'}
-                </span>
-              </button>
-            </div>
-          ) : null}
+          {removeBlockMenu && removeBlockMenuPosition
+            ? createPortal(
+                <div
+                  data-remove-block-menu="true"
+                  className="fixed z-[90] min-w-[220px] rounded-xl border border-editor-border-subtle bg-white p-1.5 shadow-[0_14px_32px_rgba(17,25,40,0.2)]"
+                  style={{
+                    left: removeBlockMenuPosition.left,
+                    top: removeBlockMenuPosition.top,
+                  }}
+                  onContextMenu={(event) => event.preventDefault()}
+                >
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-[#c62828] transition-colors hover:bg-[#fff1f1]"
+                    onClick={handleRemoveBlockFromContextMenu}
+                  >
+                    <span>
+                      {removeBlockMenu.kind === 'iframe'
+                        ? 'Удалить iframe из документа'
+                        : removeBlockMenu.kind === 'canvas'
+                          ? 'Удалить холст из документа'
+                          : removeBlockMenu.kind === 'live-table'
+                            ? 'Удалить live-таблицу из документа'
+                            : removeBlockMenu.kind === 'diagram'
+                              ? 'Удалить диаграмму из документа'
+                              : removeBlockMenu.kind === 'live-chart'
+                                ? 'Удалить график из документа'
+                            : 'Удалить таблицу из документа'}
+                    </span>
+                  </button>
+                </div>,
+                document.body,
+              )
+            : null}
           <div
             className={[
               'relative',
