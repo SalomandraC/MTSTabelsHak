@@ -1,6 +1,6 @@
 import type { Content, Editor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
 
 import { SlashMenu } from '../../slash-menu';
@@ -22,7 +22,7 @@ import { PagePickerModal } from './page-picker-modal';
 import { TemplateVariableModal } from './template-variable-modal';
 import { IframeModal } from './iframe-modal';
 import { LiveFormulaModal } from './live-formula-modal';
-import { CreateBookmarkModal, collectBookmarks, BookmarkPickerModal } from './bookmark-modal';
+import { CreateBookmarkModal } from './bookmark-modal';
 import { LiveReferencePickerModal } from './live-reference-picker-modal';
 import {
   clampPageIndent,
@@ -87,6 +87,76 @@ type LongPressStartState = {
   target: EventTarget | null;
   removeTarget: { pos: number; kind: RemoveBlockMenuState['kind'] } | null;
 };
+
+const A4_WIDTH_CM = 21;
+const A4_HEIGHT_CM = 29.7;
+const PAGE_BREAK_GAP_PX = 30;
+
+function getPageHeightPx(frameElement: HTMLElement | null) {
+  const frameWidth = frameElement?.getBoundingClientRect().width ?? 0;
+  if (frameWidth > 0) {
+    return frameWidth * (A4_HEIGHT_CM / A4_WIDTH_CM);
+  }
+
+  return A4_HEIGHT_CM * (96 / 2.54);
+}
+
+function clearAutoPageBreakSpacers(contentElement: HTMLElement) {
+  contentElement
+    .querySelectorAll<HTMLElement>('[data-page-editor-auto-break="true"]')
+    .forEach((element) => {
+      element.removeAttribute('data-page-editor-auto-break');
+      element.style.removeProperty('--page-editor-auto-break-before');
+    });
+}
+
+function getPagedBlockElements(contentElement: HTMLElement) {
+  const editorElement = contentElement.querySelector<HTMLElement>('.tiptap');
+  if (!editorElement) {
+    return [];
+  }
+
+  const rootBlocks = Array.from(editorElement.querySelectorAll<HTMLElement>(':scope > [data-type="rootblock"]'));
+  return rootBlocks.length > 0
+    ? rootBlocks
+    : Array.from(editorElement.children).filter((child): child is HTMLElement => child instanceof HTMLElement);
+}
+
+function applyAutoPageBreakSpacers(contentElement: HTMLElement, frameElement: HTMLElement | null) {
+  clearAutoPageBreakSpacers(contentElement);
+
+  const pageHeight = getPageHeightPx(frameElement);
+  const frameTop = frameElement?.getBoundingClientRect().top ?? contentElement.getBoundingClientRect().top;
+  const breakStartOffset = PAGE_BREAK_GAP_PX / 2;
+  const breakEndOffset = PAGE_BREAK_GAP_PX / 2 + 8;
+
+  for (const block of getPagedBlockElements(contentElement)) {
+    const rect = block.getBoundingClientRect();
+    const top = rect.top - frameTop;
+    const height = rect.height;
+
+    if (height <= 0 || height >= pageHeight - PAGE_BREAK_GAP_PX * 2) {
+      continue;
+    }
+
+    const bottom = top + height;
+    const pageIndex = Math.floor(Math.max(0, top) / pageHeight);
+    const boundary = (pageIndex + 1) * pageHeight;
+    const crossesBoundaryGap = top < boundary + breakStartOffset && bottom > boundary - breakStartOffset;
+
+    if (!crossesBoundaryGap) {
+      continue;
+    }
+
+    const spacer = Math.max(0, boundary + breakEndOffset - top);
+    if (spacer > 0) {
+      block.setAttribute('data-page-editor-auto-break', 'true');
+      block.style.setProperty('--page-editor-auto-break-before', `${Math.ceil(spacer)}px`);
+    }
+  }
+
+  return Math.max(1, Math.ceil(Math.max(pageHeight, contentElement.scrollHeight) / pageHeight));
+}
 
 function resolveRemoveBlockTarget(
   editor: Editor,
@@ -320,6 +390,7 @@ function useCompactEditorViewport() {
 function PagedLayoutControls({
   leftIndent,
   rightIndent,
+  pageCount,
   onChangeLeftIndent,
   onChangeRightIndent,
   onReset,
@@ -327,6 +398,7 @@ function PagedLayoutControls({
 }: {
   leftIndent: number;
   rightIndent: number;
+  pageCount: number;
   onChangeLeftIndent: (value: number) => void;
   onChangeRightIndent: (value: number) => void;
   onReset: () => void;
@@ -349,6 +421,10 @@ function PagedLayoutControls({
       >
         <span className="inline-flex h-8 items-center px-2 text-xs font-semibold uppercase tracking-[0.12em] text-editor-text-tertiary">
           A4
+        </span>
+
+        <span className="inline-flex h-8 items-center rounded-md bg-white px-2 text-xs font-semibold text-editor-text-secondary shadow-[inset_0_0_0_1px_rgba(209,216,228,0.9)]">
+          ≈ {pageCount} стр.
         </span>
 
         <span className="mx-1 h-5 w-px shrink-0 bg-editor-border-subtle" aria-hidden="true" />
@@ -397,6 +473,35 @@ function PagedLayoutControls({
           Сбросить поля
         </button>
       </div>
+    </div>
+  );
+}
+
+function PagedBreakOverlay({ pageCount }: { pageCount: number }) {
+  const pages = Array.from({ length: Math.max(1, pageCount) }, (_, index) => index + 1);
+
+  return (
+    <div
+      aria-hidden="true"
+      data-page-break-overlay
+      className="pointer-events-none absolute inset-0 z-[2]"
+    >
+      {pages.map((pageNumber) => (
+        <div
+          key={pageNumber}
+          className="page-editor-page-label"
+          style={{ top: `${(pageNumber - 1) * 29.7 + 0.72}cm` }}
+        >
+          {pageNumber}
+        </div>
+      ))}
+      {pages.slice(1).map((pageNumber) => (
+        <div
+          key={`break-${pageNumber}`}
+          className="page-editor-page-break"
+          style={{ top: `calc(${(pageNumber - 1) * 29.7}cm - 15px)` }}
+        />
+      ))}
     </div>
   );
 }
@@ -505,9 +610,12 @@ function LivePageEditor({
   const [removeBlockMenu, setRemoveBlockMenu] = useState<RemoveBlockMenuState | null>(null);
   const [isRemoveMenuActive, setIsRemoveMenuActive] = useState(false);
   const editorSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const editorFrameRef = useRef<HTMLDivElement | null>(null);
+  const editorPageContentRef = useRef<HTMLDivElement | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressStartRef = useRef<LongPressStartState | null>(null);
   const [viewPreferences, setViewPreferences] = useState(() => readPageEditorViewPreferences());
+  const [pagedPageCount, setPagedPageCount] = useState(1);
   const effectiveViewMode: PageEditorViewMode = isCompactViewport ? 'standard' : viewPreferences.mode;
 
   useEffect(() => {
@@ -533,6 +641,67 @@ function LivePageEditor({
       rightIndent: DEFAULT_PAGE_EDITOR_VIEW_PREFERENCES.rightIndent,
     }));
   }, []);
+
+  useLayoutEffect(() => {
+    if (effectiveViewMode !== 'paged') {
+      const contentElement = editorPageContentRef.current;
+      if (contentElement) {
+        clearAutoPageBreakSpacers(contentElement);
+      }
+      setPagedPageCount(1);
+      return undefined;
+    }
+
+    const contentElement = editorPageContentRef.current;
+    if (!contentElement) {
+      return undefined;
+    }
+
+    let animationFrame: number | null = null;
+
+    const updatePagination = () => {
+      const nextPageCount = applyAutoPageBreakSpacers(contentElement, editorFrameRef.current);
+      setPagedPageCount((current) => (current === nextPageCount ? current : nextPageCount));
+    };
+
+    const schedulePagination = () => {
+      if (animationFrame !== null) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      animationFrame = window.requestAnimationFrame(() => {
+        animationFrame = null;
+        updatePagination();
+      });
+    };
+
+    updatePagination();
+
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(schedulePagination);
+    resizeObserver?.observe(contentElement);
+
+    const mutationObserver = typeof MutationObserver === 'undefined'
+      ? null
+      : new MutationObserver(schedulePagination);
+    mutationObserver?.observe(contentElement, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+
+    window.addEventListener('resize', schedulePagination);
+
+    return () => {
+      if (animationFrame !== null) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
+      window.removeEventListener('resize', schedulePagination);
+      clearAutoPageBreakSpacers(contentElement);
+    };
+  }, [effectiveViewMode, page?.id, viewPreferences.leftIndent, viewPreferences.rightIndent]);
 
   const reserveInlineCopilotBottomSpace = useCallback(
     (coords: { bottom: number }, surfaceRect?: DOMRect | null) => {
@@ -915,6 +1084,7 @@ function LivePageEditor({
           <PagedLayoutControls
             leftIndent={viewPreferences.leftIndent}
             rightIndent={viewPreferences.rightIndent}
+            pageCount={pagedPageCount}
             onChangeLeftIndent={handleChangeLeftIndent}
             onChangeRightIndent={handleChangeRightIndent}
             onReset={handleResetIndents}
@@ -1043,6 +1213,7 @@ function LivePageEditor({
               )
             : null}
           <div
+            ref={editorFrameRef}
             className={[
               'relative',
               effectiveViewMode === 'paged'
@@ -1055,18 +1226,21 @@ function LivePageEditor({
               effectiveViewMode === 'paged'
                 ? {
                     width: '21cm',
-                    minHeight: '29.7cm',
+                    minHeight: `${pagedPageCount * 29.7}cm`,
                   }
                 : undefined
             }
           >
+            {effectiveViewMode === 'paged' ? <PagedBreakOverlay pageCount={pagedPageCount} /> : null}
             <div
+              ref={editorPageContentRef}
               data-heading-numbering-enabled={page?.headingNumberingEnabled ? 'true' : 'false'}
               className={effectiveViewMode === 'paged' ? 'px-0' : ''}
               style={
                 effectiveViewMode === 'paged'
                   ? {
                       minHeight: '29.7cm',
+                      boxSizing: 'border-box',
                       paddingTop: '2.54cm',
                       paddingBottom: '2.54cm',
                       paddingLeft: `${viewPreferences.leftIndent}cm`,
