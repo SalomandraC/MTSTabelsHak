@@ -1,6 +1,9 @@
 import type { FileValidationResult, ParsedDocument, ProseMirrorDoc, ProseMirrorMark, ProseMirrorNode } from './types';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const CHATGPT_MARKER_START = '\uE200';
+const CHATGPT_MARKER_SEPARATOR = '\uE202';
+const CHATGPT_MARKER_END = '\uE201';
 
 export function validateFile(file: Pick<File, 'name' | 'size'>): FileValidationResult {
   if (!file.name.toLowerCase().endsWith('.md')) {
@@ -38,6 +41,55 @@ function extractFrontmatter(markdown: string): { title: string | null; body: str
   const title = titleMatch ? titleMatch[1].trim().replace(/^["']|["']$/g, '') : null;
 
   return { title, body };
+}
+
+function normalizeChatGptMarkers(markdown: string): string {
+  const citationIndexes = new Map<string, number>();
+
+  return markdown.replace(
+    new RegExp(`${CHATGPT_MARKER_START}(cite|entity)${CHATGPT_MARKER_SEPARATOR}([\\s\\S]*?)${CHATGPT_MARKER_END}`, 'g'),
+    (_match, markerType: string, payload: string) => {
+      if (markerType === 'entity') {
+        return extractChatGptEntityLabel(payload);
+      }
+
+      const refs = payload
+        .split(CHATGPT_MARKER_SEPARATOR)
+        .map((ref) => ref.trim())
+        .filter(Boolean);
+
+      return refs
+        .map((ref) => {
+          const existingIndex = citationIndexes.get(ref);
+          if (existingIndex) {
+            return `[${existingIndex}]`;
+          }
+
+          const nextIndex = citationIndexes.size + 1;
+          citationIndexes.set(ref, nextIndex);
+          return `[${nextIndex}]`;
+        })
+        .join(' ');
+    },
+  );
+}
+
+function extractChatGptEntityLabel(payload: string): string {
+  const [rawEntity] = payload.split(CHATGPT_MARKER_SEPARATOR);
+
+  try {
+    const parsed = JSON.parse(rawEntity);
+    if (Array.isArray(parsed)) {
+      const label = parsed.find((value, index) => index > 0 && typeof value === 'string' && value.trim());
+      if (typeof label === 'string') {
+        return label;
+      }
+    }
+  } catch {
+    // If OpenAI changes marker payload shape, fall back to readable text below.
+  }
+
+  return rawEntity.replace(/^\[|\]$/g, '').replace(/^["']|["']$/g, '').trim();
 }
 
 // ─── Inline parser ────────────────────────────────────────────────────────────
@@ -280,7 +332,8 @@ function parseBlockquote(lines: string[]): ProseMirrorNode {
 
 export function parseMarkdown(markdown: string): ParsedDocument {
   const { title, body } = extractFrontmatter(markdown);
-  const lines = body.split(/\r?\n/);
+  const normalizedBody = normalizeChatGptMarkers(body);
+  const lines = normalizedBody.split(/\r?\n/);
   const blocks = parseBlocks(lines);
 
   const content: ProseMirrorNode[] = blocks.length > 0

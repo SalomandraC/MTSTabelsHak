@@ -87,7 +87,8 @@ title: Project Notes
 - inline formatting: `bold`, `italic`, `strike`, `code`;
 - horizontal rule;
 - простое извлечение `title` из YAML frontmatter;
-- wikilinks `[[Page]]` и `[[Page|Alias]]` как plain text.
+- wikilinks `[[Page]]` и `[[Page|Alias]]` как plain text;
+- служебные citation/entity-маркеры ChatGPT exports: `cite` превращается в короткие `[1] [2]`, `entity` — в человекочитаемое имя.
 
 ## Ограничения текущей реализации
 

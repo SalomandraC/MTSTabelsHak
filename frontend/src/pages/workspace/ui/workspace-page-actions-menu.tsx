@@ -44,7 +44,6 @@ const EXPORT_FORMATS: { format: ExportFormat; label: string }[] = [
 export function WorkspacePageActionsMenu({
   nodeKind,
   title,
-  linkedPageId,
   canDeletePage,
   canRenameFolder = false,
   canDeleteFolder = false,
@@ -251,7 +250,7 @@ export function WorkspacePageActionsMenu({
                 <ChevronRight size={13} strokeWidth={2} className="text-[#9ca3af]" />
               </button>
               {exportSubmenuOpen && (
-                <div className="absolute left-full top-0 z-50 w-32 rounded-xl border border-editor-border-subtle bg-white py-1 shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
+                <div className="absolute left-full top-0 z-50 w-32 overflow-hidden rounded-xl border border-editor-border-subtle bg-white py-1 shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
                   {EXPORT_FORMATS.map(({ format, label }) => (
                     <button
                       key={format}
