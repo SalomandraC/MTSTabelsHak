@@ -221,6 +221,170 @@ describe('useWikiTableEmbed', () => {
     });
   });
 
+  it('keeps created row visible after the next resolve when preview page does not include it yet', async () => {
+    const attrs = {
+      blockId: 'block-1',
+      title: 'Таблица 2',
+      spaceId: 'space-1',
+      nodeId: 'node-2',
+      datasheetId: 'dst-2',
+      viewId: 'view-1',
+      selectedFieldIds: ['fld-title', 'fld-owner'],
+      pageSize: 20,
+      allowInlineEdit: true,
+      displayMode: 'table' as const,
+    };
+    const createdRecord = {
+      recordId: 'rec-created',
+      fields: {
+        'fld-title': '',
+        'fld-owner': '',
+      },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    vi.mocked(wikiliveApi.createMwsRecords).mockResolvedValue({
+      items: [createdRecord],
+    });
+
+    const { result } = renderHook(() => useWikiTableEmbed(attrs));
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.createRow();
+    });
+
+    await waitFor(() => {
+      expect(result.current.records.some((item) => item.recordId === 'rec-created')).toBe(true);
+    });
+
+    await act(async () => {
+      await result.current.loadEmbed({ silent: true });
+    });
+
+    await waitFor(() => {
+      expect(result.current.records.map((item) => item.recordId)).toEqual(['rec-1', 'rec-created']);
+    });
+  });
+
+  it('omits unsupported empty create payload values for currency percent datetime and attachment fields', async () => {
+    const typedResolveMock: ResolveTableEmbedResponse = {
+      embed: {
+        ...RESOLVE_TABLE_EMBED_MOCK.embed,
+        fields: [
+          { id: 'fld-title', name: 'Название', type: 'SingleText' },
+          { id: 'fld-budget', name: 'Бюджет', type: 'Currency', property: { precision: 2, symbol: '₽' } },
+          { id: 'fld-progress', name: 'Прогресс', type: 'Percent', property: { precision: 0 } },
+          { id: 'fld-deadline', name: 'Срок', type: 'DateTime', property: { dateFormat: 'YYYY-MM-DD' } },
+          { id: 'fld-files', name: 'Файлы', type: 'Attachment' },
+        ],
+      },
+    };
+
+    vi.mocked(wikiliveApi.resolveTableEmbed).mockResolvedValue(typedResolveMock);
+    vi.mocked(wikiliveApi.createMwsRecords).mockResolvedValue({
+      items: [
+        {
+          recordId: 'rec-created',
+          fields: {},
+        },
+      ],
+    });
+
+    const attrs = {
+      blockId: 'block-typed',
+      title: 'Typed table',
+      spaceId: 'space-1',
+      nodeId: 'node-2',
+      datasheetId: 'dst-2',
+      viewId: 'view-1',
+      selectedFieldIds: ['fld-title', 'fld-budget', 'fld-progress', 'fld-deadline', 'fld-files'],
+      pageSize: 20,
+      allowInlineEdit: true,
+      displayMode: 'table' as const,
+    };
+
+    const { result } = renderHook(() => useWikiTableEmbed(attrs));
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    await act(async () => {
+      void result.current.createRow();
+    });
+
+    await waitFor(() => {
+      expect(wikiliveApi.createMwsRecords).toHaveBeenCalledWith('dst-2', {
+        fieldKey: 'id',
+        records: [
+          {
+            fields: {
+              'fld-title': '',
+            },
+          },
+        ],
+      });
+    });
+
+    expect(result.current.records.some((item) => item.recordId === 'rec-created')).toBe(true);
+  });
+
+  it('shows null optimistic values for numeric and datetime fields in a newly added row', async () => {
+    const typedResolveMock: ResolveTableEmbedResponse = {
+      embed: {
+        ...RESOLVE_TABLE_EMBED_MOCK.embed,
+        fields: [
+          { id: 'fld-budget', name: 'Бюджет', type: 'Currency', property: { precision: 2 } },
+          { id: 'fld-progress', name: 'Прогресс', type: 'Percent', property: { precision: 0 } },
+          { id: 'fld-deadline', name: 'Срок', type: 'DateTime', property: { dateFormat: 'YYYY-MM-DD' } },
+          { id: 'fld-check', name: 'Готово', type: 'Checkbox' },
+          { id: 'fld-tags', name: 'Теги', type: 'MultiSelect' },
+        ],
+      },
+    };
+    const createDeferredRequest = createDeferred<{ items: Array<{ recordId: string; fields: Record<string, unknown> }> }>();
+
+    vi.mocked(wikiliveApi.resolveTableEmbed).mockResolvedValue(typedResolveMock);
+    vi.mocked(wikiliveApi.createMwsRecords).mockReturnValue(createDeferredRequest.promise);
+
+    const attrs = {
+      blockId: 'block-typed-optimistic',
+      title: 'Typed table',
+      spaceId: 'space-1',
+      nodeId: 'node-2',
+      datasheetId: 'dst-2',
+      viewId: 'view-1',
+      selectedFieldIds: ['fld-budget', 'fld-progress', 'fld-deadline', 'fld-check', 'fld-tags'],
+      pageSize: 20,
+      allowInlineEdit: true,
+      displayMode: 'table' as const,
+    };
+
+    const { result } = renderHook(() => useWikiTableEmbed(attrs));
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    await act(async () => {
+      void result.current.createRow();
+    });
+
+    await waitFor(() => {
+      const optimistic = result.current.records.find((item) => item.recordId.startsWith('temp-record-'));
+      expect(optimistic?.fields['fld-budget']).toBeNull();
+      expect(optimistic?.fields['fld-progress']).toBeNull();
+      expect(optimistic?.fields['fld-deadline']).toBeNull();
+      expect(optimistic?.fields['fld-check']).toBe(false);
+      expect(optimistic?.fields['fld-tags']).toEqual([]);
+    });
+  });
+
   it('removes column from controller when it is deleted in external MWS and reflected by resolve', async () => {
     const attrs = {
       blockId: 'block-1',

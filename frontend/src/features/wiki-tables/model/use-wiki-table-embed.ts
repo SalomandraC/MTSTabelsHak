@@ -212,7 +212,48 @@ function getInitialFieldValue(field: MwsField) {
     return [];
   }
 
+  if (
+    field.type === 'Number' ||
+    field.type === 'Currency' ||
+    field.type === 'Percent' ||
+    field.type === 'DateTime' ||
+    field.type === 'Attachment'
+  ) {
+    return null;
+  }
+
   return '';
+}
+
+function getCreateFieldValue(field: MwsField) {
+  if (field.type === 'Checkbox') {
+    return false;
+  }
+
+  if (field.type === 'MultiSelect') {
+    return [];
+  }
+
+  if (
+    field.type === 'Number' ||
+    field.type === 'Currency' ||
+    field.type === 'Percent' ||
+    field.type === 'DateTime' ||
+    field.type === 'Attachment'
+  ) {
+    return undefined;
+  }
+
+  return '';
+}
+
+function buildCreateRecordFields(fields: MwsField[]) {
+  return Object.fromEntries(
+    fields.flatMap((field) => {
+      const value = getCreateFieldValue(field);
+      return value === undefined ? [] : [[field.id, value] as const];
+    })
+  );
 }
 
 function readAttachmentName(value: unknown): string {
@@ -1102,6 +1143,53 @@ export function useWikiTableEmbed(
   const hasLoadedDataRef = useRef(false);
   const activePreferencesKeyRef = useRef<string | null>(null);
   const hasHydratedPreferencesRef = useRef(false);
+  const pinnedCreatedRecordsRef = useRef<Map<string, MwsRecord>>(new Map());
+
+  const pinCreatedRecord = useCallback((record: MwsRecord) => {
+    pinnedCreatedRecordsRef.current.set(record.recordId, record);
+  }, []);
+
+  const unpinCreatedRecord = useCallback((recordId: string) => {
+    pinnedCreatedRecordsRef.current.delete(recordId);
+  }, []);
+
+  const updatePinnedCreatedRecord = useCallback(
+    (recordId: string, updater: (record: MwsRecord) => MwsRecord) => {
+      const current = pinnedCreatedRecordsRef.current.get(recordId);
+      if (!current) {
+        return;
+      }
+
+      pinnedCreatedRecordsRef.current.set(recordId, updater(current));
+    },
+    []
+  );
+
+  const mapPinnedCreatedRecords = useCallback(
+    (updater: (record: MwsRecord) => MwsRecord) => {
+      pinnedCreatedRecordsRef.current = new Map(
+        Array.from(pinnedCreatedRecordsRef.current.entries()).map(
+          ([recordId, record]) => [recordId, updater(record)]
+        )
+      );
+    },
+    []
+  );
+
+  const mergePreviewWithPinnedCreatedRecords = useCallback(
+    (previewItems: MwsRecord[]) => {
+      const visibleIds = new Set(previewItems.map((record) => record.recordId));
+
+      for (const recordId of Array.from(pinnedCreatedRecordsRef.current.keys())) {
+        if (visibleIds.has(recordId)) {
+          pinnedCreatedRecordsRef.current.delete(recordId);
+        }
+      }
+
+      return [...previewItems, ...pinnedCreatedRecordsRef.current.values()];
+    },
+    []
+  );
   const pageSize = attrs.pageSize ?? 50;
   const serverSort = useMemo(
     () =>
@@ -1123,6 +1211,7 @@ export function useWikiTableEmbed(
     Math.floor(Math.random() * (POLL_MAX_MS - POLL_MIN_MS + 1)) + POLL_MIN_MS;
 
   useEffect(() => {
+    pinnedCreatedRecordsRef.current.clear();
     const nextKey = getTableViewPreferencesStorageKey({
       nodeId: attrs.nodeId,
       datasheetId: attrs.datasheetId,
@@ -1209,7 +1298,9 @@ export function useWikiTableEmbed(
         });
 
         setData(response);
-        setRecords(response.embed.preview.items);
+        setRecords(
+          mergePreviewWithPinnedCreatedRecords(response.embed.preview.items)
+        );
         setPageNum(response.embed.preview.pageNum);
         setTotal(response.embed.total ?? response.embed.preview.total);
         setHiddenFieldIds((current) => {
@@ -1285,7 +1376,8 @@ export function useWikiTableEmbed(
       attrs.spaceId,
       attrs.viewId,
       pageSize,
-      serverSort
+      serverSort,
+      mergePreviewWithPinnedCreatedRecords
     ]
   );
 
@@ -1527,6 +1619,10 @@ export function useWikiTableEmbed(
           : item
       )
     );
+    updatePinnedCreatedRecord(record.recordId, (item) => ({
+      ...item,
+      fields: { ...item.fields, [field.id]: parsedValue }
+    }));
 
     void wikiliveApi
       .updateMwsRecords(attrs.datasheetId, {
@@ -1550,6 +1646,10 @@ export function useWikiTableEmbed(
               : item
           )
         );
+        updatePinnedCreatedRecord(record.recordId, (item) => ({
+          ...item,
+          fields: { ...item.fields, [field.id]: currentValue }
+        }));
         setStaleMessage(
           error instanceof Error ? error.message : 'Не удалось обновить ячейку'
         );
@@ -1566,12 +1666,13 @@ export function useWikiTableEmbed(
     const editableFields = fields.filter((field) =>
       EDITABLE_FIELD_TYPES.has(field.type)
     );
-    const initialFields = Object.fromEntries(
+    const optimisticFields = Object.fromEntries(
       editableFields.map((field) => [field.id, getInitialFieldValue(field)])
     );
+    const createFields = buildCreateRecordFields(editableFields);
     const optimisticRecord: MwsRecord = {
       recordId: `temp-record-${Date.now()}`,
-      fields: initialFields,
+      fields: optimisticFields,
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
@@ -1584,7 +1685,7 @@ export function useWikiTableEmbed(
     try {
       const response = await wikiliveApi.createMwsRecords(attrs.datasheetId, {
         fieldKey: 'id',
-        records: [{ fields: initialFields }]
+        records: [{ fields: createFields }]
       });
 
       const createdRecord = response.items[0];
@@ -1592,6 +1693,8 @@ export function useWikiTableEmbed(
         await loadEmbed({ silent: true });
         return;
       }
+
+      pinCreatedRecord(createdRecord);
 
       // If a background resolve replaced the optimistic row before this response,
       // append the created record so the new row is not lost in UI.
@@ -1675,6 +1778,13 @@ export function useWikiTableEmbed(
         }
       }))
     );
+    mapPinnedCreatedRecords((record) => ({
+      ...record,
+      fields: {
+        ...record.fields,
+        [optimisticField.id]: getInitialFieldValue(optimisticField)
+      }
+    }));
     setStaleMessage('');
     setIsMutating(true);
 
@@ -1717,6 +1827,16 @@ export function useWikiTableEmbed(
           return { ...record, fields: nextFields };
         })
       );
+      mapPinnedCreatedRecords((record) => {
+        if (!(optimisticField.id in record.fields)) {
+          return record;
+        }
+
+        const nextFields = { ...record.fields };
+        nextFields[createdField.id] = nextFields[optimisticField.id];
+        delete nextFields[optimisticField.id];
+        return { ...record, fields: nextFields };
+      });
       setStaleMessage('');
       return true;
     } catch (error) {
@@ -1742,6 +1862,11 @@ export function useWikiTableEmbed(
           return { ...record, fields: nextFields };
         })
       );
+      mapPinnedCreatedRecords((record) => {
+        const nextFields = { ...record.fields };
+        delete nextFields[optimisticField.id];
+        return { ...record, fields: nextFields };
+      });
       setStaleMessage(
         error instanceof Error ? error.message : 'Не удалось создать столбец'
       );
@@ -1796,6 +1921,7 @@ export function useWikiTableEmbed(
     try {
       setIsMutating(true);
       await wikiliveApi.deleteMwsRecords(attrs.datasheetId, [record.recordId]);
+      unpinCreatedRecord(record.recordId);
       setRecords((current) =>
         current.filter((item) => item.recordId !== record.recordId)
       );
