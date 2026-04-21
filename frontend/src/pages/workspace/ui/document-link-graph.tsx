@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Maximize2, RefreshCcw, ZoomIn } from 'lucide-react';
+import { ChevronDown, ChevronRight, RefreshCcw, ZoomIn, Maximize2, X } from 'lucide-react';
 import cytoscape from 'cytoscape';
 import cola from 'cytoscape-cola';
 
@@ -186,6 +186,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
   const [isHovered, setIsHovered] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalOffset, setModalOffset] = useState({ x: 80, y: 60 });
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   useEffect(() => {
     onSelectPageRef.current = onSelectPage;
@@ -220,7 +221,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
   };
 
   useEffect(() => {
-    if (!containerRef.current || cytoscapeRef.current || pages.length === 0) {
+    if (!containerRef.current || cytoscapeRef.current || pages.length === 0 || isCollapsed) {
       return;
     }
 
@@ -380,7 +381,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
       }
       cytoscapeRef.current = null;
     };
-  }, [pages.length]);
+  }, [pages.length, isCollapsed]);
 
   useEffect(() => {
     if (!isModalOpen) {
@@ -399,12 +400,12 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
 
   useEffect(() => {
     const cy = cytoscapeRef.current;
-    if (!cy) {
+    if (!cy || isCollapsed) {
       return;
     }
 
     updateSelection(cy, activePageId, edges);
-  }, [activePageId, edgesKey]);
+  }, [activePageId, edgesKey, isCollapsed]);
 
   useEffect(() => {
     const cy = cytoscapeRef.current;
@@ -431,7 +432,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
 
   useEffect(() => {
     const cy = cytoscapeRef.current;
-    if (!cy || pages.length === 0) {
+    if (!cy || pages.length === 0 || isCollapsed) {
       return;
     }
 
@@ -450,12 +451,12 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
       });
       layout.run();
     });
-  }, [elements, edgesKey, pages.length]);
+  }, [elements, edgesKey, pages.length, isCollapsed]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
       const cy = cytoscapeRef.current;
-      if (!cy || pages.length === 0) {
+      if (!cy || pages.length === 0 || isCollapsed) {
         return;
       }
 
@@ -469,7 +470,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [pages.length, pagesKey, edgesKey]);
+  }, [pages.length, pagesKey, edgesKey, isCollapsed]);
 
   const handleRefreshGraph = async () => {
     const cy = cytoscapeRef.current;
@@ -538,6 +539,10 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
     setIsModalOpen(true);
   };
 
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+  };
+
   const graphContainerStyle = {
     touchAction: 'none',
     cursor: isHovered ? 'grab' : 'default',
@@ -577,105 +582,156 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
     event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
+  const handleToggleCollapse = () => {
+    setIsCollapsed((prev) => !prev);
+  };
+
   return (
-    <section className="overflow-hidden rounded-2xl border border-editor-border-subtle bg-white text-editor-text-primary shadow-sm">
-      <div className="relative overflow-hidden border-b border-editor-border-subtle px-3 py-2.5">
+    <section className={`overflow-hidden rounded-2xl bg-white text-editor-text-primary transition-all duration-200 ${isCollapsed ? '' : ''}`}>
+      <div className="relative overflow-hidden px-3 py-2.5">
         <div className="absolute inset-y-0 left-0 w-1 bg-[#ff0037]" />
         <div className="relative flex items-center justify-between gap-3 pl-1">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-editor-text-tertiary">Graph View</p>
             <h3 className="mt-1 truncate font-wide text-sm font-semibold text-editor-text-primary">{activeTitle ?? 'Все документы'}</h3>
           </div>
-          <span className="shrink-0 rounded-full border border-editor-border-subtle bg-editor-bg-control px-2.5 py-1 text-xs font-semibold text-editor-text-secondary">
-            {pages.length}/{edges.length}
-          </span>
+          <div className="flex items-center gap-1.5">
+            {!isCollapsed && (
+              <span className="shrink-0 rounded-full bg-editor-bg-control px-2.5 py-1 text-xs font-semibold text-editor-text-secondary">
+                {pages.length}/{edges.length}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleToggleCollapse}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-editor-bg-control text-editor-text-secondary transition-colors hover:bg-editor-bg-control-hover"
+              aria-label={isCollapsed ? 'Развернуть граф' : 'Свернуть граф'}
+              title={isCollapsed ? 'Развернуть граф' : 'Свернуть граф'}
+            >
+              {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="relative h-[214px] bg-[radial-gradient(circle_at_center,rgba(255,0,55,0.055),transparent_44%)]">
-        {pages.length > 0 ? (
-          <>
-            {isModalOpen && (
-              <div className="fixed inset-0 z-45">
-                <div className="absolute inset-0 bg-black/30" onClick={() => setIsModalOpen(false)} />
-                <div
-                  className="absolute z-[101] flex h-[min(76vh,640px)] w-[min(84vw,820px)] flex-col overflow-hidden rounded-3xl bg-white shadow-[0_30px_80px_rgba(17,25,40,0.25)]"
-                  style={{ left: modalOffset.x, top: modalOffset.y }}
-                >
+      {isCollapsed ? (
+        <div className="h-12 flex items-center justify-center bg-gradient-to-r from-red-50 to-transparent px-4 text-xs text-editor-text-tertiary">
+          <span className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-[#ff0037]" />
+            Граф свёрнут • {pages.length} узлов
+          </span>
+        </div>
+      ) : (
+        <div className="relative h-[214px] bg-[radial-gradient(circle_at_center,rgba(255,0,55,0.03),transparent_44%)]">
+          {pages.length > 0 ? (
+            <>
+              {isModalOpen && (
+                <div className="fixed inset-0 z-45">
+                  <div className="absolute inset-0 bg-black/30" onClick={() => setIsModalOpen(false)} />
                   <div
-                    className="flex h-10 cursor-grab items-center gap-3 rounded-t-3xl bg-red-600 px-3 text-sm font-semibold text-white"
-                    onPointerDown={handleModalPointerDown}
-                    onPointerMove={handleModalPointerMove}
-                    onPointerUp={handleModalPointerUp}
+                    className="absolute z-[101] flex h-[min(76vh,640px)] w-[min(84vw,820px)] flex-col overflow-hidden rounded-3xl bg-white"
+                    style={{ left: modalOffset.x, top: modalOffset.y }}
                   >
-                    <span className="truncate">{activeTitle ?? 'Текущий файл'}</span>
+                    <div
+                      className="flex h-10 cursor-grab items-center justify-between gap-3 rounded-t-3xl bg-red-600 px-3 text-sm font-semibold text-white"
+                      onPointerDown={handleModalPointerDown}
+                      onPointerMove={handleModalPointerMove}
+                      onPointerUp={handleModalPointerUp}
+                    >
+                      <span className="truncate">{activeTitle ?? 'Текущий файл'}</span>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          handleCloseModal();
+                        }}
+                        className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-white transition-colors hover:bg-white/30 focus:outline-none focus:ring-2 focus:ring-white/50"
+                        aria-label="Закрыть"
+                        title="Закрыть"
+                      >
+                        <X size={16} strokeWidth={2.5} />
+                      </button>
+                    </div>
+                    <div
+                      className="flex-1 bg-white"
+                      style={{
+                        touchAction: 'none',
+                      }}
+                    >
+                      <div
+                        ref={containerRef}
+                        className="h-full w-full"
+                        style={graphContainerStyle}
+                        aria-label="Graph canvas (modal)"
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {!isModalOpen && (
-              <div className="absolute right-3 top-3 z-20 flex items-center gap-2 rounded-full bg-white/10 border border-white/20 px-1.5 py-1 backdrop-blur-sm shadow-sm pointer-events-auto">
-                <button
-                  type="button"
-                  onClick={handleRefreshGraph}
-                  className="flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-white/10 text-slate-900 transition-colors hover:bg-white/20"
-                  aria-label="Обновить граф"
-                  title="Обновить граф"
-                >
-                  <RefreshCcw size={14} />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExpandGraph}
-                  className="flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-white/10 text-slate-900 transition-colors hover:bg-white/20"
-                  aria-label="Приблизить граф"
-                  title="Приблизить граф"
-                >
-                  <ZoomIn size={14} />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenModal}
-                  className="flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-white/10 text-slate-900 transition-colors hover:bg-white/20"
-                  aria-label="Открыть большой граф"
-                  title="Открыть большой граф"
-                >
-                  <Maximize2 size={14} />
-                </button>
-              </div>
-            )}
-            <div
-              ref={containerRef}
-              className={isModalOpen ? 'absolute rounded-b-3xl bg-white shadow-[0_30px_80px_rgba(17,25,40,0.25)]' : 'h-full w-full'}
-              style={{
-                ...graphContainerStyle,
-                ...(isModalOpen
-                  ? {
-                      position: 'fixed' as const,
-                      top: modalOffset.y + 40,
-                      left: modalOffset.x,
-                      width: 'min(84vw,820px)',
-                      height: 'calc(min(76vh,640px) - 40px)',
-                      zIndex: 49,
-                      borderRadius: '0 0 24px 24px',
-                      backgroundColor: '#ffffff',
-                    }
-                  : {}),
-              }}
-              aria-label="Graph canvas"
-            />
-          </>
-        ) : (
-          <div className="flex h-full items-center justify-center px-8 text-center text-sm text-editor-text-tertiary">Создайте страницы, чтобы увидеть граф связей.</div>
-        )}
+              {!isModalOpen && (
+                <div className="absolute right-3 top-3 z-20 flex items-center gap-2 rounded-full bg-white/10 px-1.5 py-1 backdrop-blur-sm pointer-events-auto">
+                  <button
+                    type="button"
+                    onClick={handleRefreshGraph}
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-slate-900 transition-colors hover:bg-white/20"
+                    aria-label="Обновить граф"
+                    title="Обновить граф"
+                  >
+                    <RefreshCcw size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExpandGraph}
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-slate-900 transition-colors hover:bg-white/20"
+                    aria-label="Приблизить граф"
+                    title="Приблизить граф"
+                  >
+                    <ZoomIn size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleOpenModal}
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-slate-900 transition-colors hover:bg-white/20"
+                    aria-label="Открыть большой граф"
+                    title="Открыть большой граф"
+                  >
+                    <Maximize2 size={14} />
+                  </button>
+                </div>
+              )}
+              <div
+                ref={containerRef}
+                className={isModalOpen ? '' : 'h-full w-full border border-gray-300'}
+                style={{
+                  ...graphContainerStyle,
+                  ...(isModalOpen
+                    ? {
+                        position: 'fixed' as const,
+                        top: modalOffset.y + 40,
+                        left: modalOffset.x,
+                        width: 'min(84vw,820px)',
+                        height: 'calc(min(76vh,640px) - 40px)',
+                        zIndex: 49,
+                        borderRadius: '0 0 24px 24px',
+                        backgroundColor: '#ffffff',
+                      }
+                    : {}),
+                }}
+                aria-label="Graph canvas"
+              />
+            </>
+          ) : (
+            <div className="flex h-full items-center justify-center px-8 text-center text-sm text-editor-text-tertiary">Создайте страницы, чтобы увидеть граф связей.</div>
+          )}
 
-        {pages.length > 0 && edges.length === 0 ? (
-          <div className="absolute inset-x-4 bottom-4 rounded-2xl border border-dashed border-editor-border-subtle bg-white/90 px-3 py-2.5 text-center text-xs text-editor-text-tertiary shadow-sm">
-            Добавьте связь через /страница, и граф начнет оживать.
-          </div>
-        ) : null}
-      </div>
+          {pages.length > 0 && edges.length === 0 ? (
+            <div className="absolute inset-x-4 bottom-4 rounded-2xl bg-white/90 px-3 py-2.5 text-center text-xs text-editor-text-tertiary">
+              Добавьте связь через /страница, и граф начнет оживать.
+            </div>
+          ) : null}
+        </div>
+      )}
     </section>
   );
 }

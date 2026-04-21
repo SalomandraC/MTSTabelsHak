@@ -20,6 +20,7 @@ import {
   Trash2,
   Users,
   X,
+  Check,
 } from 'lucide-react';
 
 import { useAuthSessionContext } from '../../../features/auth';
@@ -1042,6 +1043,7 @@ export function WorkspacePage() {
   const [statusMessage, setStatusMessage] = useState('Загружаем wiki workspace');
   const [errorMessage, setErrorMessage] = useState('');
   const [shareStatus, setShareStatus] = useState('');
+  const [copiedReadOnly, setCopiedReadOnly] = useState(false);
   const [isPluginsModalOpen, setIsPluginsModalOpen] = useState(false);
   const [activeEditor, setActiveEditor] = useState<Editor | null>(null);
   const pendingImportContentRef = useRef<{ pageId: string; content: Content } | null>(null);
@@ -2951,11 +2953,15 @@ export function WorkspacePage() {
             </button>
             <button
               type="button"
-              onClick={() => void handleCopyReadOnlyShareLink()}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-[#7b67ee] hover:bg-[#f2f3f5]"
-              title="Копировать ссылку на страницу в режиме только чтения"
+              onClick={async () => {
+                await handleCopyReadOnlyShareLink();
+                setCopiedReadOnly(true);
+                setTimeout(() => setCopiedReadOnly(false), 2000);
+              }}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-[#7b67ee] hover:bg-[#f2f3f5] transition-colors"
+              title={copiedReadOnly ? "Скопировано" : "Копировать ссылку на страницу в режиме только чтения"}
             >
-              <Users size={18} strokeWidth={2.1} />
+              {copiedReadOnly ? <Check size={18} strokeWidth={2.1} /> : <Users size={18} strokeWidth={2.1} />}
             </button>
             <button
               type="button"
@@ -3438,7 +3444,6 @@ export function WorkspacePage() {
                 <div className="mt-5 space-y-5">
             <section>
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold">Граф страниц</h3>
                 {!isDocumentGraphEnabled ? (
                   <button
                     type="button"
