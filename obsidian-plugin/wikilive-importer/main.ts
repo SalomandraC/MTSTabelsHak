@@ -7,6 +7,7 @@ import {
   RequestUrlResponse,
   Setting,
   TFile,
+  normalizePath,
   requestUrl,
 } from "obsidian";
 
@@ -64,6 +65,19 @@ type ImportRunResponse = {
     imported: number;
     skipped: number;
   };
+};
+
+type ImportAttachmentPayload = {
+  path: string;
+  name: string;
+  dataUrl: string;
+};
+
+type ImportFilePayload = {
+  path: string;
+  name: string;
+  markdown: string;
+  attachments?: ImportAttachmentPayload[];
 };
 
 const DEFAULT_SETTINGS: WikiLiveImporterSettings = {
@@ -137,7 +151,8 @@ export default class WikiLiveImporterPlugin extends Plugin {
     mode: ImportMode,
     folderPath: string,
     filePathsRaw: string,
-  ): Promise<Array<{ path: string; name: string; markdown: string }>> {
+    options: { includeAttachments: boolean },
+  ): Promise<ImportFilePayload[]> {
     const vault = this.app.vault;
 
     if (mode === "current_file") {
@@ -145,16 +160,12 @@ export default class WikiLiveImporterPlugin extends Plugin {
       if (!activeFile || !(activeFile instanceof TFile) || activeFile.extension !== "md") {
         throw new Error("Открой Markdown-файл перед импортом текущей заметки");
       }
-      return [{ path: activeFile.path, name: activeFile.name, markdown: await vault.read(activeFile) }];
+      return [await this.buildImportFile(activeFile, options)];
     }
 
     if (mode === "vault") {
       const markdownFiles = vault.getMarkdownFiles();
-      return Promise.all(markdownFiles.map(async (file) => ({
-        path: file.path,
-        name: file.name,
-        markdown: await vault.read(file),
-      })));
+      return Promise.all(markdownFiles.map((file) => this.buildImportFile(file, options)));
     }
 
     if (mode === "files") {
@@ -174,11 +185,7 @@ export default class WikiLiveImporterPlugin extends Plugin {
         throw new Error("Не удалось найти Markdown-файлы по указанным путям");
       }
 
-      return Promise.all(files.map(async (file) => ({
-        path: file.path,
-        name: file.name,
-        markdown: await vault.read(file),
-      })));
+      return Promise.all(files.map((file) => this.buildImportFile(file, options)));
     }
 
     const normalizedFolderPath = folderPath.trim().replace(/\\/g, "/");
@@ -198,11 +205,7 @@ export default class WikiLiveImporterPlugin extends Plugin {
       throw new Error("В выбранной папке не найдено Markdown-файлов");
     }
 
-    return Promise.all(markdownFiles.map(async (file) => ({
-      path: file.path,
-      name: file.name,
-      markdown: await vault.read(file),
-    })));
+    return Promise.all(markdownFiles.map((file) => this.buildImportFile(file, options)));
   }
 
   private async postJson<T>(path: string, body: Record<string, unknown>): Promise<T> {
@@ -225,6 +228,127 @@ export default class WikiLiveImporterPlugin extends Plugin {
 
     const error = response.json as { message?: string; error?: string } | undefined;
     throw new Error(error?.message || error?.error || `Запрос завершился ошибкой ${response.status}`);
+  }
+
+  private async buildImportFile(file: TFile, options: { includeAttachments: boolean }): Promise<ImportFilePayload> {
+    const markdown = await this.app.vault.read(file);
+
+    return {
+      path: file.path,
+      name: file.name,
+      markdown,
+      attachments: options.includeAttachments ? await this.collectImageAttachments(file, markdown) : [],
+    };
+  }
+
+  private async collectImageAttachments(file: TFile, markdown: string): Promise<ImportAttachmentPayload[]> {
+    const refs = this.extractImageReferences(markdown);
+    const attachments: ImportAttachmentPayload[] = [];
+    const seenRefs = new Set<string>();
+
+    for (const ref of refs) {
+      const target = this.resolveAttachmentFile(file, ref);
+      const normalizedRef = normalizePath(ref.replace(/\\/g, "/"));
+      if (!target || seenRefs.has(normalizedRef)) {
+        continue;
+      }
+
+      const mimeType = this.getMimeTypeForFile(target);
+      if (!mimeType) {
+        continue;
+      }
+
+      const binary = await this.app.vault.readBinary(target);
+      const dataUrl = this.arrayBufferToDataUrl(binary, mimeType);
+      attachments.push({
+        path: normalizedRef,
+        name: target.name,
+        dataUrl,
+      });
+      seenRefs.add(normalizedRef);
+    }
+
+    return attachments;
+  }
+
+  private extractImageReferences(markdown: string): string[] {
+    const refs = new Set<string>();
+
+    for (const match of markdown.matchAll(/!\[.*?\]\((.*?)\)/g)) {
+      const raw = (match[1] ?? "").trim().replace(/^<|>$/g, "");
+      if (!raw || this.isRemoteImageReference(raw)) {
+        continue;
+      }
+      refs.add(raw);
+    }
+
+    for (const match of markdown.matchAll(/!\[\[([^\]]+)\]\]/g)) {
+      const raw = (match[1] ?? "").split("|")[0]?.trim() ?? "";
+      if (!raw || this.isRemoteImageReference(raw)) {
+        continue;
+      }
+      refs.add(raw);
+    }
+
+    return [...refs];
+  }
+
+  private resolveAttachmentFile(sourceFile: TFile, reference: string): TFile | null {
+    const cleaned = reference.trim().replace(/^<|>$/g, "");
+    const wikilinkResolved = this.app.metadataCache.getFirstLinkpathDest(cleaned, sourceFile.path);
+    if (wikilinkResolved && this.isImageFile(wikilinkResolved)) {
+      return wikilinkResolved;
+    }
+
+    const sourceDir = sourceFile.parent?.path ?? "";
+    const combined = sourceDir ? normalizePath(`${sourceDir}/${cleaned}`) : normalizePath(cleaned);
+    const direct = this.app.vault.getAbstractFileByPath(combined);
+    if (direct instanceof TFile && this.isImageFile(direct)) {
+      return direct;
+    }
+
+    const absolute = this.app.vault.getAbstractFileByPath(normalizePath(cleaned));
+    if (absolute instanceof TFile && this.isImageFile(absolute)) {
+      return absolute;
+    }
+
+    return null;
+  }
+
+  private isRemoteImageReference(reference: string): boolean {
+    return /^(https?:)?\/\//i.test(reference) || /^data:/i.test(reference);
+  }
+
+  private isImageFile(file: TFile): boolean {
+    return ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"].includes(file.extension.toLowerCase());
+  }
+
+  private getMimeTypeForFile(file: TFile): string | null {
+    const extension = file.extension.toLowerCase();
+    const mimeByExtension: Record<string, string> = {
+      png: "image/png",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      gif: "image/gif",
+      webp: "image/webp",
+      svg: "image/svg+xml",
+      bmp: "image/bmp",
+    };
+
+    return mimeByExtension[extension] ?? null;
+  }
+
+  private arrayBufferToDataUrl(buffer: ArrayBuffer, mimeType: string): string {
+    let binary = "";
+    const bytes = new Uint8Array(buffer);
+    const chunkSize = 0x8000;
+
+    for (let index = 0; index < bytes.length; index += chunkSize) {
+      const chunk = bytes.subarray(index, index + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+
+    return `data:${mimeType};base64,${btoa(binary)}`;
   }
 }
 
@@ -276,6 +400,8 @@ class WikiLiveImportModal extends Modal {
   private filePaths: string;
   private selectedSpaceId: string;
   private spaces: ObsidianSpace[];
+  private isImporting = false;
+  private importStatusMessage = "";
 
   constructor(app: App, private readonly plugin: WikiLiveImporterPlugin) {
     super(app);
@@ -354,6 +480,13 @@ class WikiLiveImportModal extends Modal {
       text: `Ключ подтвержден. Найдено пространств: ${this.spaces.length}.`,
     });
 
+    if (this.importStatusMessage) {
+      containerEl.createDiv({
+        cls: "wikilive-importer-help",
+        text: this.importStatusMessage,
+      });
+    }
+
     new Setting(containerEl)
       .setName("Режим импорта")
       .setDesc("Выбери, что именно нужно импортировать из текущего vault.")
@@ -427,18 +560,25 @@ class WikiLiveImportModal extends Modal {
       .setName("Запуск импорта")
       .setDesc("Сначала будет выполнен preview, затем при необходимости будет предложено действие для конфликтов.")
       .addButton((button) =>
-        button.setCta().setButtonText("Импортировать").onClick(async () => {
-          try {
-            await this.handleImport();
-          } catch (error) {
-            new Notice(error instanceof Error ? error.message : "Импорт завершился ошибкой");
-          }
-        }),
+        button
+          .setCta()
+          .setButtonText(this.isImporting ? "Импортируем..." : "Импортировать")
+          .setDisabled(this.isImporting)
+          .onClick(async () => {
+            try {
+              await this.handleImport();
+            } catch (error) {
+              this.isImporting = false;
+              this.importStatusMessage = "";
+              this.render();
+              new Notice(error instanceof Error ? error.message : "Импорт завершился ошибкой");
+            }
+          }),
       );
 
     containerEl.createDiv({
       cls: "wikilive-importer-help",
-      text: "Картинки и вложения пока не импортируются. Markdown загружается через текущий контур импорта WikiLive.",
+      text: "Локальные изображения из Obsidian vault импортируются вместе с Markdown. Вложения не-изображения пока пропускаются.",
     });
   }
 
@@ -480,30 +620,50 @@ class WikiLiveImportModal extends Modal {
       throw new Error("Выбери пространство WikiLive");
     }
 
-    const files = await this.plugin.collectFiles(this.mode, this.folderPath, this.filePaths);
+    this.isImporting = true;
+    this.importStatusMessage = "Подготавливаем markdown-файлы для preview...";
+    this.render();
+
+    const previewFiles = await this.plugin.collectFiles(this.mode, this.folderPath, this.filePaths, {
+      includeAttachments: false,
+    });
     this.plugin.settings.lastMode = this.mode;
     this.plugin.settings.lastFolderPath = this.folderPath;
     this.plugin.settings.lastFilePaths = this.filePaths;
     this.plugin.settings.selectedSpaceId = this.selectedSpaceId;
     await this.plugin.saveSettings();
 
+    this.importStatusMessage = "Отправляем preview в WikiLive...";
+    this.render();
     const preview = await this.plugin.previewImport({
       apiKey,
       spaceId: this.selectedSpaceId,
       mode: this.mode,
       folderStrategy: this.plugin.settings.folderStrategy,
-      files,
+      files: previewFiles,
     });
 
     let conflictResolution = this.plugin.settings.defaultConflictResolution;
     if (preview.summary.conflicts > 0) {
+      this.isImporting = false;
+      this.importStatusMessage = "";
+      this.render();
       conflictResolution = await new ConflictResolutionModal(
         this.app,
         preview,
         this.plugin.settings.defaultConflictResolution,
       ).openAndWait();
+      this.isImporting = true;
+      this.importStatusMessage = "Подготавливаем изображения и вложения для финального импорта...";
+      this.render();
     }
 
+    const files = await this.plugin.collectFiles(this.mode, this.folderPath, this.filePaths, {
+      includeAttachments: true,
+    });
+
+    this.importStatusMessage = "Загружаем данные в WikiLive...";
+    this.render();
     const result = await this.plugin.runImport({
       apiKey,
       spaceId: this.selectedSpaceId,
@@ -513,6 +673,8 @@ class WikiLiveImportModal extends Modal {
       files,
     });
 
+    this.isImporting = false;
+    this.importStatusMessage = "";
     new Notice(`Импорт завершен: ${result.summary.imported} импортировано, ${result.summary.skipped} пропущено`);
     this.close();
   }

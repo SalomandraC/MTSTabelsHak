@@ -81,22 +81,18 @@ var WikiLiveImporterPlugin = class extends import_obsidian.Plugin {
   async runImport(payload) {
     return this.postJson("/api/v1/obsidian/import", payload);
   }
-  async collectFiles(mode, folderPath, filePathsRaw) {
+  async collectFiles(mode, folderPath, filePathsRaw, options) {
     const vault = this.app.vault;
     if (mode === "current_file") {
       const activeFile = this.app.workspace.getActiveFile();
       if (!activeFile || !(activeFile instanceof import_obsidian.TFile) || activeFile.extension !== "md") {
         throw new Error("\u041E\u0442\u043A\u0440\u043E\u0439 Markdown-\u0444\u0430\u0439\u043B \u043F\u0435\u0440\u0435\u0434 \u0438\u043C\u043F\u043E\u0440\u0442\u043E\u043C \u0442\u0435\u043A\u0443\u0449\u0435\u0439 \u0437\u0430\u043C\u0435\u0442\u043A\u0438");
       }
-      return [{ path: activeFile.path, name: activeFile.name, markdown: await vault.read(activeFile) }];
+      return [await this.buildImportFile(activeFile, options)];
     }
     if (mode === "vault") {
       const markdownFiles2 = vault.getMarkdownFiles();
-      return Promise.all(markdownFiles2.map(async (file) => ({
-        path: file.path,
-        name: file.name,
-        markdown: await vault.read(file)
-      })));
+      return Promise.all(markdownFiles2.map((file) => this.buildImportFile(file, options)));
     }
     if (mode === "files") {
       const rawPaths = filePathsRaw.split(/\r?\n|,/).map((value) => value.trim()).filter(Boolean);
@@ -107,11 +103,7 @@ var WikiLiveImporterPlugin = class extends import_obsidian.Plugin {
       if (files.length === 0) {
         throw new Error("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043D\u0430\u0439\u0442\u0438 Markdown-\u0444\u0430\u0439\u043B\u044B \u043F\u043E \u0443\u043A\u0430\u0437\u0430\u043D\u043D\u044B\u043C \u043F\u0443\u0442\u044F\u043C");
       }
-      return Promise.all(files.map(async (file) => ({
-        path: file.path,
-        name: file.name,
-        markdown: await vault.read(file)
-      })));
+      return Promise.all(files.map((file) => this.buildImportFile(file, options)));
     }
     const normalizedFolderPath = folderPath.trim().replace(/\\/g, "/");
     if (!normalizedFolderPath) {
@@ -127,11 +119,7 @@ var WikiLiveImporterPlugin = class extends import_obsidian.Plugin {
     if (markdownFiles.length === 0) {
       throw new Error("\u0412 \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u043E\u0439 \u043F\u0430\u043F\u043A\u0435 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E Markdown-\u0444\u0430\u0439\u043B\u043E\u0432");
     }
-    return Promise.all(markdownFiles.map(async (file) => ({
-      path: file.path,
-      name: file.name,
-      markdown: await vault.read(file)
-    })));
+    return Promise.all(markdownFiles.map((file) => this.buildImportFile(file, options)));
   }
   async postJson(path, body) {
     const response = await (0, import_obsidian.requestUrl)({
@@ -150,6 +138,105 @@ var WikiLiveImporterPlugin = class extends import_obsidian.Plugin {
     }
     const error = response.json;
     throw new Error(error?.message || error?.error || `\u0417\u0430\u043F\u0440\u043E\u0441 \u0437\u0430\u0432\u0435\u0440\u0448\u0438\u043B\u0441\u044F \u043E\u0448\u0438\u0431\u043A\u043E\u0439 ${response.status}`);
+  }
+  async buildImportFile(file, options) {
+    const markdown = await this.app.vault.read(file);
+    return {
+      path: file.path,
+      name: file.name,
+      markdown,
+      attachments: options.includeAttachments ? await this.collectImageAttachments(file, markdown) : []
+    };
+  }
+  async collectImageAttachments(file, markdown) {
+    const refs = this.extractImageReferences(markdown);
+    const attachments = [];
+    const seenRefs = /* @__PURE__ */ new Set();
+    for (const ref of refs) {
+      const target = this.resolveAttachmentFile(file, ref);
+      const normalizedRef = (0, import_obsidian.normalizePath)(ref.replace(/\\/g, "/"));
+      if (!target || seenRefs.has(normalizedRef)) {
+        continue;
+      }
+      const mimeType = this.getMimeTypeForFile(target);
+      if (!mimeType) {
+        continue;
+      }
+      const binary = await this.app.vault.readBinary(target);
+      const dataUrl = this.arrayBufferToDataUrl(binary, mimeType);
+      attachments.push({
+        path: normalizedRef,
+        name: target.name,
+        dataUrl
+      });
+      seenRefs.add(normalizedRef);
+    }
+    return attachments;
+  }
+  extractImageReferences(markdown) {
+    const refs = /* @__PURE__ */ new Set();
+    for (const match of markdown.matchAll(/!\[.*?\]\((.*?)\)/g)) {
+      const raw = (match[1] ?? "").trim().replace(/^<|>$/g, "");
+      if (!raw || this.isRemoteImageReference(raw)) {
+        continue;
+      }
+      refs.add(raw);
+    }
+    for (const match of markdown.matchAll(/!\[\[([^\]]+)\]\]/g)) {
+      const raw = (match[1] ?? "").split("|")[0]?.trim() ?? "";
+      if (!raw || this.isRemoteImageReference(raw)) {
+        continue;
+      }
+      refs.add(raw);
+    }
+    return [...refs];
+  }
+  resolveAttachmentFile(sourceFile, reference) {
+    const cleaned = reference.trim().replace(/^<|>$/g, "");
+    const wikilinkResolved = this.app.metadataCache.getFirstLinkpathDest(cleaned, sourceFile.path);
+    if (wikilinkResolved && this.isImageFile(wikilinkResolved)) {
+      return wikilinkResolved;
+    }
+    const sourceDir = sourceFile.parent?.path ?? "";
+    const combined = sourceDir ? (0, import_obsidian.normalizePath)(`${sourceDir}/${cleaned}`) : (0, import_obsidian.normalizePath)(cleaned);
+    const direct = this.app.vault.getAbstractFileByPath(combined);
+    if (direct instanceof import_obsidian.TFile && this.isImageFile(direct)) {
+      return direct;
+    }
+    const absolute = this.app.vault.getAbstractFileByPath((0, import_obsidian.normalizePath)(cleaned));
+    if (absolute instanceof import_obsidian.TFile && this.isImageFile(absolute)) {
+      return absolute;
+    }
+    return null;
+  }
+  isRemoteImageReference(reference) {
+    return /^(https?:)?\/\//i.test(reference) || /^data:/i.test(reference);
+  }
+  isImageFile(file) {
+    return ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"].includes(file.extension.toLowerCase());
+  }
+  getMimeTypeForFile(file) {
+    const extension = file.extension.toLowerCase();
+    const mimeByExtension = {
+      png: "image/png",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      gif: "image/gif",
+      webp: "image/webp",
+      svg: "image/svg+xml",
+      bmp: "image/bmp"
+    };
+    return mimeByExtension[extension] ?? null;
+  }
+  arrayBufferToDataUrl(buffer, mimeType) {
+    let binary = "";
+    const bytes = new Uint8Array(buffer);
+    const chunkSize = 32768;
+    for (let index = 0; index < bytes.length; index += chunkSize) {
+      const chunk = bytes.subarray(index, index + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+    return `data:${mimeType};base64,${btoa(binary)}`;
   }
 };
 var WikiLiveImporterSettingTab = class extends import_obsidian.PluginSettingTab {
@@ -181,6 +268,8 @@ var WikiLiveImportModal = class extends import_obsidian.Modal {
     this.apiKey = "";
     this.isApiKeyValid = false;
     this.isValidating = false;
+    this.isImporting = false;
+    this.importStatusMessage = "";
     this.apiKey = plugin.getApiKey() ?? "";
     this.mode = plugin.settings.lastMode;
     this.folderPath = plugin.settings.lastFolderPath;
@@ -230,6 +319,12 @@ var WikiLiveImportModal = class extends import_obsidian.Modal {
       cls: "wikilive-importer-help",
       text: `\u041A\u043B\u044E\u0447 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D. \u041D\u0430\u0439\u0434\u0435\u043D\u043E \u043F\u0440\u043E\u0441\u0442\u0440\u0430\u043D\u0441\u0442\u0432: ${this.spaces.length}.`
     });
+    if (this.importStatusMessage) {
+      containerEl.createDiv({
+        cls: "wikilive-importer-help",
+        text: this.importStatusMessage
+      });
+    }
     new import_obsidian.Setting(containerEl).setName("\u0420\u0435\u0436\u0438\u043C \u0438\u043C\u043F\u043E\u0440\u0442\u0430").setDesc("\u0412\u044B\u0431\u0435\u0440\u0438, \u0447\u0442\u043E \u0438\u043C\u0435\u043D\u043D\u043E \u043D\u0443\u0436\u043D\u043E \u0438\u043C\u043F\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0438\u0437 \u0442\u0435\u043A\u0443\u0449\u0435\u0433\u043E vault.").addDropdown(
       (dropdown) => dropdown.addOption("current_file", "\u0422\u0435\u043A\u0443\u0449\u0443\u044E \u0437\u0430\u043C\u0435\u0442\u043A\u0443").addOption("files", "\u041A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u044B\u0435 \u0444\u0430\u0439\u043B\u044B").addOption("folder", "\u041E\u0434\u043D\u0443 \u043F\u0430\u043F\u043A\u0443").addOption("folder_recursive", "\u041F\u0430\u043F\u043A\u0443 \u0440\u0435\u043A\u0443\u0440\u0441\u0438\u0432\u043D\u043E").addOption("vault", "\u0412\u0435\u0441\u044C vault").setValue(this.mode).onChange((value) => {
         this.mode = value;
@@ -269,17 +364,20 @@ var WikiLiveImportModal = class extends import_obsidian.Modal {
       });
     });
     new import_obsidian.Setting(containerEl).setName("\u0417\u0430\u043F\u0443\u0441\u043A \u0438\u043C\u043F\u043E\u0440\u0442\u0430").setDesc("\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0431\u0443\u0434\u0435\u0442 \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D preview, \u0437\u0430\u0442\u0435\u043C \u043F\u0440\u0438 \u043D\u0435\u043E\u0431\u0445\u043E\u0434\u0438\u043C\u043E\u0441\u0442\u0438 \u0431\u0443\u0434\u0435\u0442 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u043E \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435 \u0434\u043B\u044F \u043A\u043E\u043D\u0444\u043B\u0438\u043A\u0442\u043E\u0432.").addButton(
-      (button) => button.setCta().setButtonText("\u0418\u043C\u043F\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C").onClick(async () => {
+      (button) => button.setCta().setButtonText(this.isImporting ? "\u0418\u043C\u043F\u043E\u0440\u0442\u0438\u0440\u0443\u0435\u043C..." : "\u0418\u043C\u043F\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C").setDisabled(this.isImporting).onClick(async () => {
         try {
           await this.handleImport();
         } catch (error) {
+          this.isImporting = false;
+          this.importStatusMessage = "";
+          this.render();
           new import_obsidian.Notice(error instanceof Error ? error.message : "\u0418\u043C\u043F\u043E\u0440\u0442 \u0437\u0430\u0432\u0435\u0440\u0448\u0438\u043B\u0441\u044F \u043E\u0448\u0438\u0431\u043A\u043E\u0439");
         }
       })
     );
     containerEl.createDiv({
       cls: "wikilive-importer-help",
-      text: "\u041A\u0430\u0440\u0442\u0438\u043D\u043A\u0438 \u0438 \u0432\u043B\u043E\u0436\u0435\u043D\u0438\u044F \u043F\u043E\u043A\u0430 \u043D\u0435 \u0438\u043C\u043F\u043E\u0440\u0442\u0438\u0440\u0443\u044E\u0442\u0441\u044F. Markdown \u0437\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u0442\u0441\u044F \u0447\u0435\u0440\u0435\u0437 \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043A\u043E\u043D\u0442\u0443\u0440 \u0438\u043C\u043F\u043E\u0440\u0442\u0430 WikiLive."
+      text: "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F \u0438\u0437 Obsidian vault \u0438\u043C\u043F\u043E\u0440\u0442\u0438\u0440\u0443\u044E\u0442\u0441\u044F \u0432\u043C\u0435\u0441\u0442\u0435 \u0441 Markdown. \u0412\u043B\u043E\u0436\u0435\u043D\u0438\u044F \u043D\u0435-\u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F \u043F\u043E\u043A\u0430 \u043F\u0440\u043E\u043F\u0443\u0441\u043A\u0430\u044E\u0442\u0441\u044F."
     });
   }
   async handleApiKeyValidation() {
@@ -314,27 +412,45 @@ var WikiLiveImportModal = class extends import_obsidian.Modal {
     if (!this.selectedSpaceId) {
       throw new Error("\u0412\u044B\u0431\u0435\u0440\u0438 \u043F\u0440\u043E\u0441\u0442\u0440\u0430\u043D\u0441\u0442\u0432\u043E WikiLive");
     }
-    const files = await this.plugin.collectFiles(this.mode, this.folderPath, this.filePaths);
+    this.isImporting = true;
+    this.importStatusMessage = "\u041F\u043E\u0434\u0433\u043E\u0442\u0430\u0432\u043B\u0438\u0432\u0430\u0435\u043C markdown-\u0444\u0430\u0439\u043B\u044B \u0434\u043B\u044F preview...";
+    this.render();
+    const previewFiles = await this.plugin.collectFiles(this.mode, this.folderPath, this.filePaths, {
+      includeAttachments: false
+    });
     this.plugin.settings.lastMode = this.mode;
     this.plugin.settings.lastFolderPath = this.folderPath;
     this.plugin.settings.lastFilePaths = this.filePaths;
     this.plugin.settings.selectedSpaceId = this.selectedSpaceId;
     await this.plugin.saveSettings();
+    this.importStatusMessage = "\u041E\u0442\u043F\u0440\u0430\u0432\u043B\u044F\u0435\u043C preview \u0432 WikiLive...";
+    this.render();
     const preview = await this.plugin.previewImport({
       apiKey,
       spaceId: this.selectedSpaceId,
       mode: this.mode,
       folderStrategy: this.plugin.settings.folderStrategy,
-      files
+      files: previewFiles
     });
     let conflictResolution = this.plugin.settings.defaultConflictResolution;
     if (preview.summary.conflicts > 0) {
+      this.isImporting = false;
+      this.importStatusMessage = "";
+      this.render();
       conflictResolution = await new ConflictResolutionModal(
         this.app,
         preview,
         this.plugin.settings.defaultConflictResolution
       ).openAndWait();
+      this.isImporting = true;
+      this.importStatusMessage = "\u041F\u043E\u0434\u0433\u043E\u0442\u0430\u0432\u043B\u0438\u0432\u0430\u0435\u043C \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F \u0438 \u0432\u043B\u043E\u0436\u0435\u043D\u0438\u044F \u0434\u043B\u044F \u0444\u0438\u043D\u0430\u043B\u044C\u043D\u043E\u0433\u043E \u0438\u043C\u043F\u043E\u0440\u0442\u0430...";
+      this.render();
     }
+    const files = await this.plugin.collectFiles(this.mode, this.folderPath, this.filePaths, {
+      includeAttachments: true
+    });
+    this.importStatusMessage = "\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043C \u0434\u0430\u043D\u043D\u044B\u0435 \u0432 WikiLive...";
+    this.render();
     const result = await this.plugin.runImport({
       apiKey,
       spaceId: this.selectedSpaceId,
@@ -343,6 +459,8 @@ var WikiLiveImportModal = class extends import_obsidian.Modal {
       defaultConflictResolution: conflictResolution,
       files
     });
+    this.isImporting = false;
+    this.importStatusMessage = "";
     new import_obsidian.Notice(`\u0418\u043C\u043F\u043E\u0440\u0442 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D: ${result.summary.imported} \u0438\u043C\u043F\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u0430\u043D\u043E, ${result.summary.skipped} \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E`);
     this.close();
   }

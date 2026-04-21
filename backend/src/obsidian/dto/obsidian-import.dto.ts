@@ -33,6 +33,26 @@ export class ObsidianImportFileDto {
 
   @IsOptional()
   mtime?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ObsidianImportAttachmentDto)
+  attachments?: ObsidianImportAttachmentDto[];
+}
+
+export class ObsidianImportAttachmentDto {
+  @IsString()
+  @IsNotEmpty()
+  path!: string;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  dataUrl!: string;
 }
 
 export class ObsidianImportPreviewDto extends ObsidianAuthDto {

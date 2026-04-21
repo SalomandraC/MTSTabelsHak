@@ -23,6 +23,8 @@ type ParsedMarkdownDocument = {
   };
 };
 
+type AttachmentMap = Record<string, string>;
+
 const obsidianImportSchema = new Schema({
   nodes: {
     doc: {
@@ -65,6 +67,26 @@ const obsidianImportSchema = new Schema({
       group: 'block',
       content: 'block+',
       toDOM: () => ['blockquote', 0],
+    },
+    image: {
+      group: 'block',
+      inline: false,
+      draggable: true,
+      attrs: {
+        src: {},
+        alt: { default: null },
+        title: { default: null },
+        align: { default: 'left' },
+      },
+      toDOM: (node) => [
+        'img',
+        {
+          src: node.attrs.src,
+          alt: node.attrs.alt,
+          title: node.attrs.title,
+          'data-align': node.attrs.align ?? 'left',
+        },
+      ],
     },
     codeBlock: {
       group: 'block',
@@ -164,6 +186,55 @@ function parseInlineText(text: string): ProseMirrorNode[] {
   return [{ type: 'text', text }];
 }
 
+function normalizeAttachmentPath(value: string): string {
+  return value.replace(/\\/g, '/').trim().replace(/^\.\/+/, '').replace(/^\/+/, '');
+}
+
+function parseStandaloneImage(line: string, attachments: AttachmentMap): ProseMirrorNode | null {
+  const trimmed = line.trim();
+
+  const obsidianImageMatch = /^!\[\[([^\]]+)\]\]\s*$/.exec(trimmed);
+  if (obsidianImageMatch) {
+    const rawTarget = obsidianImageMatch[1].split('|')[0]?.trim() ?? '';
+    const normalizedTarget = normalizeAttachmentPath(rawTarget);
+    const resolvedSrc = attachments[normalizedTarget] ?? attachments[rawTarget] ?? rawTarget;
+    const title = rawTarget.split('/').pop() ?? rawTarget;
+    return {
+      type: 'image',
+      attrs: {
+        src: resolvedSrc,
+        alt: title,
+        title,
+        align: 'left',
+      },
+    };
+  }
+
+  const markdownImageMatch = /^!\[([^\]]*)\]\((.+)\)\s*$/.exec(trimmed);
+  if (!markdownImageMatch) {
+    return null;
+  }
+
+  const alt = markdownImageMatch[1].trim() || null;
+  const rawInner = markdownImageMatch[2].trim();
+  const rawSrc = rawInner
+    .replace(/\s+["'][^"']*["']\s*$/, '')
+    .trim()
+    .replace(/^<|>$/g, '');
+  const normalizedSrc = normalizeAttachmentPath(rawSrc);
+  const resolvedSrc = attachments[normalizedSrc] ?? attachments[rawSrc] ?? rawSrc;
+
+  return {
+    type: 'image',
+    attrs: {
+      src: resolvedSrc,
+      alt,
+      title: alt,
+      align: 'left',
+    },
+  };
+}
+
 function parseInline(text: string): ProseMirrorNode[] {
   const nodes: ProseMirrorNode[] = [];
   const preprocessed = text
@@ -238,7 +309,7 @@ function parseInline(text: string): ProseMirrorNode[] {
   return nodes.filter((node) => node.text !== '' || (node.content?.length ?? 0) > 0);
 }
 
-function parseBlockquote(lines: string[]): ProseMirrorNode {
+function parseBlockquote(lines: string[], attachments: AttachmentMap): ProseMirrorNode {
   const calloutMatch = /^\[!(\w+)\]\s*(.*)$/.exec(lines[0] ?? '');
   if (calloutMatch) {
     const titleText = calloutMatch[2].trim();
@@ -249,7 +320,7 @@ function parseBlockquote(lines: string[]): ProseMirrorNode {
       content.push({ type: 'paragraph', content: [{ type: 'text', text: titleText }] });
     }
 
-    const bodyNodes = parseBlocks(bodyLines);
+    const bodyNodes = parseBlocks(bodyLines, attachments);
     content.push(
       ...(bodyNodes.length > 0
         ? bodyNodes
@@ -259,14 +330,14 @@ function parseBlockquote(lines: string[]): ProseMirrorNode {
     return { type: 'blockquote', content };
   }
 
-  const inner = parseBlocks(lines);
+  const inner = parseBlocks(lines, attachments);
   return {
     type: 'blockquote',
     content: inner.length > 0 ? inner : [{ type: 'paragraph', content: [] }],
   };
 }
 
-function parseBlocks(lines: string[]): ProseMirrorNode[] {
+function parseBlocks(lines: string[], attachments: AttachmentMap): ProseMirrorNode[] {
   const nodes: ProseMirrorNode[] = [];
   let index = 0;
 
@@ -274,6 +345,13 @@ function parseBlocks(lines: string[]): ProseMirrorNode[] {
     const line = lines[index];
 
     if (line.trim() === '') {
+      index += 1;
+      continue;
+    }
+
+    const imageNode = parseStandaloneImage(line, attachments);
+    if (imageNode) {
+      nodes.push(imageNode);
       index += 1;
       continue;
     }
@@ -319,7 +397,7 @@ function parseBlocks(lines: string[]): ProseMirrorNode[] {
         quoteLines.push(lines[index].slice(2));
         index += 1;
       }
-      nodes.push(parseBlockquote(quoteLines));
+      nodes.push(parseBlockquote(quoteLines, attachments));
       continue;
     }
 
@@ -400,10 +478,13 @@ function wrapInRootBlocks(document: { type: 'doc'; content: ProseMirrorNode[] })
   };
 }
 
-export function parseMarkdownForObsidianImport(markdown: string): ParsedMarkdownDocument {
+export function parseMarkdownForObsidianImport(
+  markdown: string,
+  attachments: AttachmentMap = {},
+): ParsedMarkdownDocument {
   const { title, body } = extractFrontmatter(markdown);
   const lines = body.split(/\r?\n/);
-  const blocks = parseBlocks(lines);
+  const blocks = parseBlocks(lines, attachments);
   const content = blocks.length > 0 ? blocks : [{ type: 'paragraph', content: [] }];
 
   return {
@@ -415,11 +496,14 @@ export function parseMarkdownForObsidianImport(markdown: string): ParsedMarkdown
   };
 }
 
-export function encodeMarkdownToYDoc(markdown: string): {
+export function encodeMarkdownToYDoc(
+  markdown: string,
+  attachments: AttachmentMap = {},
+): {
   title: string | null;
   value: string;
 } {
-  const parsed = parseMarkdownForObsidianImport(markdown);
+  const parsed = parseMarkdownForObsidianImport(markdown, attachments);
   const wrapped = wrapInRootBlocks(parsed.document);
   const ydoc = prosemirrorJSONToYDoc(obsidianImportSchema, wrapped, 'default');
   const encoded = Buffer.from(Y.encodeStateAsUpdate(ydoc)).toString('base64');

@@ -8,6 +8,7 @@ import { PagesService } from 'src/pages/pages.service';
 import { PrismaService } from 'src/infra/prisma/prisma.service';
 import * as Y from 'yjs';
 import {
+  ObsidianImportAttachmentDto,
   ObsidianConflictResolution,
   ObsidianImportFileDto,
   ObsidianImportPreviewDto,
@@ -141,7 +142,7 @@ export class ObsidianService {
 
     for (const file of files) {
       const folderResolution = this.resolveFolderFromCache(folderCache, file.path, folderStrategy);
-      const encoded = encodeMarkdownToYDoc(file.markdown);
+      const encoded = encodeMarkdownToYDoc(file.markdown, this.buildAttachmentMap(file.attachments));
       const pageTitle = encoded.title?.trim() || this.titleFromFileName(file.name || this.fileNameFromPath(file.path));
       const existingPage = await this.prisma.wikiNode.findFirst({
         where: {
@@ -178,7 +179,7 @@ export class ObsidianService {
     resolution: ObsidianConflictResolution | 'replace',
   ) {
     const targetFolder = await this.ensureFolderPath(spaceId, file.path, folderStrategy, user);
-    const encoded = encodeMarkdownToYDoc(file.markdown);
+    const encoded = encodeMarkdownToYDoc(file.markdown, this.buildAttachmentMap(file.attachments));
     const originalTitle = encoded.title?.trim() || this.titleFromFileName(file.name || this.fileNameFromPath(file.path));
     const pageTitle =
       resolution === 'create_copy'
@@ -395,5 +396,21 @@ export class ObsidianService {
     const ydoc = new Y.Doc();
     Y.applyUpdate(ydoc, Buffer.from(base64, 'base64'));
     return ydoc;
+  }
+
+  private buildAttachmentMap(attachments?: ObsidianImportAttachmentDto[]): Record<string, string> {
+    const map: Record<string, string> = {};
+    for (const attachment of attachments ?? []) {
+      const normalizedPath = String(attachment.path ?? '').replace(/\\/g, '/').trim().replace(/^\.\/+/, '').replace(/^\/+/, '');
+      if (!normalizedPath || !attachment.dataUrl) {
+        continue;
+      }
+      map[normalizedPath] = attachment.dataUrl;
+      const basename = normalizedPath.split('/').pop();
+      if (basename && !map[basename]) {
+        map[basename] = attachment.dataUrl;
+      }
+    }
+    return map;
   }
 }
