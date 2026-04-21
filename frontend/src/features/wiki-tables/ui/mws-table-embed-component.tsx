@@ -73,6 +73,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
 
     globalStore.__wikiliveTableSnapshots[datasheetId] = {
       datasheetId,
+      title: controller.attrs.title ?? null,
       viewId: controller.attrs.viewId ?? null,
       fields: controller.fields,
       records: controller.records.slice(0, 200),

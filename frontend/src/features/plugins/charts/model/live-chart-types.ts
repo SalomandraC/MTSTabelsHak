@@ -20,6 +20,7 @@ export type LiveChartSnapshotRecord = {
 
 export type LiveChartTableSnapshot = {
   datasheetId?: string;
+  title?: string | null;
   viewId?: string | null;
   fields?: LiveChartSnapshotField[];
   records?: LiveChartSnapshotRecord[];

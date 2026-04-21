@@ -73,6 +73,7 @@ export function LiveChartNodeView({ node, selected, editor, updateAttributes }: 
     () => buildLiveChartData(attrs, snapshot),
     [attrs, snapshot],
   );
+  const tableDisplayName = snapshot?.title?.trim() || attrs.datasheetId;
 
   const panelStyle = isDark
     ? {
@@ -129,7 +130,7 @@ export function LiveChartNodeView({ node, selected, editor, updateAttributes }: 
         </div>
         <div className="flex items-center gap-2">
           <div className="mermaid-diagram-node__meta text-[11px] font-semibold opacity-90">
-            {attrs.chartType.toUpperCase()} · {attrs.datasheetId}
+            {attrs.chartType.toUpperCase()} · {tableDisplayName}
           </div>
           {isEditable ? (
             <button

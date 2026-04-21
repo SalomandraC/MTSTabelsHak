@@ -32,6 +32,15 @@ function getAllSnapshots(): Array<{ datasheetId: string; snapshot: LiveChartTabl
     .map(([datasheetId, snapshot]) => ({ datasheetId, snapshot }));
 }
 
+function getSnapshotDisplayName(item: { datasheetId: string; snapshot: LiveChartTableSnapshot }): string {
+  const title = item.snapshot.title?.trim();
+  if (title && title.length > 0) {
+    return title;
+  }
+
+  return item.datasheetId;
+}
+
 export function LiveChartPickerModal({
   isOpen,
   onClose,
@@ -166,7 +175,7 @@ export function LiveChartPickerModal({
               {snapshotItems.length === 0 ? <option value="">Нет доступных таблиц</option> : null}
               {snapshotItems.map((item) => (
                 <option key={item.datasheetId} value={item.datasheetId}>
-                  {item.datasheetId}
+                  {getSnapshotDisplayName(item)}
                 </option>
               ))}
             </select>
