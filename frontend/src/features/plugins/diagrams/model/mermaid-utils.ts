@@ -45,8 +45,29 @@ function ensureMermaidInitialized(theme: 'default' | 'dark') {
   initializedTheme = theme;
 }
 
+function quoteFlowchartLabels(code: string): string {
+  if (!/^\s*(flowchart|graph)\s+/im.test(code)) {
+    return code;
+  }
+
+  return code
+    .replace(/([A-Za-z0-9_-]+)\[([^\]"'][^\]\n]*[^\]"'])\]/g, (_match, id: string, label: string) => {
+      return `${id}["${label.replace(/"/g, '\\"')}"]`;
+    })
+    .replace(/([A-Za-z0-9_-]+)\{([^}"'][^}\n]*[^}"'])\}/g, (_match, id: string, label: string) => {
+      return `${id}{"${label.replace(/"/g, '\\"')}"}`;
+    })
+    .replace(/\|([^|"'\n][^|\n]*[^|"'\n])\|/g, (_match, label: string) => {
+      return `|"${label.replace(/"/g, '\\"')}"|`;
+    });
+}
+
+export function normalizeMermaidCode(inputCode: string) {
+  return quoteFlowchartLabels(inputCode.trim());
+}
+
 export async function renderMermaidToSvg(inputCode: string, theme: 'default' | 'dark') {
-  const code = inputCode.trim();
+  const code = normalizeMermaidCode(inputCode);
   if (!code) {
     return { svg: '', error: 'Код диаграммы пустой' };
   }

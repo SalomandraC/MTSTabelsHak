@@ -13,8 +13,15 @@ import {
   WidthType,
   ShadingType,
 } from 'docx';
+import puppeteer from 'puppeteer';
 import type { BlockNode } from '../types.js';
 import { createInlineNodeResolver, type ExportAuthContext } from '../live-inline.js';
+import {
+  buildLiveChartExportData,
+  renderLiveChartSvg,
+  renderMermaidCodeSvg,
+  type LiveChartExportData,
+} from '../chart-export.js';
 
 
 const API_BASE = process.env.API_BASE_URL ?? 'http://api:8080';
@@ -113,6 +120,73 @@ function buildDocxTable(title: string, fields: MwsField[], records: MwsRecord[])
   result.push(new Paragraph({ children: [], spacing: { after: 160 } }));
 
   return result;
+}
+
+function buildChartDataTable(data: LiveChartExportData): (Paragraph | Table)[] {
+  const fields = [
+    { id: '__x', name: data.xFieldName },
+    ...data.ySeries.map((series) => ({ id: series.fieldId, name: series.fieldName })),
+  ];
+  const records = data.points.map((point, index) => ({
+    recordId: String(index),
+    fields: {
+      __x: point.xLabel,
+      ...Object.fromEntries(data.ySeries.map((series) => [series.fieldId, point.values[series.fieldId] ?? 0])),
+    },
+  }));
+
+  return buildDocxTable('Данные графика', fields, records);
+}
+
+async function renderSvgToPng(svg: string, width: number, height: number): Promise<Buffer> {
+  const browser = await puppeteer.launch({
+    headless: true,
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+    ],
+  });
+
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width, height, deviceScaleFactor: 2 });
+    await page.setContent(
+      `<!doctype html><html><body style="margin:0;background:white"><div id="snapshot">${svg}</div></body></html>`,
+      { waitUntil: 'networkidle0' },
+    );
+
+    const element = await page.$('#snapshot');
+    const screenshot = element
+      ? await element.screenshot({ type: 'png' })
+      : await page.screenshot({ type: 'png' });
+
+    return Buffer.from(screenshot);
+  } finally {
+    await browser.close();
+  }
+}
+
+async function buildPngImageParagraph(svg: string, alt: string, width = 600, height = 300): Promise<Paragraph> {
+  const png = await renderSvgToPng(svg, width, height);
+
+  return new Paragraph({
+    children: [
+      new ImageRun({
+        type: 'png',
+        data: png,
+        transformation: { width, height },
+        altText: {
+          title: alt,
+          description: alt,
+          name: alt,
+        },
+      }),
+    ],
+    spacing: { after: 120 },
+  });
 }
 
 // ─── Image helpers ────────────────────────────────────────────────────────────
@@ -380,6 +454,32 @@ async function blockToDocxElements(
         children: [new TextRun({ text: block.content ?? 'Таблица MWS', italics: true, color: '6B7898' })],
         spacing: { after: 120 },
       })];
+    }
+
+    case 'live_chart': {
+      const chartData = await buildLiveChartExportData(block, auth);
+      if (!chartData) {
+        return [new Paragraph({
+          children: [new TextRun({ text: '📈 График недоступен', italics: true, color: '6B7898' })],
+          spacing: { after: 120 },
+        })];
+      }
+
+      return [
+        await buildPngImageParagraph(renderLiveChartSvg(chartData), 'Live chart'),
+        ...buildChartDataTable(chartData),
+      ];
+    }
+
+    case 'mermaid_diagram': {
+      return [
+        await buildPngImageParagraph(renderMermaidCodeSvg(block.mermaidCode ?? ''), 'Mermaid diagram'),
+        new Paragraph({
+          children: [new TextRun({ text: block.mermaidCode ?? '', font: 'Courier New', size: 18 })],
+          shading: { fill: 'F2F3F5' },
+          spacing: { after: 160 },
+        }),
+      ];
     }
 
     case 'page_link': {

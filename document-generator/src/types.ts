@@ -33,7 +33,7 @@ export type BlockInlineNode = {
 };
 
 export interface BlockNode {
-  type: 'heading' | 'paragraph' | 'text' | 'image' | 'iframe' | 'table' | 'code_block' | 'bullet_list' | 'ordered_list' | 'task_list' | 'task_item' | 'blockquote' | 'horizontal_rule' | 'link' | 'page_link';
+  type: 'heading' | 'paragraph' | 'text' | 'image' | 'iframe' | 'table' | 'live_chart' | 'mermaid_diagram' | 'code_block' | 'bullet_list' | 'ordered_list' | 'task_list' | 'task_item' | 'blockquote' | 'horizontal_rule' | 'link' | 'page_link';
   level?: number;
   content?: string;
   children?: BlockNode[];
@@ -52,6 +52,12 @@ export interface BlockNode {
   // Page link attrs
   pageId?: string | null;
   pageTitle?: string | null;
+  // Live chart attrs
+  chartType?: 'bar' | 'line' | 'pie';
+  xAxisFieldId?: string;
+  yAxisFieldIds?: string[];
+  // Mermaid diagram attrs
+  mermaidCode?: string;
   // Structured inline nodes for rich rendering in docx
   inlineNodes?: BlockInlineNode[];
 }

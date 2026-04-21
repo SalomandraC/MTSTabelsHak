@@ -1,5 +1,6 @@
 import type { BlockNode } from '../types.js';
 import { createInlineNodeResolver, type ExportAuthContext } from '../live-inline.js';
+import { buildLiveChartExportData, renderLiveChartMarkdown } from '../chart-export.js';
 
 type AuthContext = ExportAuthContext;
 
@@ -13,7 +14,7 @@ export async function generateMarkdown(title: string, blocks: BlockNode[], auth?
   }
 
   for (const block of blocks) {
-    await renderBlock(block, lines, 0, inlineNodeResolver.resolveInlineNodes);
+    await renderBlock(block, lines, 0, inlineNodeResolver.resolveInlineNodes, auth);
   }
 
   return lines.join('\n').trim() + '\n';
@@ -24,6 +25,7 @@ async function renderBlock(
   lines: string[],
   indent: number,
   resolveInlineNodes: ReturnType<typeof createInlineNodeResolver>['resolveInlineNodes'],
+  auth?: AuthContext,
 ): Promise<void> {
   const pad = '  '.repeat(indent);
 
@@ -64,6 +66,24 @@ async function renderBlock(
     }
     case 'table': {
       lines.push(`${pad}> 📊 ${block.content ?? 'MWS Table'}`);
+      lines.push('');
+      break;
+    }
+    case 'live_chart': {
+      const chartData = await buildLiveChartExportData(block, auth);
+      if (chartData) {
+        lines.push(renderLiveChartMarkdown(chartData));
+      } else {
+        lines.push(`${pad}> 📈 Live chart unavailable`);
+        lines.push('');
+      }
+      lines.push('');
+      break;
+    }
+    case 'mermaid_diagram': {
+      lines.push(`${pad}\`\`\`mermaid`);
+      lines.push(block.mermaidCode ?? '');
+      lines.push(`${pad}\`\`\``);
       lines.push('');
       break;
     }

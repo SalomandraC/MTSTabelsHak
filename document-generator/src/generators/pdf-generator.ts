@@ -6,6 +6,12 @@ import puppeteer from 'puppeteer';
 import type { BlockNode, PdfOptions } from '../types.js';
 import { DEFAULT_PDF_OPTIONS } from '../types.js';
 import { createInlineNodeResolver, type ExportAuthContext } from '../live-inline.js';
+import {
+  buildLiveChartExportData,
+  renderLiveChartSvg,
+  renderMermaidCodeSvg,
+  svgDataUrl,
+} from '../chart-export.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -165,6 +171,21 @@ async function compileBlock(
         }
       }
       return `<div class="table-placeholder">📊 ${esc(block.content ?? 'Таблица MWS')}</div>`;
+    }
+
+    case 'live_chart': {
+      const chartData = await buildLiveChartExportData(block, auth);
+      if (!chartData) {
+        return `<div class="table-placeholder">📈 График недоступен</div>`;
+      }
+
+      const svg = renderLiveChartSvg(chartData);
+      return `<img src="${svgDataUrl(svg)}" alt="Live chart" style="width:100%;max-width:720px;border-radius:12px;margin:12pt 0">`;
+    }
+
+    case 'mermaid_diagram': {
+      const svg = renderMermaidCodeSvg(block.mermaidCode ?? '');
+      return `<img src="${svgDataUrl(svg)}" alt="Mermaid diagram" style="width:100%;max-width:720px;border-radius:12px;margin:12pt 0">`;
     }
 
     case 'page_link': {

@@ -5,8 +5,8 @@ export type MermaidPreset = {
 };
 
 export const DEFAULT_MERMAID_CODE = `flowchart TD
-  Start[Начало] --> Action[Действие]
-  Action --> End[Результат]`;
+  Start["Начало"] --> Action["Действие"]
+  Action --> End["Результат"]`;
 
 export const MERMAID_PRESETS: MermaidPreset[] = [
   {
@@ -29,11 +29,11 @@ export const MERMAID_PRESETS: MermaidPreset[] = [
     id: 'flowchart',
     label: 'Flowchart',
     code: `flowchart TD
-  A[Клик по заказу] --> B{Есть адрес?}
-  B -->|Да| C[Подтвердить заказ]
-  B -->|Нет| D[Запросить адрес]
-  C --> E[Передать курьеру]
-  E --> F[Доставка]`,
+  A["Клик по заказу"] --> B{"Есть адрес?"}
+  B -->|"Да"| C["Подтвердить заказ"]
+  B -->|"Нет"| D["Запросить адрес"]
+  C --> E["Передать курьеру"]
+  E --> F["Доставка"]`,
   },
   {
     id: 'sequence',
