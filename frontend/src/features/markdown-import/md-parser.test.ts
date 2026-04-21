@@ -215,6 +215,18 @@ describe('parseMarkdown', () => {
     });
   });
 
+  it('normalizes ChatGPT citation and entity markers to readable text', () => {
+    const markdown = [
+      'По данным \uE200entity\uE202["organization","McKinsey & Company","consulting firm"]\uE201 вывод подтвержден.',
+      'Первый факт \uE200cite\uE202turn17view5\uE202turn17view6\uE201 и повтор \uE200cite\uE202turn17view5\uE201.',
+    ].join('\n\n');
+
+    const doc = parseMarkdown(markdown).prosemirrorDoc;
+
+    expect(getTextContent(doc.content[0]!)).toBe('По данным McKinsey & Company вывод подтвержден.');
+    expect(getTextContent(doc.content[1]!)).toBe('Первый факт [1] [2] и повтор [1].');
+  });
+
   it('keeps inline tags as plain text', () => {
     const doc = parseMarkdown('Text with #tag inside').prosemirrorDoc;
     expect(doc.content[0]).toEqual({
