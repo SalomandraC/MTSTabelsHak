@@ -14,6 +14,7 @@ import { HideFieldsModal } from './hide-fields-modal';
 import { SortFieldsModal } from './sort-fields-modal';
 import { TableGridCanvas } from './table-grid-canvas';
 import { getMwsFieldTypeIcon } from '../model/mws-field-types';
+import { usePortalAnchorPosition } from '../../../shared/lib/use-portal-anchor-position';
 import {
   ADD_COLUMN_WIDTH,
   ADD_ROW_HEIGHT,
@@ -152,10 +153,8 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
   const [attachmentUploadError, setAttachmentUploadError] = useState('');
   const [activeFieldMenu, setActiveFieldMenu] = useState<{
     field: MwsField;
-    clientX: number;
-    clientY: number;
-    openScrollLeft: number;
-    openScrollTop: number;
+    x: number;
+    y: number;
   } | null>(null);
   const selectEditorRef = useRef<HTMLDivElement | null>(null);
   const activeFieldMenuIndex = activeFieldMenu
@@ -163,6 +162,23 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         (field) => field.id === activeFieldMenu.field.id
       )
     : -1;
+  const activeFieldMenuPosition = usePortalAnchorPosition(
+    activeFieldMenu
+      ? {
+          x: activeFieldMenu.x,
+          y: activeFieldMenu.y,
+        }
+      : null,
+    controller.scrollRef,
+    {
+      panelWidth: 288,
+      panelHeight: 272,
+      gap: 8,
+      margin: 12,
+      hideWhenOutOfBounds: true,
+    },
+    controller.scrollOffset,
+  );
 
   const selectColorToCss = (color: string) => {
     const palette: Record<string, string> = {
@@ -560,12 +576,12 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       return;
     }
 
+    const surfaceRect = controller.scrollRef.current?.getBoundingClientRect();
+
     setActiveFieldMenu({
       field,
-      clientX,
-      clientY,
-      openScrollLeft: controller.scrollOffset.left,
-      openScrollTop: controller.scrollOffset.top,
+      x: clientX - (surfaceRect?.left ?? 0) + controller.scrollOffset.left,
+      y: clientY - (surfaceRect?.top ?? 0) + controller.scrollOffset.top,
     });
   };
 
@@ -877,17 +893,10 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       <FieldActionsMenu
         fieldName={activeFieldMenu?.field.name ?? ''}
         position={
-          activeFieldMenu
+          activeFieldMenuPosition
             ? {
-                x:
-                  activeFieldMenu.clientX +
-                  window.scrollX +
-                  (activeFieldMenu.openScrollLeft - controller.scrollOffset.left),
-                y:
-                  activeFieldMenu.clientY +
-                  window.scrollY +
-                  (activeFieldMenu.openScrollTop - controller.scrollOffset.top) +
-                  8,
+                x: activeFieldMenuPosition.left,
+                y: activeFieldMenuPosition.top,
               }
             : null
         }

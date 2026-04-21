@@ -91,10 +91,10 @@ export function FieldActionsMenu({
   return createPortal(
     <div
       ref={menuRef}
-      className="absolute z-[230] w-72 overflow-hidden rounded-2xl border border-[#e3e8f1] bg-white p-2 shadow-[0_24px_70px_rgba(17,25,40,0.2)]"
+      className="fixed z-[15] w-72 overflow-hidden rounded-2xl border border-[#e3e8f1] bg-white p-2 shadow-[0_24px_70px_rgba(17,25,40,0.2)]"
       style={{
-        left: Math.max(12, position.x),
-        top: Math.max(12, position.y),
+        left: position.x,
+        top: position.y,
       }}
       role="menu"
       aria-label={`Действия для поля ${fieldName}`}

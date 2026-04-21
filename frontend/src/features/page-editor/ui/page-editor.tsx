@@ -594,6 +594,7 @@ function LivePageEditor({
     {
       panelWidth: 220,
       panelHeight: 56,
+      hideWhenOutOfBounds: true,
     },
   );
 
@@ -1011,7 +1012,7 @@ function LivePageEditor({
             ? createPortal(
                 <div
                   data-remove-block-menu="true"
-                  className="fixed z-[90] min-w-[220px] rounded-xl border border-editor-border-subtle bg-white p-1.5 shadow-[0_14px_32px_rgba(17,25,40,0.2)]"
+                  className="fixed z-[15] min-w-[220px] rounded-xl border border-editor-border-subtle bg-white p-1.5 shadow-[0_14px_32px_rgba(17,25,40,0.2)]"
                   style={{
                     left: removeBlockMenuPosition.left,
                     top: removeBlockMenuPosition.top,

@@ -7,19 +7,26 @@ export type PortalAnchorPosition = {
   surfaceHeight?: number;
 };
 
+type PortalContentOffset = {
+  left: number;
+  top: number;
+};
+
 type PortalAnchorPositionOptions = {
   panelWidth: number;
   panelHeight: number;
   gap?: number;
   margin?: number;
+  hideWhenOutOfBounds?: boolean;
 };
 
 export function usePortalAnchorPosition(
   anchor: PortalAnchorPosition | null,
   surfaceRef: RefObject<HTMLElement | null> | null,
   options: PortalAnchorPositionOptions,
+  contentOffset: PortalContentOffset = { left: 0, top: 0 },
 ) {
-  const { panelWidth, panelHeight, gap = 8, margin = 8 } = options;
+  const { panelWidth, panelHeight, gap = 8, margin = 8, hideWhenOutOfBounds = false } = options;
   const [revision, setRevision] = useState(0);
 
   useEffect(() => {
@@ -71,12 +78,21 @@ export function usePortalAnchorPosition(
     const viewportWidth = surfaceRect?.width ?? window.innerWidth;
     const viewportHeight = surfaceRect?.height ?? window.innerHeight;
 
-    const anchorX = viewportLeft + anchor.x;
-    const anchorY = viewportTop + anchor.y;
+    const anchorX = viewportLeft + anchor.x - contentOffset.left;
+    const anchorY = viewportTop + anchor.y - contentOffset.top;
     const preferRight = anchorX + gap;
     const preferLeft = anchorX - panelWidth - gap;
     const canOpenRight = preferRight + panelWidth <= viewportLeft + viewportWidth - margin;
     const canOpenLeft = preferLeft >= viewportLeft + margin;
+    const top = anchorY + gap;
+
+    if (hideWhenOutOfBounds) {
+      const verticalFits = top >= viewportTop + margin && top + panelHeight <= viewportTop + viewportHeight - margin;
+
+      if (!verticalFits || (!canOpenRight && !canOpenLeft)) {
+        return null;
+      }
+    }
 
     let left = preferRight;
 
@@ -89,14 +105,14 @@ export function usePortalAnchorPosition(
       );
     }
 
-    const top = Math.min(
+    const resolvedTop = Math.min(
       Math.max(anchorY + gap, viewportTop + margin),
       Math.max(viewportTop + margin, viewportTop + viewportHeight - panelHeight - margin),
     );
 
     return {
       left,
-      top,
+      top: resolvedTop,
     };
-  }, [anchor, gap, margin, panelHeight, panelWidth, revision, surfaceRef]);
+  }, [anchor, contentOffset.left, contentOffset.top, gap, margin, panelHeight, panelWidth, revision, surfaceRef]);
 }
