@@ -122,13 +122,15 @@ export function LiveChartNodeView({ node, selected, editor, updateAttributes }: 
         <div className="min-w-0">
           <span className="mermaid-diagram-node__title">Живой график</span>
           {isEditable ? (
-            <p className="mt-1 text-[11px] text-[#6e7582]">
+            <p className="mt-1 text-[11px] text-[#b00025]">
               Двойной клик: редактировать график. Удаление: долгое нажатие по блоку.
             </p>
           ) : null}
         </div>
         <div className="flex items-center gap-2">
-          <div className="text-[11px] opacity-80">{attrs.chartType.toUpperCase()} · {attrs.datasheetId}</div>
+          <div className="mermaid-diagram-node__meta text-[11px] font-semibold opacity-90">
+            {attrs.chartType.toUpperCase()} · {attrs.datasheetId}
+          </div>
           {isEditable ? (
             <button
               type="button"
@@ -142,7 +144,7 @@ export function LiveChartNodeView({ node, selected, editor, updateAttributes }: 
       </div>
 
       <div className="mermaid-diagram-node__surface" contentEditable={false}>
-      <div className="mb-2 text-xs opacity-80">
+      <div className="mermaid-diagram-node__axis-label mb-2 text-xs font-medium">
         Ось X: <span className="font-semibold">{xFieldName}</span>
       </div>
 

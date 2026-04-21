@@ -15,6 +15,11 @@ export type ExpandedTableModalProps = {
     clientX: number;
     clientY: number;
   }) => void;
+  onOpenRowDeleteConfirm?: (payload: {
+    rowIndex: number;
+    clientX: number;
+    clientY: number;
+  }) => void;
   onRefresh?: () => void;
   onSearchQueryChange: (value: string) => void;
   onCreateField: () => void;
@@ -45,6 +50,7 @@ export function ExpandedTableModal({
   selectEditorRef,
   onClose,
   onOpenFieldMenu,
+  onOpenRowDeleteConfirm,
   onSearchQueryChange,
   onCreateField,
   onHideFields,
@@ -158,6 +164,7 @@ export function ExpandedTableModal({
             onOpenAttachmentUpload={onOpenAttachmentUpload}
             onDownloadAllAttachments={onDownloadAllAttachments}
             onOpenFieldMenu={onOpenFieldMenu}
+            onOpenRowDeleteConfirm={onOpenRowDeleteConfirm}
             onAddColumn={onCreateField}
             onAddRow={onCreateRow}
             onCanvasKeyDown={onCanvasKeyDown}
