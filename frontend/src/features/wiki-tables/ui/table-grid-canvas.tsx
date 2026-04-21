@@ -22,6 +22,11 @@ export type TableGridProps = {
     clientX: number;
     clientY: number;
   }) => void;
+  onOpenRowDeleteConfirm?: (payload: {
+    rowIndex: number;
+    clientX: number;
+    clientY: number;
+  }) => void;
 };
 
 export function TableGridCanvas({
@@ -37,7 +42,8 @@ export function TableGridCanvas({
   onAddRow,
   onOpenAttachmentUpload,
   onDownloadAllAttachments,
-  onOpenFieldMenu
+  onOpenFieldMenu,
+  onOpenRowDeleteConfirm
 }: TableGridProps & {
   onCanvasKeyDown: (event: React.KeyboardEvent<HTMLCanvasElement>) => void;
   selectEditorRef: React.RefObject<HTMLDivElement>;
@@ -47,6 +53,11 @@ export function TableGridCanvas({
   onAddRow?: () => void;
   onOpenAttachmentUpload?: () => void;
   onDownloadAllAttachments?: () => void;
+  onOpenRowDeleteConfirm?: (payload: {
+    rowIndex: number;
+    clientX: number;
+    clientY: number;
+  }) => void;
 }) {
   const gridHeight = resolveTableGridHeight(controller.gridHeight, isExpanded);
   const selectedAttachmentCell =
@@ -170,6 +181,34 @@ export function TableGridCanvas({
               event.stopPropagation();
               onAddRow();
               return;
+            }
+
+            if (
+              !isReadOnly &&
+              onOpenRowDeleteConfirm &&
+              x >= 0 &&
+              x <= INDEX_WIDTH &&
+              y >= HEADER_HEIGHT &&
+              y < addRowStart
+            ) {
+              const rowIndex = Math.floor(
+                (y + controller.scrollOffset.top - HEADER_HEIGHT) / ROW_HEIGHT
+              );
+
+              if (
+                rowIndex >= 0 &&
+                rowIndex < controller.visibleRows.length &&
+                controller.visibleRows[rowIndex]?.kind === 'record'
+              ) {
+                event.preventDefault();
+                event.stopPropagation();
+                onOpenRowDeleteConfirm({
+                  rowIndex,
+                  clientX: event.clientX,
+                  clientY: event.clientY,
+                });
+                return;
+              }
             }
 
             if (isReadOnly) {

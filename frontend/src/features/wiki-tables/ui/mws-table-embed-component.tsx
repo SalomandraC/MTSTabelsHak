@@ -1,18 +1,21 @@
 import type { NodeViewProps } from '@tiptap/react';
 import { NodeViewWrapper } from '@tiptap/react';
 import { ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { MwsTableActionBar } from './mws-table-action-bar';
 import { AttachmentUploadModal } from './attachment-upload-modal';
 import { CreateFieldModal } from './create-field-modal';
 import { ExpandedTableModal } from './expanded-table-modal';
+import { DeleteRowConfirmPopover } from './delete-row-confirm-popover';
 import { FieldActionsMenu } from './field-actions-menu';
 import { FilterRecordsModal } from './filter-records-modal';
 import { GroupRecordsModal } from './group-records-modal';
 import { HideFieldsModal } from './hide-fields-modal';
 import { SortFieldsModal } from './sort-fields-modal';
 import { TableGridCanvas } from './table-grid-canvas';
+import { getMwsFieldTypeIcon } from '../model/mws-field-types';
+import { usePortalAnchorPosition } from '../../../shared/lib/use-portal-anchor-position';
 import {
   ADD_COLUMN_WIDTH,
   ADD_ROW_HEIGHT,
@@ -149,6 +152,12 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     []
   );
   const [attachmentUploadError, setAttachmentUploadError] = useState('');
+  const [rowDeleteTarget, setRowDeleteTarget] = useState<{
+    rowIndex: number;
+    record: MwsRecord;
+    x: number;
+    y: number;
+  } | null>(null);
   const [activeFieldMenu, setActiveFieldMenu] = useState<{
     field: MwsField;
     x: number;
@@ -160,6 +169,40 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         (field) => field.id === activeFieldMenu.field.id
       )
     : -1;
+  const activeFieldMenuPosition = usePortalAnchorPosition(
+    activeFieldMenu
+      ? {
+          x: activeFieldMenu.x,
+          y: activeFieldMenu.y,
+        }
+      : null,
+    controller.scrollRef,
+    {
+      panelWidth: 288,
+      panelHeight: 272,
+      gap: 8,
+      margin: 12,
+      hideWhenOutOfBounds: true,
+    },
+    controller.scrollOffset,
+  );
+  const rowDeletePosition = usePortalAnchorPosition(
+    rowDeleteTarget
+      ? {
+          x: rowDeleteTarget.x,
+          y: rowDeleteTarget.y,
+        }
+      : null,
+    controller.scrollRef,
+    {
+      panelWidth: 280,
+      panelHeight: 140,
+      gap: 8,
+      margin: 12,
+      hideWhenOutOfBounds: true,
+    },
+    controller.scrollOffset,
+  );
 
   const selectColorToCss = (color: string) => {
     const palette: Record<string, string> = {
@@ -236,11 +279,17 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       ctx.strokeStyle = '#dde2ea';
       ctx.strokeRect(x - 0.5, 0.5, COLUMN_WIDTH, HEADER_HEIGHT);
       ctx.fillStyle = isActiveFieldMenuColumn ? '#1d4ed8' : '#3f3f46';
+      const icon = getMwsFieldTypeIcon(field.type);
+      ctx.font =
+        '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+      ctx.fillText(icon, x + 10, HEADER_HEIGHT / 2);
+
+      ctx.fillStyle = isActiveFieldMenuColumn ? '#1d4ed8' : '#3f3f46';
       ctx.font =
         '600 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
       ctx.fillText(
-        clampText(ctx, field.name, COLUMN_WIDTH - 28),
-        x + 12,
+        clampText(ctx, field.name, COLUMN_WIDTH - 46),
+        x + 28,
         HEADER_HEIGHT / 2
       );
       ctx.font =
@@ -500,6 +549,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
     controller.setEditingCell(null);
     controller.setEditingSelectCell(null);
     setActiveFieldMenu(null);
+    setRowDeleteTarget(null);
   };
 
   const openAttachmentUploadModal = () => {
@@ -531,6 +581,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         controller.setEditingCell(null);
         controller.setEditingSelectCell(null);
         setActiveFieldMenu(null);
+        setRowDeleteTarget(null);
       }
 
       return next;
@@ -551,12 +602,53 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       return;
     }
 
+    const surfaceRect = controller.scrollRef.current?.getBoundingClientRect();
+
     setActiveFieldMenu({
       field,
-      x: clientX,
-      y: clientY + 8
+      x: clientX - (surfaceRect?.left ?? 0) + controller.scrollOffset.left,
+      y: clientY - (surfaceRect?.top ?? 0) + controller.scrollOffset.top,
     });
   };
+
+  const openRowDeleteConfirm = ({
+    rowIndex,
+    clientX,
+    clientY,
+  }: {
+    rowIndex: number;
+    clientX: number;
+    clientY: number;
+  }) => {
+    const row = controller.visibleRows[rowIndex];
+    if (!row || row.kind !== 'record') {
+      return;
+    }
+
+    const surfaceRect = controller.scrollRef.current?.getBoundingClientRect();
+
+    setActiveFieldMenu(null);
+    setRowDeleteTarget({
+      rowIndex,
+      record: row.record,
+      x: clientX - (surfaceRect?.left ?? 0) + controller.scrollOffset.left,
+      y: clientY - (surfaceRect?.top ?? 0) + controller.scrollOffset.top,
+    });
+  };
+
+  const closeRowDeleteConfirm = useCallback(() => {
+    setRowDeleteTarget(null);
+  }, []);
+
+  const handleConfirmDeleteRow = useCallback(() => {
+    if (!rowDeleteTarget) {
+      return;
+    }
+
+    void controller.deleteRow(rowDeleteTarget.record).then(() => {
+      setRowDeleteTarget(null);
+    });
+  }, [controller, rowDeleteTarget]);
 
   const applySingleFieldSort = (field: MwsField, desc: boolean) => {
     const next = [
@@ -821,6 +913,9 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
                 isCollapsed ? undefined : () => void downloadAllAttachments()
               }
               onOpenFieldMenu={isCollapsed ? undefined : openFieldMenu}
+              onOpenRowDeleteConfirm={
+                isCollapsed ? undefined : openRowDeleteConfirm
+              }
               onAddColumn={
                 isCollapsed ? undefined : () => setIsCreateFieldModalOpen(true)
               }
@@ -866,10 +961,10 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
       <FieldActionsMenu
         fieldName={activeFieldMenu?.field.name ?? ''}
         position={
-          activeFieldMenu
+          activeFieldMenuPosition
             ? {
-                x: activeFieldMenu.x,
-                y: activeFieldMenu.y
+                x: activeFieldMenuPosition.left,
+                y: activeFieldMenuPosition.top,
               }
             : null
         }
@@ -905,6 +1000,20 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
           }
         }}
       />
+      <DeleteRowConfirmPopover
+        isOpen={Boolean(rowDeleteTarget && rowDeletePosition)}
+        position={
+          rowDeleteTarget && rowDeletePosition
+            ? {
+                x: rowDeletePosition.left,
+                y: rowDeletePosition.top,
+              }
+            : null
+        }
+        rowNumber={(rowDeleteTarget?.rowIndex ?? 0) + 1}
+        onClose={closeRowDeleteConfirm}
+        onConfirm={handleConfirmDeleteRow}
+      />
       <CreateFieldModal
         isOpen={isCreateFieldModalOpen}
         isSubmitting={controller.isMutating}
@@ -912,7 +1021,11 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         onSubmit={(payload) => {
           void controller
             .createField(payload)
-            .then(() => setIsCreateFieldModalOpen(false));
+            .then((created) => {
+              if (created) {
+                setIsCreateFieldModalOpen(false);
+              }
+            });
         }}
       />
       <HideFieldsModal
@@ -953,6 +1066,7 @@ export function MwsTableEmbedComponent({ node, selected }: NodeViewProps) {
         selectEditorRef={selectEditorRef}
         onClose={() => setIsExpandedViewOpen(false)}
         onOpenFieldMenu={openFieldMenu}
+        onOpenRowDeleteConfirm={openRowDeleteConfirm}
         onSearchQueryChange={handleSearchQueryChange}
         onCreateField={() => setIsCreateFieldModalOpen(true)}
         onHideFields={() => setIsHideFieldsModalOpen(true)}

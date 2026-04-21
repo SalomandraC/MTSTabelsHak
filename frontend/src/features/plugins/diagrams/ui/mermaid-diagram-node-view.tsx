@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import type { NodeViewProps } from '@tiptap/react';
 import { NodeViewWrapper } from '@tiptap/react';
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { DEFAULT_MERMAID_CODE, MERMAID_PRESETS } from '../model/mermaid-presets';
 import { renderMermaidToSvg, resolveMermaidTheme } from '../model/mermaid-utils';
@@ -42,14 +42,12 @@ function useLiveTheme() {
   return theme;
 }
 
-export function MermaidDiagramNodeView({ node, updateAttributes, selected, editor, deleteNode }: NodeViewProps) {
+export function MermaidDiagramNodeView({ node, updateAttributes, selected, editor }: NodeViewProps) {
   const isEditable = editor.isEditable;
-  const LONG_PRESS_DELETE_MS = 700;
   const currentCode = String(node.attrs.code ?? '').trim() || DEFAULT_MERMAID_CODE;
   const theme = useLiveTheme();
 
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const longPressTimerRef = useRef<number | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const [draftCode, setDraftCode] = useState(currentCode);
@@ -121,104 +119,6 @@ export function MermaidDiagramNodeView({ node, updateAttributes, selected, edito
     };
   }, [showActions, isEditorOpen]);
 
-  const clearLongPressTimer = () => {
-    if (longPressTimerRef.current !== null) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      clearLongPressTimer();
-    };
-  }, []);
-
-  const editorModal = isEditorOpen && typeof document !== 'undefined'
-    ? createPortal(
-        <div className="mermaid-diagram-editor__backdrop" onMouseDown={() => setIsEditorOpen(false)}>
-          <section
-            className="mermaid-diagram-editor"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Редактор Mermaid-диаграммы"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <header className="mermaid-diagram-editor__header">
-              <h3>Редактирование диаграммы</h3>
-              <button
-                type="button"
-                className="mermaid-diagram-editor__close"
-                onClick={() => setIsEditorOpen(false)}
-              >
-                Закрыть
-              </button>
-            </header>
-
-            <div className="mermaid-diagram-editor__presets">
-              {MERMAID_PRESETS.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className="mermaid-diagram-editor__preset"
-                  onClick={() => setDraftCode(preset.code)}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="mermaid-diagram-editor__body">
-              <div className="mermaid-diagram-editor__pane">
-                <p className="mermaid-diagram-editor__label">Mermaid code</p>
-                <textarea
-                  className="mermaid-diagram-editor__textarea"
-                  value={draftCode}
-                  onChange={(event) => setDraftCode(event.target.value)}
-                  spellCheck={false}
-                />
-                {draftError ? <p className="mermaid-diagram-node__error">{draftError}</p> : null}
-              </div>
-
-              <div className="mermaid-diagram-editor__pane">
-                <p className="mermaid-diagram-editor__label">Live Preview</p>
-                <div className="mermaid-diagram-editor__preview">
-                  {draftSvg ? <div dangerouslySetInnerHTML={{ __html: draftSvg }} /> : null}
-                </div>
-              </div>
-            </div>
-
-            <footer className="mermaid-diagram-editor__footer">
-              <button
-                type="button"
-                className="mermaid-diagram-editor__action mermaid-diagram-editor__action--secondary"
-                onClick={() => {
-                  setDraftCode(currentCode);
-                  setIsEditorOpen(false);
-                }}
-              >
-                Отмена
-              </button>
-              <button
-                type="button"
-                className="mermaid-diagram-editor__action mermaid-diagram-editor__action--primary"
-                disabled={!canSave}
-                onClick={() => {
-                  updateAttributes({
-                    code: draftCode.trim() || DEFAULT_MERMAID_CODE,
-                  });
-                  setIsEditorOpen(false);
-                }}
-              >
-                Сохранить
-              </button>
-            </footer>
-          </section>
-        </div>,
-        document.body,
-      )
-    : null;
-
   return (
     <NodeViewWrapper
       className={[
@@ -228,36 +128,24 @@ export function MermaidDiagramNodeView({ node, updateAttributes, selected, edito
       data-type="mermaid-diagram"
       ref={containerRef}
       onClick={() => setShowActions(true)}
-      onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => {
-        if (!isEditable || event.button !== 0 || longPressTimerRef.current !== null) {
-          return;
-        }
-
-        longPressTimerRef.current = window.setTimeout(() => {
-          longPressTimerRef.current = null;
-
-          const shouldDelete = window.confirm('Удалить эту диаграмму?');
-          if (shouldDelete) {
-            deleteNode();
-          }
-        }, LONG_PRESS_DELETE_MS);
-      }}
-      onPointerUp={clearLongPressTimer}
-      onPointerLeave={clearLongPressTimer}
-      onPointerCancel={clearLongPressTimer}
       onDoubleClick={() => {
         if (!isEditable) {
           return;
         }
 
-        clearLongPressTimer();
         setShowActions(true);
         setIsEditorOpen(true);
       }}
     >
       <div className="mermaid-diagram-node__header" contentEditable={false}>
-        <span className="mermaid-diagram-node__title">Mermaid Diagram</span>
-        {isEditable ? <span className="text-[11px] text-[#6e7582]">dblclick: edit, long press: delete</span> : null}
+        <div className="min-w-0">
+          <span className="mermaid-diagram-node__title">Mermaid Diagram</span>
+          {isEditable ? (
+            <p className="mt-1 text-[11px] text-[#6e7582]">
+              Двойной клик: редактировать диаграмму. Удаление: долгое нажатие по блоку.
+            </p>
+          ) : null}
+        </div>
         {isEditable && showActions ? (
           <button
             type="button"
@@ -277,7 +165,90 @@ export function MermaidDiagramNodeView({ node, updateAttributes, selected, edito
         {previewError ? <p className="mermaid-diagram-node__error">{previewError}</p> : null}
       </div>
 
-      {editorModal}
+      {isEditorOpen && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="mermaid-diagram-editor__backdrop" onMouseDown={() => setIsEditorOpen(false)}>
+              <section
+                className="mermaid-diagram-editor"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Редактор Mermaid-диаграммы"
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <header className="mermaid-diagram-editor__header">
+                  <h3>Редактирование диаграммы</h3>
+                  <button
+                    type="button"
+                    className="mermaid-diagram-editor__close"
+                    onClick={() => setIsEditorOpen(false)}
+                  >
+                    Закрыть
+                  </button>
+                </header>
+
+                <div className="mermaid-diagram-editor__presets">
+                  {MERMAID_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className="mermaid-diagram-editor__preset"
+                      onClick={() => setDraftCode(preset.code)}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mermaid-diagram-editor__body">
+                  <div className="mermaid-diagram-editor__pane">
+                    <p className="mermaid-diagram-editor__label">Mermaid code</p>
+                    <textarea
+                      className="mermaid-diagram-editor__textarea"
+                      value={draftCode}
+                      onChange={(event) => setDraftCode(event.target.value)}
+                      spellCheck={false}
+                    />
+                    {draftError ? <p className="mermaid-diagram-node__error">{draftError}</p> : null}
+                  </div>
+
+                  <div className="mermaid-diagram-editor__pane">
+                    <p className="mermaid-diagram-editor__label">Live Preview</p>
+                    <div className="mermaid-diagram-editor__preview">
+                      {draftSvg ? <div dangerouslySetInnerHTML={{ __html: draftSvg }} /> : null}
+                    </div>
+                  </div>
+                </div>
+
+                <footer className="mermaid-diagram-editor__footer">
+                  <button
+                    type="button"
+                    className="mermaid-diagram-editor__action mermaid-diagram-editor__action--secondary"
+                    onClick={() => {
+                      setDraftCode(currentCode);
+                      setIsEditorOpen(false);
+                    }}
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="button"
+                    className="mermaid-diagram-editor__action mermaid-diagram-editor__action--primary"
+                    disabled={!canSave}
+                    onClick={() => {
+                      updateAttributes({
+                        code: draftCode.trim() || DEFAULT_MERMAID_CODE,
+                      });
+                      setIsEditorOpen(false);
+                    }}
+                  >
+                    Сохранить
+                  </button>
+                </footer>
+              </section>
+            </div>,
+            document.body,
+          )
+        : null}
     </NodeViewWrapper>
   );
 }

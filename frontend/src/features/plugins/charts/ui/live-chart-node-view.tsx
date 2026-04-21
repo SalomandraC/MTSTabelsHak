@@ -1,7 +1,6 @@
-import { createPortal } from 'react-dom';
 import type { NodeViewProps } from '@tiptap/react';
 import { NodeViewWrapper } from '@tiptap/react';
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Bar,
   BarChart,
@@ -46,16 +45,11 @@ function useIsDarkTheme() {
   return isDark;
 }
 
-const LONG_PRESS_DELETE_MS = 700;
-
-export function LiveChartNodeView({ node, selected, editor, updateAttributes, deleteNode }: NodeViewProps) {
+export function LiveChartNodeView({ node, selected, editor, updateAttributes }: NodeViewProps) {
   const attrs = node.attrs as LiveChartAttrs;
   const [tick, setTick] = useState(0);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
-  const [deletePopoverPosition, setDeletePopoverPosition] = useState<{ x: number; y: number } | null>(null);
   const isDark = useIsDarkTheme();
-  const longPressTimerRef = useRef<number | null>(null);
-  const pressPositionRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   useEffect(() => {
     const onSnapshotUpdated = (event: Event) => {
@@ -82,19 +76,15 @@ export function LiveChartNodeView({ node, selected, editor, updateAttributes, de
 
   const panelStyle = isDark
     ? {
-        borderColor: '#374151',
-        background: '#111827',
+        borderColor: '#5c1b29',
+        background: 'linear-gradient(180deg, #24141a 0%, #1a1014 100%)',
         color: '#f9fafb',
       }
     : {
-        borderColor: '#ffd4da',
-        background: '#fff7f8',
+        borderColor: '#f2c6cf',
+        background: 'linear-gradient(180deg, #fff7f8 0%, #ffffff 100%)',
         color: '#1f2937',
       };
-
-  const chartContainerStyle = isDark
-    ? { background: '#0b1220' }
-    : { background: '#ffffff' };
 
   const gridColor = isDark ? '#334155' : '#e8eaf0';
   const axisColor = isDark ? '#cbd5e1' : '#516073';
@@ -111,139 +101,40 @@ export function LiveChartNodeView({ node, selected, editor, updateAttributes, de
 
   const isEditable = editor.isEditable;
 
-  const clearLongPressTimer = () => {
-    if (longPressTimerRef.current !== null) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      clearLongPressTimer();
-    };
-  }, []);
-
-  const handleLongPressStart = () => {
-    if (!isEditable || isPickerOpen || deletePopoverPosition || longPressTimerRef.current !== null) {
-      return;
-    }
-
-    longPressTimerRef.current = window.setTimeout(() => {
-      longPressTimerRef.current = null;
-
-      const margin = 12;
-      const popoverWidth = 230;
-      const popoverHeight = 96;
-      const x = Math.min(
-        Math.max(pressPositionRef.current.x + 8, margin),
-        window.innerWidth - popoverWidth - margin,
-      );
-      const y = Math.min(
-        Math.max(pressPositionRef.current.y + 10, margin),
-        window.innerHeight - popoverHeight - margin,
-      );
-
-      setDeletePopoverPosition({ x, y });
-    }, LONG_PRESS_DELETE_MS);
-  };
-
-  useEffect(() => {
-    if (!deletePopoverPosition) {
-      return;
-    }
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setDeletePopoverPosition(null);
-      }
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [deletePopoverPosition]);
-
-  const deletePopover = deletePopoverPosition && typeof document !== 'undefined'
-    ? createPortal(
-        <div
-          className="fixed inset-0 z-[230]"
-          onMouseDown={() => setDeletePopoverPosition(null)}
-          data-mws-stop-event="true"
-        >
-          <div
-            className="absolute w-[230px] rounded-xl border border-[#ffd4dd] bg-white p-3 shadow-[0_16px_36px_rgba(17,24,39,0.24)]"
-            style={{ left: deletePopoverPosition.x, top: deletePopoverPosition.y }}
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <p className="text-sm font-semibold text-[#1f2937]">Удалить диаграмму?</p>
-            <div className="mt-2 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                className="rounded-md border border-editor-border-subtle bg-white px-2.5 py-1.5 text-xs font-semibold text-[#4b5563] hover:bg-[#f7f8fa]"
-                onClick={() => setDeletePopoverPosition(null)}
-              >
-                Отмена
-              </button>
-              <button
-                type="button"
-                className="rounded-md bg-[#d70032] px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#b8002b]"
-                onClick={() => {
-                  setDeletePopoverPosition(null);
-                  deleteNode();
-                }}
-              >
-                Удалить
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )
-    : null;
-
   return (
     <NodeViewWrapper
       className={[
-        'my-2 rounded-xl border p-3 shadow-[0_8px_20px_rgba(20,20,20,0.06)]',
-        selected ? 'ring-2 ring-[#d70032]/30' : '',
+        'mermaid-diagram-node my-2',
+        selected ? 'mermaid-diagram-node--selected' : '',
       ].join(' ')}
       style={panelStyle}
       data-mws-stop-event="true"
       data-type="live-chart"
-      onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => {
-        if (event.button !== 0) {
-          return;
-        }
-
-        pressPositionRef.current = {
-          x: event.clientX,
-          y: event.clientY,
-        };
-        handleLongPressStart();
-      }}
-      onPointerUp={clearLongPressTimer}
-      onPointerLeave={clearLongPressTimer}
-      onPointerCancel={clearLongPressTimer}
       onDoubleClick={() => {
         if (!isEditable) {
           return;
         }
 
-        clearLongPressTimer();
-        setDeletePopoverPosition(null);
         setIsPickerOpen(true);
       }}
     >
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-[#d70032]">Живая аналитика</div>
+      <div className="mermaid-diagram-node__header" contentEditable={false}>
+        <div className="min-w-0">
+          <span className="mermaid-diagram-node__title">Живой график</span>
+          {isEditable ? (
+            <p className="mt-1 text-[11px] text-[#b00025]">
+              Двойной клик: редактировать график. Удаление: долгое нажатие по блоку.
+            </p>
+          ) : null}
+        </div>
         <div className="flex items-center gap-2">
-          <div className="text-[11px] opacity-80">{attrs.chartType.toUpperCase()} · {attrs.datasheetId}</div>
+          <div className="mermaid-diagram-node__meta text-[11px] font-semibold opacity-90">
+            {attrs.chartType.toUpperCase()} · {attrs.datasheetId}
+          </div>
           {isEditable ? (
             <button
               type="button"
-              className="rounded-md border border-editor-border-subtle bg-white px-2 py-1 text-[11px] font-semibold text-[#4b5563] hover:bg-[#f7f8fa]"
+              className="mermaid-diagram-node__edit"
               onClick={() => setIsPickerOpen(true)}
             >
               Изменить
@@ -252,17 +143,12 @@ export function LiveChartNodeView({ node, selected, editor, updateAttributes, de
         </div>
       </div>
 
-      <div className="mb-2 text-xs opacity-80">
+      <div className="mermaid-diagram-node__surface" contentEditable={false}>
+      <div className="mermaid-diagram-node__axis-label mb-2 text-xs font-medium">
         Ось X: <span className="font-semibold">{xFieldName}</span>
       </div>
 
-      {isEditable ? (
-        <div className="mb-2 text-[11px] text-[#6b7280]">
-          Двойной клик: изменить. Удержание: удалить.
-        </div>
-      ) : null}
-
-      <div className="h-[280px] w-full overflow-hidden rounded-lg border border-editor-border-subtle p-2" style={chartContainerStyle}>
+      <div className="h-[280px] w-full overflow-hidden rounded-lg border border-editor-border-subtle p-2 bg-white">
         {points.length === 0 || ySeries.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm opacity-70">
             Нет данных для построения графика
@@ -334,6 +220,7 @@ export function LiveChartNodeView({ node, selected, editor, updateAttributes, de
           </ResponsiveContainer>
         )}
       </div>
+      </div>
 
       <LiveChartPickerModal
         isOpen={isPickerOpen}
@@ -346,8 +233,6 @@ export function LiveChartNodeView({ node, selected, editor, updateAttributes, de
         title="Редактирование графика"
         submitLabel="Сохранить"
       />
-
-      {deletePopover}
     </NodeViewWrapper>
   );
 }

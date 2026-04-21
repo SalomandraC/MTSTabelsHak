@@ -1,4 +1,5 @@
 import {
+  IsIn,
   IsArray,
   IsBoolean,
   IsInt,
@@ -31,10 +32,38 @@ export class CreateMwsDatasheetDto {
 export class CreateMwsFieldDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(100)
   name!: string;
 
   @IsString()
   @IsNotEmpty()
+  @IsIn([
+    'SingleText',
+    'Text',
+    'SingleSelect',
+    'MultiSelect',
+    'Number',
+    'Currency',
+    'Percent',
+    'DateTime',
+    'Attachment',
+    'Member',
+    'Checkbox',
+    'Rating',
+    'URL',
+    'Phone',
+    'Email',
+    'WorkDoc',
+    'OneWayLink',
+    'TwoWayLink',
+    'MagicLookUp',
+    'Formula',
+    'AutoNumber',
+    'CreatedTime',
+    'LastModifiedTime',
+    'CreatedBy',
+    'LastModifiedBy',
+  ])
   type!: string;
 
   @IsOptional()

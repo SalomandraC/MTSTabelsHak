@@ -1,0 +1,315 @@
+import { MwsService } from './mws.service';
+import type { UserContext } from 'src/auth/user-context';
+
+describe('MwsService', () => {
+  let service: MwsService;
+  let configService: { get: jest.Mock };
+  let redisService: { getJson: jest.Mock; setJson: jest.Mock; delByPattern: jest.Mock };
+
+  const user = {
+    userId: 'user-1',
+    authToken: 'token-1',
+  } as UserContext;
+
+  beforeEach(() => {
+    configService = {
+      get: jest.fn((key: string, fallback?: string) => fallback),
+    };
+    redisService = {
+      getJson: jest.fn().mockResolvedValue(null),
+      setJson: jest.fn().mockResolvedValue(undefined),
+      delByPattern: jest.fn().mockResolvedValue(undefined),
+    };
+
+    service = new MwsService(
+      {} as never,
+      configService as never,
+      {} as never,
+      redisService as never,
+    );
+  });
+
+  it('normalizes createField response to the frontend field shape', async () => {
+    const requestSpy = jest.spyOn(service as any, 'request') as jest.Mock;
+    requestSpy.mockResolvedValue({
+      data: { id: 'fld-created', name: 'Новый столбец' },
+    });
+
+    const result = await service.createField(
+      'space-1',
+      'dst-1',
+      {
+        name: 'Новый столбец',
+        type: 'SingleText',
+        property: { precision: 2 },
+      },
+      user,
+    );
+
+    expect(result).toEqual({
+      field: {
+        id: 'fld-created',
+        name: 'Новый столбец',
+        type: 'SingleText',
+        description: null,
+        property: { precision: 2 },
+      },
+    });
+  });
+
+  it('adds default checkbox icon when checkbox property is empty', async () => {
+    const requestSpy = jest.spyOn(service as any, 'request') as jest.Mock;
+    requestSpy.mockResolvedValue({
+      data: { id: 'fld-checkbox', name: 'Чекбокс' },
+    });
+
+    await service.createField(
+      'space-1',
+      'dst-1',
+      {
+        name: 'Чекбокс',
+        type: 'Checkbox',
+        property: {},
+      },
+      user,
+    );
+
+    expect(requestSpy).toHaveBeenCalledTimes(1);
+    const [calledUser, method, path, payload] = requestSpy.mock.calls[0] ?? [];
+    expect(calledUser).toEqual(user);
+    expect(method).toBe('POST');
+    expect(path).toBe('/spaces/space-1/datasheets/dst-1/fields');
+    expect(payload).toEqual({
+      name: 'Чекбокс',
+      type: 'Checkbox',
+      property: {
+        icon: 'check',
+      },
+    });
+  });
+
+  it('omits empty property for phone/email/url field types', async () => {
+    const requestSpy = jest.spyOn(service as any, 'request') as jest.Mock;
+    requestSpy.mockResolvedValue({
+      data: { id: 'fld-phone', name: 'Телефон' },
+    });
+
+    await service.createField(
+      'space-1',
+      'dst-1',
+      {
+        name: 'Телефон',
+        type: 'Phone',
+        property: {},
+      },
+      user,
+    );
+
+    expect(requestSpy).toHaveBeenCalledTimes(1);
+    const [calledUser, method, path, payload] = requestSpy.mock.calls[0] ?? [];
+    expect(calledUser).toEqual(user);
+    expect(method).toBe('POST');
+    expect(path).toBe('/spaces/space-1/datasheets/dst-1/fields');
+    expect(payload).toEqual({
+      name: 'Телефон',
+      type: 'Phone',
+    });
+  });
+
+  it('normalizes created records from the YAML response shape', async () => {
+    const requestSpy = jest.spyOn(service as any, 'request') as jest.Mock;
+    requestSpy.mockResolvedValue({
+      data: {
+        records: [
+          {
+            recordId: 'rec-1',
+            fields: { 'fld-title': 'Запуск MVP' },
+            createdAt: 1710000000000,
+            updatedAt: 1710000005000,
+          },
+        ],
+      },
+    });
+
+    const result = await service.createRecords(
+      'dst-1',
+      {
+        fieldKey: 'id',
+        records: [{ fields: { 'fld-title': 'Запуск MVP' } }],
+      },
+      user,
+    );
+
+    expect(result).toEqual({
+      items: [
+        {
+          recordId: 'rec-1',
+          fields: { 'fld-title': 'Запуск MVP' },
+          createdAt: 1710000000000,
+          updatedAt: 1710000005000,
+        },
+      ],
+    });
+  });
+
+  it('keeps MWS view fields authoritative and appends new fields beyond selectedFieldIds', async () => {
+    jest.spyOn(service, 'getNode').mockResolvedValue({
+      item: {
+        id: 'node-1',
+        name: 'Таблица',
+        type: 'Datasheet',
+        spaceId: 'space-1',
+        parentId: null,
+        path: ['Таблица'],
+        datasheetId: 'dst-1',
+        dstId: 'dst-1',
+        openInMwsUrl: 'https://tables.mws.ru/workbench/space-1/node-1',
+        children: [],
+      },
+    });
+    jest.spyOn(service, 'listFields').mockResolvedValue({
+      items: [
+        { id: 'fld-title', name: 'Название', type: 'SingleText' },
+        { id: 'fld-owner', name: 'Ответственный', type: 'SingleText' },
+        { id: 'fld-status', name: 'Статус', type: 'SingleText' },
+      ],
+    });
+    jest.spyOn(service, 'listViews').mockResolvedValue({
+      items: [{ id: 'view-1', name: 'Все', type: 'Grid' }],
+    });
+    const listRecordsSpy = jest.spyOn(service, 'listRecords').mockResolvedValue({
+      items: [
+        {
+          recordId: 'rec-1',
+          fields: {
+            'fld-title': 'Запуск MVP',
+            'fld-owner': 'Команда',
+            'fld-status': 'В работе',
+          },
+          createdAt: 1710000000000,
+          updatedAt: 1710000005000,
+        },
+      ],
+      pageNum: 1,
+      pageSize: 20,
+      total: 1,
+    });
+
+    const result = await service.resolveTableEmbed(
+      {
+        spaceId: 'space-1',
+        nodeId: 'node-1',
+        datasheetId: 'dst-1',
+        viewId: 'view-1',
+        selectedFieldIds: ['fld-title'],
+        pageSize: 20,
+        allowInlineEdit: true,
+      },
+      user,
+    );
+
+    expect(listRecordsSpy).toHaveBeenCalledWith(
+      'dst-1',
+      expect.not.objectContaining({
+        fields: expect.anything(),
+      }),
+      user,
+    );
+    expect(result.embed.fields.map((field) => field.id)).toEqual([
+      'fld-title',
+      'fld-owner',
+      'fld-status',
+    ]);
+  });
+
+  it('resolveTableEmbed bypasses stale fields cache to reflect externally deleted columns', async () => {
+    const staleCachedFields = {
+      items: [
+        { id: 'fld-title', name: 'Название', type: 'SingleText' },
+        { id: 'fld-removed', name: 'Удаленный столбец', type: 'SingleText' },
+      ],
+    };
+    redisService.getJson.mockImplementation((key: string) => {
+      if (typeof key === 'string' && key.includes('fields:dst-1:view-1')) {
+        return Promise.resolve(staleCachedFields);
+      }
+
+      return Promise.resolve(null);
+    });
+
+    const requestSpy = jest.spyOn(service as any, 'request') as jest.Mock;
+    requestSpy.mockImplementation((_user: unknown, method: string, path: string) => {
+      if (method === 'GET' && path === '/nodes/node-1') {
+        return Promise.resolve({
+          data: {
+            id: 'node-1',
+            name: 'Таблица',
+            type: 'Datasheet',
+            spaceId: 'space-1',
+            datasheetId: 'dst-1',
+          },
+        });
+      }
+
+      if (method === 'GET' && path === '/datasheets/dst-1/fields') {
+        return Promise.resolve({
+          data: {
+            fields: [
+              { id: 'fld-title', name: 'Название', type: 'SingleText' },
+            ],
+          },
+        });
+      }
+
+      if (method === 'GET' && path === '/datasheets/dst-1/views') {
+        return Promise.resolve({
+          data: {
+            views: [{ id: 'view-1', name: 'Все', type: 'Grid' }],
+          },
+        });
+      }
+
+      if (method === 'GET' && path === '/datasheets/dst-1/records') {
+        return Promise.resolve({
+          data: {
+            pageNum: 1,
+            pageSize: 20,
+            total: 1,
+            records: [
+              {
+                recordId: 'rec-1',
+                fields: {
+                  'fld-title': 'Запуск MVP',
+                  'fld-removed': '',
+                },
+              },
+            ],
+          },
+        });
+      }
+
+      return Promise.reject(new Error(`Unexpected request: ${method} ${path}`));
+    });
+
+    const result = await service.resolveTableEmbed(
+      {
+        spaceId: 'space-1',
+        nodeId: 'node-1',
+        datasheetId: 'dst-1',
+        viewId: 'view-1',
+        pageSize: 20,
+        allowInlineEdit: true,
+      },
+      user,
+    );
+
+    expect(result.embed.fields.map((field) => field.id)).toEqual(['fld-title']);
+    expect(requestSpy).toHaveBeenCalledWith(
+      user,
+      'GET',
+      '/datasheets/dst-1/fields',
+      undefined,
+      { viewId: 'view-1' },
+    );
+  });
+});
