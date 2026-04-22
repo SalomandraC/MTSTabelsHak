@@ -107,6 +107,24 @@ const DIAGRAM_ARCHITECT_PROMPT = [
   'Верни ТОЛЬКО код Mermaid без пояснений.',
 ].join('\n');
 
+const AI_LOADING_PHRASES = [
+  '🧠 Ищу информацию',
+  '☕ Завариваю чай',
+  '🧭 Сверяю контекст',
+  '💡 Собираю подсказки',
+  '📊 Проверяю таблицы',
+  '✍️ Формирую ответ',
+];
+
+const AI_STARTER_SUGGESTIONS = [
+  'Попросите график или диаграмму по текущей таблице.',
+  'Сделайте краткий анализ страницы и выделите главное.',
+  'Структурируйте документ: заголовки, разделы и выводы.',
+  'Сравните два документа и покажите отличия.',
+  'Сформируйте отчет по текущему материалу.',
+  'Подскажите, как связать эту страницу с другими страницами.',
+];
+
 function dispatchTableMutation(detail: {
   datasheetId: string;
   op: 'create_records' | 'add_table_column' | 'refresh';
@@ -850,6 +868,9 @@ export function AiInlineCopilot({
   const [structurePlan, setStructurePlan] = useState<StructureInstruction[]>([]);
   const [status, setStatus] = useState('');
   const [isBusy, setIsBusy] = useState(false);
+  const [loadingPhraseIndex, setLoadingPhraseIndex] = useState(0);
+  const [starterSuggestionIndex, setStarterSuggestionIndex] = useState(0);
+  const [starterSuggestionVisible, setStarterSuggestionVisible] = useState(true);
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [createdPage, setCreatedPage] = useState<{ id: string; title: string; href: string; status?: string } | null>(null);
   const [createdAnalysisPage, setCreatedAnalysisPage] = useState<{ id: string; title: string; href: string; status?: string } | null>(null);
@@ -873,6 +894,46 @@ export function AiInlineCopilot({
       setSelectedContextId('detected');
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isBusy) {
+      setLoadingPhraseIndex(0);
+      return;
+    }
+
+    setLoadingPhraseIndex(Math.floor(Math.random() * AI_LOADING_PHRASES.length));
+    const interval = window.setInterval(() => {
+      setLoadingPhraseIndex((current) => (current + 1) % AI_LOADING_PHRASES.length);
+    }, 1400);
+
+    return () => window.clearInterval(interval);
+  }, [isBusy]);
+
+  useEffect(() => {
+    if (isBusy || prompt.trim().length > 0) {
+      setStarterSuggestionVisible(false);
+      setStarterSuggestionIndex(0);
+      return;
+    }
+
+    setStarterSuggestionIndex(Math.floor(Math.random() * AI_STARTER_SUGGESTIONS.length));
+    setStarterSuggestionVisible(true);
+    const timeouts: number[] = [];
+    const interval = window.setInterval(() => {
+      setStarterSuggestionVisible(false);
+      const timeout = window.setTimeout(() => {
+        setStarterSuggestionIndex((current) => (current + 1) % AI_STARTER_SUGGESTIONS.length);
+        setStarterSuggestionVisible(true);
+      }, 180);
+
+      timeouts.push(timeout);
+    }, 2400);
+
+    return () => {
+      window.clearInterval(interval);
+      timeouts.forEach((timeout) => window.clearTimeout(timeout));
+    };
+  }, [isBusy, prompt]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -1019,7 +1080,7 @@ export function AiInlineCopilot({
 
   const withBusy = async <T,>(job: (signal: AbortSignal) => Promise<T>) => {
     setIsBusy(true);
-    setStatus('Выполняю команду...');
+    setStatus(AI_LOADING_PHRASES[0]);
     setCreatedPage(null);
 
     const controller = new AbortController();
@@ -1064,6 +1125,8 @@ export function AiInlineCopilot({
   const refreshTable = (datasheetId: string) => {
     dispatchTableMutation({ datasheetId, op: 'refresh' });
   };
+
+  const displayStatus = isBusy ? AI_LOADING_PHRASES[loadingPhraseIndex] ?? AI_LOADING_PHRASES[0] : status;
 
   const fetchAiAnswerWithTableRecovery = async (
     payload: Parameters<typeof wikiliveApi.aiChat>[0],
@@ -2163,20 +2226,34 @@ export function AiInlineCopilot({
       </div>
 
       <div className="mb-2 flex gap-2">
-        <textarea
-          ref={promptInputRef}
-          value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              void handleSend();
-            }
-          }}
-          placeholder="Опишите, что нужно сделать с таблицей или текстом"
-          className="min-h-[72px] w-full resize-y rounded-md border border-editor-border-subtle bg-white px-3 py-2 text-sm outline-none focus:border-[#d70032]"
-          disabled={isBusy}
-        />
+        <div className="relative flex-1">
+          <textarea
+            ref={promptInputRef}
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                void handleSend();
+              }
+            }}
+            placeholder=""
+            className="min-h-[72px] w-full resize-y rounded-md border border-editor-border-subtle bg-white px-3 py-2 text-sm outline-none focus:border-[#d70032]"
+            disabled={isBusy}
+          />
+          {!isBusy && !prompt.trim() ? (
+            <div className="pointer-events-none absolute inset-0 flex items-start px-3 py-2">
+              <span
+                className={[
+                  'max-w-full truncate text-sm text-[#98a2b3] transition-opacity duration-200',
+                  starterSuggestionVisible ? 'opacity-70' : 'opacity-0',
+                ].join(' ')}
+              >
+                {AI_STARTER_SUGGESTIONS[starterSuggestionIndex] ?? AI_STARTER_SUGGESTIONS[0]}
+              </span>
+            </div>
+          ) : null}
+        </div>
         <button
           type="button"
           className="inline-flex h-9 w-9 items-center justify-center self-end rounded-md border border-[#d70032] bg-[#d70032] text-white hover:bg-[#b8002b] disabled:cursor-not-allowed disabled:opacity-50"
@@ -2251,7 +2328,7 @@ export function AiInlineCopilot({
 
       </div>
 
-      {status ? <p className="mb-2 text-xs text-editor-text-tertiary">{status}</p> : null}
+      {displayStatus ? <p className="mb-2 text-xs text-editor-text-tertiary">{displayStatus}</p> : null}
 
       <div className="max-h-44 overflow-auto rounded-md border border-editor-border-subtle bg-[#fafbfd] p-2 text-xs text-editor-text-primary">
         {createdPage ? (

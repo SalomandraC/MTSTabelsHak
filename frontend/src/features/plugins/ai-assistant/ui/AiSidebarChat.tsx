@@ -55,12 +55,21 @@ type AiSidebarChatProps = {
 };
 
 const AI_LOADING_PHRASES = [
-  'Думаем над ответом',
-  'Собираем контекст',
-  'Векторизуем данные',
-  'Сверяем документы',
-  'Проверяем выбранную область',
-  'Ищем релевантные фрагменты',
+  '🧠 Думаем над ответом',
+  '☕ Завариваем чай',
+  '🧭 Собираем контекст',
+  '🔎 Сверяем документы',
+  '🧪 Проверяем выбранную область',
+  '⚡ Ищем релевантные фрагменты',
+];
+
+const AI_STARTER_PROMPTS = [
+  'Попросите график или диаграмму по текущей странице.',
+  'Спросите краткий анализ документа с выводами.',
+  'Попросите сравнить этот документ с другим.',
+  'Попросите выделить важные заголовки и структуру.',
+  'Попросите собрать отчет по выбранному контексту.',
+  'Попросите подсказать связанные страницы и ссылки.',
 ];
 
 const MAX_CURRENT_FILE_MARKDOWN = 12000;
@@ -313,6 +322,7 @@ export function AiSidebarChat({
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState('');
   const [loadingPhraseIndex, setLoadingPhraseIndex] = useState(0);
+  const [starterPromptIndex, setStarterPromptIndex] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const contextRowRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -524,6 +534,20 @@ export function AiSidebarChat({
 
     return () => window.clearInterval(interval);
   }, [isSending]);
+
+  useEffect(() => {
+    if (messages.length > 0 || draft.trim().length > 0 || isSending) {
+      setStarterPromptIndex(0);
+      return;
+    }
+
+    setStarterPromptIndex(Math.floor(Math.random() * AI_STARTER_PROMPTS.length));
+    const interval = window.setInterval(() => {
+      setStarterPromptIndex((current) => (current + 1) % AI_STARTER_PROMPTS.length);
+    }, 2400);
+
+    return () => window.clearInterval(interval);
+  }, [draft, isSending, messages.length]);
 
   useEffect(() => {
     const row = contextRowRef.current;
@@ -844,12 +868,6 @@ export function AiSidebarChat({
         <>
           <div className="min-h-0 flex-1 overflow-y-auto bg-[#fafbfd] px-4 py-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             <div className="space-y-3">
-              {messages.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-editor-border-subtle bg-white px-4 py-6 text-sm text-editor-text-tertiary">
-                  Спросите ИИ о текущей странице или добавьте другой документ для сравнения.
-                </div>
-              ) : null}
-
               {messages.map((message) => (
                 <ChatBubble key={message.id} message={message} />
               ))}
@@ -1096,9 +1114,13 @@ export function AiSidebarChat({
                     void handleSend();
                   }
                 }}
-                placeholder="Спросите про страницу или сравните документы"
+                placeholder={
+                  isSending || draft.trim().length > 0
+                    ? 'Спросите про страницу или сравните документы'
+                    : AI_STARTER_PROMPTS[starterPromptIndex] ?? AI_STARTER_PROMPTS[0]
+                }
                 rows={2}
-                className="min-h-14 max-h-36 flex-1 resize-none rounded-xl border border-editor-border-subtle bg-white px-4 py-3 text-sm outline-none transition-colors hover:border-[#d70032] focus:border-[#d70032]"
+                className="min-h-14 max-h-36 flex-1 resize-none rounded-xl border border-editor-border-subtle bg-white px-4 py-3 text-sm outline-none transition-colors placeholder:text-[#98a2b3] placeholder:opacity-70 hover:border-[#d70032] focus:border-[#d70032]"
                 disabled={isSending || !enabled || hasPendingContext}
               />
               <button
