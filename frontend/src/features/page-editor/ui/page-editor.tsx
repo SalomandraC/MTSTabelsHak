@@ -11,6 +11,7 @@ import { usePlugins } from '../../plugins';
 import type { PageHistoryCheckpoint, WikiPage } from '../../../shared/api/wikilive';
 import type { CommentThreadView } from '../model/use-page-comments';
 import { createPageEditorExtensions } from '../model/editor-config';
+import { calculateVerticalCaretScrollDelta } from '../model/editor-autoscroll';
 import { usePageEditorController } from '../model/use-page-editor-controller';
 import { CommentAnchorOverlay } from './comment-anchor-overlay';
 import { FloatingToolbar } from './floating-toolbar';
@@ -91,6 +92,7 @@ type LongPressStartState = {
 const A4_WIDTH_CM = 21;
 const A4_HEIGHT_CM = 29.7;
 const PAGE_BREAK_GAP_PX = 30;
+const CARET_SCROLL_PADDING_PX = 96;
 
 function getPageHeightPx(frameElement: HTMLElement | null) {
   const frameWidth = frameElement?.getBoundingClientRect().width ?? 0;
@@ -99,6 +101,61 @@ function getPageHeightPx(frameElement: HTMLElement | null) {
   }
 
   return A4_HEIGHT_CM * (96 / 2.54);
+}
+
+function getEditorScrollContainer(surfaceElement: HTMLElement | null) {
+  return surfaceElement?.closest('.scroll-area') as HTMLElement | null;
+}
+
+function keepCaretVisible(editor: Editor, surfaceElement: HTMLElement | null) {
+  if (!editor.isFocused) {
+    return;
+  }
+
+  const scrollContainer = getEditorScrollContainer(surfaceElement);
+
+  try {
+    const caretPosition = editor.state.selection.head;
+    const caretCoords = editor.view.coordsAtPos(caretPosition);
+
+    if (scrollContainer) {
+      const delta = calculateVerticalCaretScrollDelta(
+        {
+          top: scrollContainer.getBoundingClientRect().top,
+          bottom: scrollContainer.getBoundingClientRect().bottom,
+        },
+        {
+          top: caretCoords.top,
+          bottom: caretCoords.bottom,
+        },
+        CARET_SCROLL_PADDING_PX,
+      );
+
+      if (delta !== 0) {
+        scrollContainer.scrollTop += delta;
+      }
+
+      return;
+    }
+
+    const delta = calculateVerticalCaretScrollDelta(
+      {
+        top: 0,
+        bottom: window.innerHeight,
+      },
+      {
+        top: caretCoords.top,
+        bottom: caretCoords.bottom,
+      },
+      CARET_SCROLL_PADDING_PX,
+    );
+
+    if (delta !== 0) {
+      window.scrollBy({ top: delta, left: 0, behavior: 'auto' });
+    }
+  } catch {
+    // coordsAtPos can briefly fail during intermediate document updates.
+  }
 }
 
 function clearAutoPageBreakSpacers(contentElement: HTMLElement) {
@@ -972,6 +1029,40 @@ function LivePageEditor({
   useEffect(() => {
     controller.editor?.setEditable(effectiveCanEdit);
   }, [controller.editor, effectiveCanEdit]);
+
+  useEffect(() => {
+    if (!controller.editor) {
+      return;
+    }
+
+    let animationFrame: number | null = null;
+
+    const scheduleCaretVisibilitySync = () => {
+      if (animationFrame !== null) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+
+      animationFrame = window.requestAnimationFrame(() => {
+        animationFrame = null;
+        keepCaretVisible(controller.editor!, editorSurfaceRef.current);
+      });
+    };
+
+    scheduleCaretVisibilitySync();
+    controller.editor.on('update', scheduleCaretVisibilitySync);
+    controller.editor.on('selectionUpdate', scheduleCaretVisibilitySync);
+    controller.editor.on('focus', scheduleCaretVisibilitySync);
+
+    return () => {
+      if (animationFrame !== null) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+
+      controller.editor.off('update', scheduleCaretVisibilitySync);
+      controller.editor.off('selectionUpdate', scheduleCaretVisibilitySync);
+      controller.editor.off('focus', scheduleCaretVisibilitySync);
+    };
+  }, [controller.editor, effectiveViewMode]);
 
   useEffect(() => {
     if (!isAiInlineChatEnabled) {
