@@ -48,12 +48,14 @@ type ContextOption = {
   kind: 'text' | 'table' | 'all';
   datasheetId?: string;
   viewId?: string;
+  tableTitle?: string;
 };
 
 type ActiveContext = {
   kind: 'text' | 'table' | 'all';
   datasheetId?: string;
   viewId?: string;
+  tableTitle?: string;
   tableSnapshot?: TableSnapshot | null;
 };
 
@@ -221,6 +223,38 @@ function getStoredTableSnapshot(datasheetId?: string | null): TableSnapshot | nu
   return (globalStore.__wikiliveTableSnapshots?.[datasheetId] ?? null) as TableSnapshot | null;
 }
 
+function resolveTableTitle(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function findEmbeddedTableTitle(editor: Editor | null, datasheetId?: string | null): string | null {
+  if (!editor?.state?.doc?.descendants || !datasheetId) {
+    return null;
+  }
+
+  let title: string | null = null;
+
+  editor.state.doc.descendants((node) => {
+    if (node.type.name !== 'mwsTableEmbed') {
+      return true;
+    }
+
+    if (String(node.attrs?.datasheetId ?? '') !== datasheetId) {
+      return true;
+    }
+
+    title = resolveTableTitle(node.attrs?.title);
+    return false;
+  });
+
+  return title;
+}
+
 function collectTableOptions(editor: Editor | null): ContextOption[] {
   if (!editor?.state?.doc?.descendants) {
     return [];
@@ -241,13 +275,16 @@ function collectTableOptions(editor: Editor | null): ContextOption[] {
 
     seen.add(datasheetId);
     const viewId = typeof node.attrs?.viewId === 'string' ? String(node.attrs.viewId) : undefined;
+    const tableTitle = resolveTableTitle(node.attrs?.title);
+    const shortId = `${datasheetId.slice(0, 8)}${viewId ? ` · view ${viewId.slice(0, 6)}` : ''}`;
 
     options.push({
       id: `table:${datasheetId}`,
       kind: 'table',
       datasheetId,
       viewId,
-      label: `Таблица ${datasheetId.slice(0, 8)}${viewId ? ` · view ${viewId.slice(0, 6)}` : ''}`,
+      tableTitle: tableTitle ?? undefined,
+      label: tableTitle ? `Таблица: ${tableTitle}` : `Таблица ${shortId}`,
     });
 
     return true;
@@ -995,10 +1032,12 @@ export function AiInlineCopilot({
   const activeContext = useMemo<ActiveContext>(() => {
     if (selectedContextId === 'detected') {
       if (anchor?.target === 'table' && anchor.datasheetId) {
+        const embeddedTitle = findEmbeddedTableTitle(editor, anchor.datasheetId);
         return {
           kind: 'table',
           datasheetId: anchor.datasheetId,
           viewId: anchor.viewId ?? undefined,
+          tableTitle: embeddedTitle ?? undefined,
           tableSnapshot: anchor.tableSnapshot ?? getStoredTableSnapshot(anchor.datasheetId),
         };
       }
@@ -1024,9 +1063,10 @@ export function AiInlineCopilot({
       kind: 'table',
       datasheetId: selected.datasheetId,
       viewId: selected.viewId,
+      tableTitle: selected.tableTitle,
       tableSnapshot: getStoredTableSnapshot(selected.datasheetId),
     };
-  }, [anchor, contextOptions, selectedContextId]);
+  }, [anchor, contextOptions, editor, selectedContextId]);
 
   const modeLabel = useMemo(() => {
     if (activeContext.kind === 'all') {
@@ -1034,7 +1074,10 @@ export function AiInlineCopilot({
     }
 
     if (activeContext.kind === 'table') {
-      return `[Таблица: ${activeContext.datasheetId ?? 'unknown'}]`;
+      const tableLabel = activeContext.tableTitle
+        ? activeContext.tableTitle
+        : activeContext.datasheetId ?? 'unknown';
+      return `[Таблица: ${tableLabel}]`;
     }
 
     return '[Текст]';
