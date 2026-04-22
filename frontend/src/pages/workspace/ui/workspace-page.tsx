@@ -50,7 +50,7 @@ import {
   type WorkspaceRealtimeEvent,
   wikiliveApi,
 } from '../../../shared/api/wikilive';
-import { DocumentLinkGraph, type DocumentGraphEdge, type DocumentGraphPage } from './document-link-graph';
+import { DocumentLinkGraph, type DocumentGraphEdge, type DocumentGraphPage, type DocumentLinkGraphRef } from './document-link-graph';
 import { CreateTemplateFromPageModal } from './create-template-from-page-modal';
 import { WorkspaceAccessSummary } from './workspace-access-summary';
 import { PageTemplateMarketplaceModal } from './page-template-marketplace-modal';
@@ -66,12 +66,45 @@ import {
   RIGHT_SIDEBAR_MIN_WIDTH,
   useResizableSidebar,
 } from './workspace-layout';
+import { useGraphRealtime } from '../../../shared/hooks/use-graph-realtime';
 
 const SELECTED_SPACE_STORAGE_KEY = 'wikilive:selected-space-id';
 const DEFAULT_TEMPLATE_PAGE_SIZE = 20;
 const WHATS_NEW_BANNER_DURATION_SEC = 30;
 const WHATS_NEW_BANNER_STORAGE_KEY = 'wikilive:disable-whats-new-banner';
 const WHATS_NEW_BANNER_ENABLED = (import.meta.env.VITE_ENABLE_WHATS_NEW_BANNER ?? 'true') !== 'false';
+
+/** Стабильная сигнатура исходящих /страница-ссылок (учитывает смену целевой страницы, не только число) */
+function buildPageLinkSignature(editor: Editor): string {
+  const counts = new Map<string, number>();
+  editor.state.doc.descendants((node) => {
+    if (node.type.name === 'pageLink' && node.attrs?.pageId) {
+      const id = String(node.attrs.pageId);
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    return true;
+  });
+  return [...counts.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([id, c]) => `${id}:${c}`)
+    .join('|');
+}
+
+function buildOutgoingEdgesFromEditor(editor: Editor, sourcePageId: string): DocumentGraphEdge[] {
+  const counts = new Map<string, number>();
+  editor.state.doc.descendants((node) => {
+    if (node.type.name === 'pageLink' && node.attrs?.pageId) {
+      const id = String(node.attrs.pageId);
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    return true;
+  });
+  return Array.from(counts.entries()).map(([targetPageId, mentionCount]) => ({
+    sourcePageId,
+    targetPageId,
+    mentionCount,
+  }));
+}
 
 function getShareUrl(spaceId: string, pageId: string | null, readOnly = false) {
   const url = new URL(window.location.href);
@@ -1024,9 +1057,90 @@ export function WorkspacePage() {
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [outgoingLinks, setOutgoingLinks] = useState<OutgoingLink[]>([]);
   const [graphEdges, setGraphEdges] = useState<DocumentGraphEdge[]>([]);
-  const pageLinkCountRef = useRef<number>(0);
-  const graphRefreshTimerRef = useRef<number | null>(null);
+  // Стадированные (локальные, пока не подтвердились сервером) связи
+  const [stagedEdges, setStagedEdges] = useState<DocumentGraphEdge[]>([]);
+  const pageLinkSignatureRef = useRef<string>('');
+  const localGraphDebounceRef = useRef<number | null>(null);
+  const activePageIdRef = useRef<string | null>(null);
+  const activeEditorRef = useRef<Editor | null>(null);
+  const isDocumentGraphEnabledRef = useRef(false);
   const refreshDocumentGraphRef = useRef<(() => Promise<void>) | null>(null);
+  const graphRef = useRef<DocumentLinkGraphRef>(null);
+
+  // Добавить локальную staged-связь (показывается мгновенно, синхронизируется позже)
+  const stageAddEdge = useCallback((edge: DocumentGraphEdge) => {
+    setStagedEdges((prev) => {
+      const exists = prev.some((e) => e.sourcePageId === edge.sourcePageId && e.targetPageId === edge.targetPageId);
+      if (exists) return prev;
+      return [...prev, edge];
+    });
+  }, []);
+
+  const stageRemoveEdge = useCallback((edge: { sourcePageId: string; targetPageId: string }) => {
+    setStagedEdges((prev) => prev.filter((e) => !(e.sourcePageId === edge.sourcePageId && e.targetPageId === edge.targetPageId)));
+  }, []);
+
+  // Для быстрой отладки / интеграции — экспортируем функции стадирования в window
+  useEffect(() => {
+    (window as any).__wikilive_stageAddEdge = stageAddEdge;
+    (window as any).__wikilive_stageRemoveEdge = stageRemoveEdge;
+    return () => {
+      try {
+        delete (window as any).__wikilive_stageAddEdge;
+        delete (window as any).__wikilive_stageRemoveEdge;
+      } catch {}
+    };
+  }, [stageAddEdge, stageRemoveEdge]);
+
+  // Сохранение stagedEdges в localStorage для устойчивости между перезагрузками
+  useEffect(() => {
+    if (!selectedSpaceId) return;
+    const key = `wikilive:staged-edges:${selectedSpaceId}`;
+    try {
+      window.localStorage.setItem(key, JSON.stringify(stagedEdges));
+    } catch {}
+  }, [stagedEdges, selectedSpaceId]);
+
+  // Загрузка stagedEdges при переключении пространства
+  useEffect(() => {
+    if (!selectedSpaceId) return;
+    const key = `wikilive:staged-edges:${selectedSpaceId}`;
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw) as DocumentGraphEdge[];
+        setStagedEdges(Array.isArray(parsed) ? parsed : []);
+      } else {
+        setStagedEdges([]);
+      }
+    } catch {
+      setStagedEdges([]);
+    }
+  }, [selectedSpaceId]);
+  
+  // Обработчик событий от useGraphRealtime: применяем быстрые обновления и очищаем staged
+  const handleGraphChange = useCallback((event: any) => {
+    if (!graphRef.current) return;
+
+    if (event.type === 'links_updated') {
+      graphRef.current.updatePageLinks(event.sourcePageId, event.edges);
+
+      // удалить из staged те связи, которые подтвердил сервер
+      setStagedEdges((prev) => prev.filter((e) => {
+        if (e.sourcePageId !== event.sourcePageId) return true;
+        return !event.edges.some((se: any) => se.targetPageId === e.targetPageId);
+      }));
+    } else if (event.type === 'page_added') {
+      graphRef.current.addPage({ id: event.pageId, title: event.title, fileSizeBytes: event.fileSizeBytes });
+    } else if (event.type === 'page_removed') {
+      graphRef.current.removePage(event.pageId);
+    } else if (event.type === 'full_refresh_required') {
+      void refreshDocumentGraphRef.current?.();
+    }
+  }, []);
+
+  // Подключить realtime слушатель для быстрого отображения изменений графа
+  useGraphRealtime(selectedSpaceId, handleGraphChange);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreatingTablePage, setIsCreatingTablePage] = useState(false);
   const [isDeletingTable, setIsDeletingTable] = useState(false);
@@ -1047,6 +1161,21 @@ export function WorkspacePage() {
   const [isPluginsModalOpen, setIsPluginsModalOpen] = useState(false);
   const [activeEditor, setActiveEditor] = useState<Editor | null>(null);
   const pendingImportContentRef = useRef<{ pageId: string; content: Content } | null>(null);
+
+  // Объединяем server edges + staged edges (staged показываются, если отсутствуют на сервере)
+  const mergedGraphEdges = useMemo(() => {
+    const map = new Map<string, DocumentGraphEdge>();
+    for (const e of graphEdges) {
+      map.set(`${e.sourcePageId}:${e.targetPageId}`, e);
+    }
+    for (const s of stagedEdges) {
+      const key = `${s.sourcePageId}:${s.targetPageId}`;
+      if (!map.has(key)) {
+        map.set(key, s);
+      }
+    }
+    return Array.from(map.values());
+  }, [graphEdges, stagedEdges]);
   const [documentStateEncoder, setDocumentStateEncoder] = useState<(() => string | null) | null>(null);
   const [documentStateRestorer, setDocumentStateRestorer] = useState<((value: string) => boolean) | null>(null);
   const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>('toolbar');
@@ -1121,26 +1250,30 @@ export function WorkspacePage() {
   const canEditActivePage = activePage?.access?.capabilities.canEdit ?? true;
   const canChooseShareMode = (accessDraft?.viewAccess ?? activePage?.access?.policy.viewAccess) === 'link_holders';
 
-  const countPageLinks = useCallback((editor: Editor) => {
-    let count = 0;
-    editor.state.doc.descendants((node) => {
-      if (node.type.name === 'pageLink') {
-        count += 1;
-      }
-      return true;
-    });
-    return count;
-  }, []);
-
-  const scheduleGraphRefresh = useCallback(() => {
-    if (graphRefreshTimerRef.current) {
-      window.clearTimeout(graphRefreshTimerRef.current);
+  const scheduleLocalGraphFromEditor = useCallback(() => {
+    if (localGraphDebounceRef.current) {
+      window.clearTimeout(localGraphDebounceRef.current);
     }
 
-    graphRefreshTimerRef.current = window.setTimeout(() => {
-      void refreshDocumentGraphRef.current?.();
-      graphRefreshTimerRef.current = null;
-    }, 3000);
+    localGraphDebounceRef.current = window.setTimeout(() => {
+      localGraphDebounceRef.current = null;
+      if (!isDocumentGraphEnabledRef.current) {
+        return;
+      }
+
+      const pageId = activePageIdRef.current;
+      const editor = activeEditorRef.current;
+      if (!pageId || !editor) {
+        return;
+      }
+
+      const g = graphRef.current;
+      if (!g) {
+        return;
+      }
+
+      g.updatePageLinks(pageId, buildOutgoingEdgesFromEditor(editor, pageId));
+    }, 150);
   }, []);
 
   const isHistoryPreviewActive = Boolean(historyPreviewCheckpoint);
@@ -1157,31 +1290,41 @@ export function WorkspacePage() {
   const isCommentsEnabled = isPluginEnabled('comments');
 
   useEffect(() => {
+    activePageIdRef.current = activePageId;
+  }, [activePageId]);
+
+  useEffect(() => {
+    isDocumentGraphEnabledRef.current = isDocumentGraphEnabled;
+  }, [isDocumentGraphEnabled]);
+
+  useEffect(() => {
     if (!activeEditor) {
+      activeEditorRef.current = null;
       return;
     }
 
-    const initialCount = countPageLinks(activeEditor);
-    pageLinkCountRef.current = initialCount;
+    activeEditorRef.current = activeEditor;
+    pageLinkSignatureRef.current = buildPageLinkSignature(activeEditor);
 
     const handleTransaction = () => {
-      const currentCount = countPageLinks(activeEditor);
-      if (currentCount !== pageLinkCountRef.current) {
-        pageLinkCountRef.current = currentCount;
-        scheduleGraphRefresh();
+      const nextSignature = buildPageLinkSignature(activeEditor);
+      if (nextSignature === pageLinkSignatureRef.current) {
+        return;
       }
+      pageLinkSignatureRef.current = nextSignature;
+      scheduleLocalGraphFromEditor();
     };
 
     activeEditor.on('transaction', handleTransaction);
 
     return () => {
       activeEditor.off('transaction', handleTransaction);
-      if (graphRefreshTimerRef.current) {
-        window.clearTimeout(graphRefreshTimerRef.current);
-        graphRefreshTimerRef.current = null;
+      if (localGraphDebounceRef.current) {
+        window.clearTimeout(localGraphDebounceRef.current);
+        localGraphDebounceRef.current = null;
       }
     };
-  }, [activeEditor, countPageLinks, scheduleGraphRefresh]);
+  }, [activeEditor, scheduleLocalGraphFromEditor]);
   const isTimeMachineEnabled = isPluginEnabled('time-machine');
   const isNavigationEnabled = isWorkspaceSidebarEnabled('navigation');
   const isAiSidebarEnabled = isWorkspaceSidebarEnabled('sidebar');
@@ -1346,7 +1489,13 @@ export function WorkspacePage() {
       }),
     );
 
-    setGraphEdges(responses.flat());
+    const serverEdges = responses.flat();
+    setGraphEdges(serverEdges);
+
+    // Очистить staged-записи, которые теперь присутствуют на сервере
+    setStagedEdges((prev) => prev.filter((e) => {
+      return !serverEdges.some((se) => se.sourcePageId === e.sourcePageId && se.targetPageId === e.targetPageId);
+    }));
   }, []);
 
   const refreshTree = useCallback(
@@ -1808,12 +1957,29 @@ export function WorkspacePage() {
         }
 
         if (event.type === 'page_updated') {
-          void applyPageUpdate(event.pageId);
-
-          try {
-            void refreshDocumentGraphRef.current?.();
-          } catch {
+          if (isDocumentGraphEnabled) {
+            void wikiliveApi
+              .getOutgoingLinks(event.pageId)
+              .then((response) => {
+                const g = graphRef.current;
+                if (!g) {
+                  return;
+                }
+                g.updatePageLinks(
+                  event.pageId,
+                  response.items.map((link) => ({
+                    sourcePageId: event.pageId,
+                    targetPageId: link.targetPageId,
+                    mentionCount: link.mentionCount,
+                  })),
+                );
+              })
+              .catch(() => {
+                void refreshDocumentGraphRef.current?.();
+              });
           }
+
+          void applyPageUpdate(event.pageId);
         }
       },
     });
@@ -1821,7 +1987,7 @@ export function WorkspacePage() {
     return () => {
       channel.close();
     };
-  }, [applyPageAccessUpdate, applyPageUpdate, selectedSpaceId]);
+  }, [applyPageAccessUpdate, applyPageUpdate, isDocumentGraphEnabled, selectedSpaceId]);
 
   useEffect(() => {
     if (!selectedSpaceId) {
@@ -3462,9 +3628,10 @@ export function WorkspacePage() {
               <div className="mt-2">
                 {isDocumentGraphEnabled ? (
                   <DocumentLinkGraph
+                    ref={graphRef}
                     pages={flattenWorkspacePages(tree)}
                     activePageId={activePageId}
-                    edges={graphEdges}
+                    edges={mergedGraphEdges}
                     onSelectPage={handleSelectPage}
                     onRefreshGraph={refreshDocumentGraph}
                   />

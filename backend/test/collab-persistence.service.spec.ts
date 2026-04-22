@@ -23,6 +23,9 @@ describe('CollabPersistenceService', () => {
     const service = new CollabPersistenceService(
       prisma,
       { extractFromProsemirrorJson: jest.fn() } as any,
+      { indexPage: jest.fn() } as any,
+      { autoResolveMissingAnchorsAfterRestore: jest.fn() } as any,
+      { broadcastPageUpdated: jest.fn() } as any,
       { add: jest.fn() } as any,
     );
     jest.spyOn(service, 'storeDocument').mockResolvedValue(undefined);

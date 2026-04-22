@@ -15,6 +15,7 @@ import { PrismaService } from 'src/infra/prisma/prisma.service';
 import { CommentsService } from 'src/comments/comments.service';
 import { DocumentIndexingService } from 'src/links/document-indexing.service';
 import { ContextIndexingService } from 'src/context-engine/context-indexing.service';
+import { RealtimeService } from 'src/realtime/realtime.service';
 
 @Injectable()
 export class CollabPersistenceService {
@@ -23,6 +24,7 @@ export class CollabPersistenceService {
     private readonly indexingService: DocumentIndexingService,
     private readonly contextIndexingService: ContextIndexingService,
     private readonly commentsService: CommentsService,
+    private readonly realtimeService: RealtimeService,
     @InjectQueue(DOCUMENT_MAINTENANCE_QUEUE) private readonly queue: Queue,
   ) {}
 
@@ -288,6 +290,14 @@ export class CollabPersistenceService {
         )?.lastSnapshotVersion ?? 0n,
       ),
     });
+
+    const pageNode = await this.prisma.wikiNode.findUnique({
+      where: { id: pageId },
+      select: { spaceId: true },
+    });
+    if (pageNode) {
+      this.realtimeService.broadcastPageUpdated(pageNode.spaceId, pageId);
+    }
   }
 
   private mapTrigger(trigger: string): CheckpointTrigger {

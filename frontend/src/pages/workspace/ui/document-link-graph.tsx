@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import { ChevronDown, ChevronRight, RefreshCcw, ZoomIn, Maximize2, X } from 'lucide-react';
 import cytoscape from 'cytoscape';
 import cola from 'cytoscape-cola';
@@ -24,6 +24,16 @@ export type DocumentGraphPage = {
   title: string;
   fileSizeBytes?: number;
 };
+
+/** Методы для управления графом в реал-тайме */
+export interface DocumentLinkGraphRef {
+  /** Обновить ссылки для конкретной страницы (быстрое инкрементальное обновление) */
+  updatePageLinks: (sourcePageId: string, newEdges: DocumentGraphEdge[]) => void;
+  /** Добавить новую страницу в граф */
+  addPage: (page: DocumentGraphPage) => void;
+  /** Удалить страницу из графа */
+  removePage: (pageId: string) => void;
+}
 
 type DocumentLinkGraphProps = {
   pages: DocumentGraphPage[];
@@ -143,7 +153,7 @@ function updateSelection(cy: cytoscape.Core, activePageId: string | null, edges:
 
 function updateGraphElements(cy: cytoscape.Core, elements: cytoscape.ElementDefinition[]) {
   const incomingNodeIds = new Set<string>();
-  const incomingEdgeIds = new Set<string>();
+  const incomingEdgePairs = new Set<string>();
 
   elements.forEach((element) => {
     if (!element.data?.id) {
@@ -151,42 +161,169 @@ function updateGraphElements(cy: cytoscape.Core, elements: cytoscape.ElementDefi
     }
 
     if (element.data.source) {
-      incomingEdgeIds.add(element.data.id.toString());
+      incomingEdgePairs.add(`${element.data.source}:${element.data.target}`);
     } else {
       incomingNodeIds.add(element.data.id.toString());
     }
   });
 
   cy.batch(() => {
+    // Remove nodes that are gone
     cy.nodes().filter((node) => !incomingNodeIds.has(node.id())).remove();
-    cy.edges().filter((edge) => !incomingEdgeIds.has(edge.id())).remove();
+
+    // Remove edges by source:target pairs that are not present in incoming set
+    cy.edges()
+      .filter((edge) => {
+        const d = edge.data();
+        return !incomingEdgePairs.has(`${d.source}:${d.target}`);
+      })
+      .remove();
 
     elements.forEach((element) => {
       if (!element.data?.id) {
         return;
       }
 
-      const existing = cy.getElementById(element.data.id.toString());
-      if (existing.nonempty()) {
-        existing.data(element.data);
+      if (element.data.source) {
+        // edge element - find by source+target
+        const existing = cy
+          .edges()
+          .filter((edge) => {
+            const d = edge.data();
+            return d.source === element.data.source && d.target === element.data.target;
+          })
+          .first();
+
+        if (existing.nonempty()) {
+          existing.data(element.data);
+        } else {
+          // ensure stable id based on source:target
+          const id = `edge-${element.data.source}-${element.data.target}`;
+          cy.add({ ...element, data: { ...element.data, id } });
+        }
       } else {
-        cy.add(element);
+        const existing = cy.getElementById(element.data.id.toString());
+        if (existing.nonempty()) {
+          existing.data(element.data);
+        } else {
+          cy.add(element);
+        }
       }
     });
   });
 }
 
-export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, onRefreshGraph }: DocumentLinkGraphProps) {
+/** Обновить рёбра для конкретной исходящей страницы инкрементально */
+function updatePageEdgesIncremental(
+  cy: cytoscape.Core,
+  sourcePageId: string,
+  newEdges: DocumentGraphEdge[],
+) {
+  cy.batch(() => {
+    // Удалить старые рёбра из этой страницы
+    cy.edges()
+      .filter((edge) => edge.data().source === sourcePageId)
+      .remove();
+
+    // Добавить новые рёбра
+    newEdges.forEach((edge) => {
+      // find by source+target
+      const existing = cy
+        .edges()
+        .filter((ed) => ed.data().source === edge.sourcePageId && ed.data().target === edge.targetPageId)
+        .first();
+
+      const id = `edge-${edge.sourcePageId}-${edge.targetPageId}`;
+      if (!existing.nonempty()) {
+        cy.add({
+          data: {
+            id,
+            source: edge.sourcePageId,
+            target: edge.targetPageId,
+            mentionCount: edge.mentionCount,
+          },
+          classes: 'document-edge',
+        });
+      } else {
+        existing.data({ ...existing.data(), mentionCount: edge.mentionCount });
+      }
+    });
+  });
+}
+
+const DocumentLinkGraphComponent = forwardRef<
+  DocumentLinkGraphRef,
+  DocumentLinkGraphProps
+>(
+  (
+    { pages, activePageId, edges, onSelectPage, onRefreshGraph },
+    ref,
+  ) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cytoscapeRef = useRef<cytoscape.Core | null>(null);
   const onSelectPageRef = useRef(onSelectPage);
   const onRefreshGraphRef = useRef(onRefreshGraph);
+  /** Снимок id узлов, чтобы не запускать Cola при изменении только рёбер (вебсокет / правки) */
+  const lastPageIdSetRef = useRef<Set<string> | null>(null);
   const dragStateRef = useRef<{ startX: number; startY: number; anchorX: number; anchorY: number } | null>(null);
   const initialLayoutDoneRef = useRef(false);
   const [isHovered, setIsHovered] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalOffset, setModalOffset] = useState({ x: 80, y: 60 });
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [localPages, setLocalPages] = useState<DocumentGraphPage[]>(pages);
+  const [localEdges, setLocalEdges] = useState<DocumentGraphEdge[]>(edges);
+  const localEdgesRef = useRef(localEdges);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      updatePageLinks: (sourcePageId: string, newEdges: DocumentGraphEdge[]) => {
+        const prev = localEdgesRef.current;
+        const filtered = prev.filter((edge) => edge.sourcePageId !== sourcePageId);
+        const next = [...filtered, ...newEdges];
+        localEdgesRef.current = next;
+        setLocalEdges(next);
+
+        const cy = cytoscapeRef.current;
+        if (cy && !isCollapsed) {
+          updatePageEdgesIncremental(cy, sourcePageId, newEdges);
+          updateSelection(cy, activePageId, next);
+        }
+      },
+      addPage: (page: DocumentGraphPage) => {
+        const cy = cytoscapeRef.current;
+        if (!cy) return;
+
+        setLocalPages((prev) => {
+          const exists = prev.some((p) => p.id === page.id);
+          if (exists) return prev;
+          return [...prev, page];
+        });
+
+        cy.add({
+          data: {
+            id: page.id,
+            title: page.title,
+            size: normalizeNodeSize(page.fileSizeBytes),
+          },
+          classes: 'document-node',
+        });
+      },
+      removePage: (pageId: string) => {
+        const cy = cytoscapeRef.current;
+        if (!cy) return;
+
+        setLocalPages((prev) => prev.filter((p) => p.id !== pageId));
+        setLocalEdges((prev) =>
+          prev.filter((e) => e.sourcePageId !== pageId && e.targetPageId !== pageId),
+        );
+
+        cy.remove(`#${pageId}`);
+      },
+    }),
+    [isCollapsed, activePageId],
+  );
 
   useEffect(() => {
     onSelectPageRef.current = onSelectPage;
@@ -196,10 +333,27 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
     onRefreshGraphRef.current = onRefreshGraph;
   }, [onRefreshGraph]);
 
-  const pagesKey = pages.map((page) => `${page.id}:${page.title}:${page.fileSizeBytes ?? ''}`).join('|');
-  const edgesKey = edges.map((edge) => `${edge.sourcePageId}:${edge.targetPageId}:${edge.mentionCount}`).join('|');
-  const elements = useMemo(() => buildElements(pages, edges), [pagesKey, edgesKey]);
-  const activeTitle = pages.find((page) => page.id === activePageId)?.title;
+  const pagesIdFingerprint = useMemo(() => pages.map((p) => p.id).sort().join(','), [pages]);
+
+  // Синхронизировать внешние props с локальным состоянием
+  useEffect(() => {
+    setLocalPages(pages);
+    setLocalEdges(edges);
+  }, [pages, edges]);
+
+  useEffect(() => {
+    localEdgesRef.current = localEdges;
+  }, [localEdges]);
+
+  // Смена набора страниц (например, другое пространство) — следующая синхронизация сделает полный layout
+  useEffect(() => {
+    lastPageIdSetRef.current = null;
+  }, [pagesIdFingerprint]);
+
+  const pagesKey = localPages.map((page) => `${page.id}:${page.title}:${page.fileSizeBytes ?? ''}`).join('|');
+  const edgesKey = localEdges.map((edge) => `${edge.sourcePageId}:${edge.targetPageId}:${edge.mentionCount}`).join('|');
+  const elements = useMemo(() => buildElements(localPages, localEdges), [pagesKey, edgesKey]);
+  const activeTitle = localPages.find((page) => page.id === activePageId)?.title;
 
   const layoutOptions: ColaLayoutOptions = {
     name: defaultLayoutName,
@@ -221,7 +375,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
   };
 
   useEffect(() => {
-    if (!containerRef.current || cytoscapeRef.current || pages.length === 0 || isCollapsed) {
+    if (!containerRef.current || cytoscapeRef.current || localPages.length === 0 || isCollapsed) {
       return;
     }
 
@@ -371,7 +525,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
 
     scheduleLayout();
     cytoscapeRef.current = cy;
-    updateSelection(cy, activePageId, edges);
+    updateSelection(cy, activePageId, localEdges);
 
     return () => {
       didCleanup = true;
@@ -381,7 +535,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
       }
       cytoscapeRef.current = null;
     };
-  }, [pages.length, isCollapsed]);
+  }, [localPages.length, isCollapsed]); 
 
   useEffect(() => {
     if (!isModalOpen) {
@@ -404,7 +558,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
       return;
     }
 
-    updateSelection(cy, activePageId, edges);
+    updateSelection(cy, activePageId, localEdges);
   }, [activePageId, edgesKey, isCollapsed]);
 
   useEffect(() => {
@@ -432,11 +586,27 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
 
   useEffect(() => {
     const cy = cytoscapeRef.current;
-    if (!cy || pages.length === 0 || isCollapsed) {
+    if (!cy || localPages.length === 0 || isCollapsed) {
       return;
     }
 
+    const currentIdSet = new Set(localPages.map((p) => p.id));
+    const prev = lastPageIdSetRef.current;
+    const sameNodeSet =
+      prev !== null && prev.size === currentIdSet.size && [...currentIdSet].every((id) => prev.has(id));
+
     updateGraphElements(cy, elements);
+
+    if (sameNodeSet) {
+      window.requestAnimationFrame(() => {
+        cy.resize();
+        updateSelection(cy, activePageId, localEdges);
+      });
+      return;
+    }
+
+    lastPageIdSetRef.current = new Set(currentIdSet);
+
     window.requestAnimationFrame(() => {
       cy.resize();
       const layout = cy.layout({
@@ -444,25 +614,14 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
         fit: true,
       } as ColaLayoutOptions);
       layout.on('layoutstop', () => {
-        updateSelection(cy, activePageId, edges);
+        updateSelection(cy, activePageId, localEdges);
         if (cy.elements().nonempty()) {
           cy.fit(cy.elements(), 25);
         }
       });
       layout.run();
     });
-  }, [elements, edgesKey, pages.length, isCollapsed]);
-
-  // Graph refresh is now driven by external events (websocket) via the
-  // `onRefreshGraph` prop. Previously this component polled every 3s; remove
-  // polling to avoid duplicated requests and let the parent push updates.
-  useEffect(() => {
-    // No-op effect kept to preserve dependency edge cases where callers expect
-    // the component to re-evaluate when pages/edges/isCollapsed change.
-    // Refreshes should be invoked by the parent through the `onRefreshGraph`
-    // callback when realtime events arrive.
-    return () => undefined;
-  }, [pages.length, pagesKey, edgesKey, isCollapsed]);
+  }, [elements, edgesKey, pagesKey, isCollapsed, activePageId]);
 
   const handleRefreshGraph = async () => {
     const cy = cytoscapeRef.current;
@@ -500,7 +659,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
     } as ColaLayoutOptions);
 
     layout.on('layoutstop', () => {
-      updateSelection(cy, activePageId, edges);
+      updateSelection(cy, activePageId, localEdges);
       if (cy.elements().nonempty()) {
         cy.fit(cy.elements(), 25);
       }
@@ -590,7 +749,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
           <div className="flex items-center gap-1.5">
             {!isCollapsed && (
               <span className="shrink-0 rounded-full bg-editor-bg-control px-2.5 py-1 text-xs font-semibold text-editor-text-secondary">
-                {pages.length}/{edges.length}
+                {localPages.length}/{localEdges.length}
               </span>
             )}
             <button
@@ -610,12 +769,12 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
         <div className="h-12 flex items-center justify-center bg-gradient-to-r from-red-50 to-transparent px-4 text-xs text-editor-text-tertiary">
           <span className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-[#ff0037]" />
-            Граф свёрнут • {pages.length} узлов
+            Граф свёрнут • {localPages.length} узлов
           </span>
         </div>
       ) : (
         <div className="relative h-[214px] bg-[radial-gradient(circle_at_center,rgba(255,0,55,0.03),transparent_44%)]">
-          {pages.length > 0 ? (
+          {localPages.length > 0 ? (
             <>
               {isModalOpen && (
                 <div className="fixed inset-0 z-45">
@@ -717,7 +876,7 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
             <div className="flex h-full items-center justify-center px-8 text-center text-sm text-editor-text-tertiary">Создайте страницы, чтобы увидеть граф связей.</div>
           )}
 
-          {pages.length > 0 && edges.length === 0 ? (
+          {localPages.length > 0 && localEdges.length === 0 ? (
             <div className="absolute inset-x-4 bottom-4 rounded-2xl bg-white/90 px-3 py-2.5 text-center text-xs text-editor-text-tertiary">
               Добавьте связь через /страница, и граф начнет оживать.
             </div>
@@ -726,4 +885,9 @@ export function DocumentLinkGraph({ pages, activePageId, edges, onSelectPage, on
       )}
     </section>
   );
-}
+  },
+);
+
+DocumentLinkGraphComponent.displayName = 'DocumentLinkGraph';
+
+export const DocumentLinkGraph = DocumentLinkGraphComponent;
