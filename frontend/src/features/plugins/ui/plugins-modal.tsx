@@ -423,13 +423,6 @@ export function PluginsModal({
                 <p className="mt-2 text-lg font-semibold text-editor-text-primary">{items.filter((item) => item.status === 'locked').length}</p>
               </div>
             </div>
-
-            <div className="mt-4 rounded-[20px] border border-editor-border-subtle bg-[#fff6f8] p-4">
-              <h3 className="text-sm font-semibold text-editor-text-primary">Рекомендация</h3>
-              <p className="mt-2 text-sm leading-6 text-editor-text-tertiary">
-                Для текущего MVP лучше всего усиливают сценарий WikiLive плагины навигации по знаниям, комментарии и AI-помощник для работы с документами.
-              </p>
-            </div>
           </aside>
         </div>
       </div>
