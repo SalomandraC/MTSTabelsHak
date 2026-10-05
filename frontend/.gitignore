@@ -28,6 +28,3 @@ coverage/
 
 # Alternative build output
 build/
-
-# Pakage lock files
-package-lock.json

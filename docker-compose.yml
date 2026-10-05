@@ -69,14 +69,16 @@ services:
         condition: service_healthy
 
   frontend:
-    image: node:22-alpine
-    working_dir: /app
-    volumes:
-      - ./frontend:/app
-      - frontend-node-modules:/app/node_modules
+    build:
+      context: ./frontend
     ports:
       - "5173:5173"
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
 
   docgen:
     build:
@@ -91,4 +93,3 @@ volumes:
   postgres-data:
   redis-data:
   context-engine-data:
-  frontend-node-modules:
